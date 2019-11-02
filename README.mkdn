@@ -1,0 +1,3 @@
+# A minimal RTOS
+
+This is a wee RTOS written to support the `async` style of programming in Rust.
