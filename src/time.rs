@@ -5,12 +5,13 @@ use core::time::Duration;
 
 use cortex_m::peripheral::{syst::SystClkSource, SYST};
 
-use crate::exec::Notify;
-
+/// Bottom 32 bits of the tick counter. Updated by ISR.
 static TICK: AtomicU32 = AtomicU32::new(0);
+/// Top 32 bits of the tick counter. Updated by ISR.
 static EPOCH: AtomicU32 = AtomicU32::new(0);
 
-/// Sets up the tick counter for 1kHz operation.
+/// Sets up the tick counter for 1kHz operation, assuming a CPU core clock of
+/// `clock_mhz`.
 pub fn initialize_sys_tick(syst: &mut SYST, clock_mhz: u32) {
     let cycles_per_millisecond = clock_mhz / 1000;
     syst.set_reload(cycles_per_millisecond - 1);
@@ -71,12 +72,11 @@ impl core::ops::AddAssign<Duration> for Ticks {
     }
 }
 
-static SYS_TICK_NOTIFY: Notify = Notify::new();
-
+/// System tick ISR. Advances the tick counter. This doesn't wake any tasks; see
+/// code in `exec` for that.
 #[cortex_m_rt::exception]
 fn SysTick() {
     if TICK.fetch_add(1, Ordering::Release) == core::u32::MAX {
         EPOCH.fetch_add(1, Ordering::Release);
     }
-    SYS_TICK_NOTIFY.notify();
 }

@@ -41,6 +41,8 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
 
+use crate::NotSendMarker;
+
 /// A member of a list.
 ///
 /// A node is either *detached* (not in a list) or *attached* (in a list). After
@@ -64,6 +66,7 @@ pub struct Node<T> {
     next: Cell<NonNull<Self>>,
     waker: Waker,
     contents: T,
+    _marker: NotSendMarker,
 }
 
 impl<T> Node<T> {
@@ -85,6 +88,7 @@ impl<T> Node<T> {
             next: Cell::new(NonNull::dangling()),
             waker,
             contents,
+            _marker: NotSendMarker::default(),
         })
     }
 
@@ -149,6 +153,7 @@ impl<T> Drop for Node<T> {
 /// instructions.
 pub struct List<T> {
     root: Node<T>,
+    _marker: NotSendMarker,
 }
 
 /// Creating a `List` requires `T: Default` because we store a useless `T`
@@ -172,6 +177,7 @@ impl<T: Default> List<T> {
                 T::default(),
                 exploding_waker(),
             )),
+            _marker: NotSendMarker::default(),
         })
     }
 }

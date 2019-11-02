@@ -1,3 +1,5 @@
+//! Executor / task support.
+
 use core::future::{get_task_context, set_task_context, Future};
 use core::mem;
 use core::pin::Pin;
@@ -8,6 +10,10 @@ use core::time::Duration;
 
 use crate::list::List;
 use crate::time::Ticks;
+use crate::FromNever;
+
+/// How many bits in a `usize`, and thus in a pointer?
+const USIZE_BITS: usize = mem::size_of::<usize>() * 8;
 
 /// Accumulates bitmasks from wakers as they are invoked. The executor
 /// atomically checks and clears this at each iteration.
@@ -19,21 +25,14 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
     // clone
     |p| RawWaker::new(p, &VTABLE),
     // wake
-    |p| {
-        wake_tasks_by_mask(p as usize);
-    },
+    |p| wake_tasks_by_mask(p as usize),
     // wake_by_ref
-    |p| {
-        wake_tasks_by_mask(p as usize);
-    },
+    |p| wake_tasks_by_mask(p as usize),
     // drop
     |_| (),
 );
 
-/// How many bits in a `usize`, and thus in a pointer?
-const USIZE_BITS: usize = mem::size_of::<usize>() * 8;
-
-/// Produces a `Waker` that will wake task `index` on invocation.
+/// Produces a `Waker` that will wake *at least* task `index` on invocation.
 ///
 /// Technically, this will wake any task `n` where `n % 32 == index % 32`.
 fn waker_for_task(index: usize) -> Waker {
@@ -110,36 +109,34 @@ pub fn run_tasks(
 ) -> ! {
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
 
-    crate::create_list!(timer_list);
+    create_list!(timer_list);
 
-    set_timer_list(timer_list, || {
-        loop {
-            cortex_m::interrupt::free(|_| {
-                // Scan for any expired timers.
-                with_timer_list(|tl| {
-                    tl.wake_less_than(Ticks::now());
-                });
+    set_timer_list(timer_list, || loop {
+        cortex_m::interrupt::free(|_| {
+            // Scan for any expired timers.
+            with_timer_list(|tl| tl.wake_less_than(Ticks::now()));
 
-                // Process wake bits.
-                let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
-                for (i, f) in futures.iter_mut().enumerate() {
-                    if mask & (1 << (i % USIZE_BITS)) != 0 {
-                        match poll_task(i, f.as_mut()) {
-                            Poll::Pending => (),
-                            Poll::Ready(x) => match x {},
-                        }
-                    }
+            // Capture and reset wake bits, then process any 1s.
+            // TODO: this loop visits every future testing for 1 bits; it would
+            // almost certainly be faster to visit the futures corresponding to
+            // 1 bits instead. I have avoided this for now because of the
+            // increased complexity.
+            let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
+            for (i, f) in futures.iter_mut().enumerate() {
+                if mask & (1 << (i % USIZE_BITS)) != 0 {
+                    poll_task(i, f.as_mut()).from_never();
                 }
+            }
 
-                // If none of the futures woke each other, we're relying on an
-                // interrupt to set bits -- so we can sleep waiting for it.
-                if WAKE_BITS.load(Ordering::SeqCst) == 0 {
-                    cortex_m::asm::wfi();
-                }
-            });
-            // Now interrupts are enabled for a brief period before diving back
-            // in.
-        }
+            // If none of the futures woke each other, we're relying on an
+            // interrupt to set bits -- so we can sleep waiting for it.
+            if WAKE_BITS.load(Ordering::SeqCst) == 0 {
+                cortex_m::asm::wfi();
+            }
+        });
+        // Now interrupts are enabled for a brief period before diving back in.
+        // Note that we allow interrupt-wake even when some wake bits are set;
+        // this reduces interrupt event latency.
     })
 }
 
@@ -158,16 +155,20 @@ pub struct Notify {
 }
 
 impl Notify {
+    /// Creates a new `Notify` with no tasks waiting.
     pub const fn new() -> Self {
         Self {
             mask: AtomicUsize::new(0),
         }
     }
 
+    /// Adds the `Waker` to the set of waiters.
     pub fn subscribe(&self, waker: &Waker) {
         self.mask.fetch_or(extract_mask(waker), Ordering::SeqCst);
     }
 
+    /// Wakes tasks, at least all those whose waiters have been passed to
+    /// `subscribe` since the last `notify`, possibly more.
     pub fn notify(&self) {
         wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
     }
@@ -198,6 +199,9 @@ impl Notify {
 
 /// Notifies the executor that any tasks whose wake bits are set in `mask`
 /// should be polled on the next iteration.
+///
+/// This is a very low-level operation and is rarely what you want to use. See
+/// `Notify`.
 pub fn wake_tasks_by_mask(mask: usize) {
     WAKE_BITS.fetch_or(mask, Ordering::SeqCst);
 }
@@ -246,6 +250,9 @@ fn set_timer_list<R>(
     r
 }
 
+/// Nabs a reference to the current timer list and executes `body`.
+///
+/// This provides a safe way to access the timer thread local.
 fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
     // Safety: if it's not None, then it came from a `&mut` that we have been
     // loaned. We do not treat it as a &mut anywhere, so we can safely reborrow
@@ -263,10 +270,18 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
     body(list_pin)
 }
 
+/// Sleeps until the system time is equal to or greater than `deadline`.
+///
+/// More precisely, `sleep_until(d)` returns a `Future` that will poll as
+/// `Pending` until `Ticks::now() >= deadline`; then it will poll `Ready`.
+///
+/// If `deadline` is already in the past, this will instantly become `Ready`.
 pub async fn sleep_until(deadline: Ticks) {
     // TODO: this early return means we can't simply return the insert_and_wait
     // future below, which is costing us some bytes of text.
-    if Ticks::now() >= deadline { return }
+    if Ticks::now() >= deadline {
+        return;
+    }
 
     let waker = get_task_context(|cx| cx.waker().clone());
     crate::create_node!(node, deadline, waker);
@@ -276,6 +291,13 @@ pub async fn sleep_until(deadline: Ticks) {
     with_timer_list(|tl| tl.insert_and_wait(node.as_mut())).await
 }
 
+/// Sleeps until the system time has increased by `d`.
+///
+/// More precisely, `sleep_for(d)` captures the system time, `t`, and returns a
+/// `Future` that will poll as `Pending` until `Ticks::now() >= t + d`; then it
+/// will poll `Ready`.
+///
+/// If `d` is 0, this will instantly become `Ready`.
 pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
     sleep_until(Ticks::now() + d)
 }
@@ -302,7 +324,7 @@ where
     loop {
         sleep_until(next).await;
         if action().await {
-            break
+            break;
         }
         next += period;
     }
