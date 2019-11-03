@@ -1,3 +1,56 @@
 # A minimal RTOS
 
 This is a wee RTOS written to support the `async` style of programming in Rust.
+It's somewhat unusual for an RTOS.
+
+This system supports
+
+- Bare metal execution on ARM Cortex-M microprocessors -- not even a `libc` is
+  required.
+
+- Arbitrary concurrent tasks, written as sequential programs or state machines.
+
+- Essentially free context switches.
+
+- Medium-fast response to interrupts (~10 microseconds).
+
+- Operation without dynamic memory allocation of any kind.
+
+- Applications written entirely in safe Rust (though `unsafe` can also be used,
+  of course).
+b
+What makes this system interesting, to me, is what it *doesn't* have:
+conventional threads or preemptive multitasking. Instead, the kernel provides a
+single thread that can be multiplexed between concurrent *futures*. This sort of
+architecture has, in the past, had serious ergonomic consequences: programs
+could not be expressed as straight-line sequential code.
+
+But that was before systems programming languages supported `async`. With
+`async` (sometimes called a "stackless transform" in other languages) we can
+express logic as straight-line code, and let the *compiler* turn it into a
+stackless state machine.
+
+Concrete example: code to blink an LED on the STM32F407's pin D13.
+
+```rust
+use core::time::Duration;
+use os::exec::sleep_for;
+
+async fn blinky_task(gpiod: GPIOD) -> ! {
+    let period = Duration::from_millis(500);
+    loop {
+        gpiod.bsrr.write(|w| w.bs13().set_bit()); 
+        sleep_for(period).await;
+        gpiod.bsrr.write(|w| w.br13().set_bit()); 
+        sleep_for(period).await;
+    }
+}
+```
+
+Compared to a conventional multitasking operating system, this has several
+advantages.
+
+1. It's much easier to reason about, and allocate, stack space. There is only a
+   single stack, and the `async` transform means that each future's storage can
+   be allocated up-front. The only dynamic portion of the stack is that used to
+   evaluate each step in each process.
