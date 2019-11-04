@@ -1,19 +1,44 @@
+//! Queues for passing values between tasks.
+//!
+//! A `Queue<T, S>` manages storage for some number of values of type `T`, where
+//! the storage has type `S`. More concretely, there are two main cases:
+//!
+//! - `Queue<T, [MaybeUninit<T>; N]>`: the queue owns its storage of `N`
+//!   elements.
+//!
+//! - `Queue<T, &'a mut [MaybeUninit<T>]>`: the queue borrows its storage with
+//!   lifetime `'a`.
+//!
+//! Notice that queue storage is `MaybeUninit`. The memory that backs the queue
+//! is assumed to be uninitialized by default. The queue will take care of
+//! initializing the portions it's using and ensuring that e.g. `drop` gets run
+//! at the right times. If you loan memory to a queue and then drop it, the
+//! memory is *again uninitialized,* because the queue will have dropped any
+//! contents in-place.
+//!
+//! If you'd prefer not to worry about the lifetime of the queue's storage, we
+//! provide macros for the two common cases: `create_queue` for queues that live
+//! on the stack, and `create_static_queue` for queues at static scope.
+
 use core::cell::Cell;
 
-use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::pin::Pin;
+use core::ptr::NonNull;
+
+use as_slice::AsMutSlice;
 
 use crate::list::List;
 
-/// A queue of `T`s that can be sent between tasks.
-pub struct Queue<'a, T> {
-    /// Pointer to the base of a contiguous buffer of `T`s, exactly `capacity`
-    /// slots long. These are tracked as `MaybeUninit` because we move values in
-    /// and out of them during normal operation.
-    storage: *mut MaybeUninit<T>,
-    /// Number of slots in `storage`.
-    capacity: usize,
+/// A queue of `T`s that can be sent between tasks, stored as `S`, which may be
+/// an array or a slice.
+pub struct Queue<T, S: AsMutSlice<Element = MaybeUninit<T>>> {
+    /// Copy of `S`, which mostly matters if `S` is an array.
+    storage: S,
+    /// Pointer to the first storage element in `S`. This is redundant; we use
+    /// it to mutate `S` even though it's aliased. We can do this because we
+    /// require pinning.
+    storage_ptr: NonNull<MaybeUninit<T>>,
     /// Number of pushes; `head % capacity` gives the index of the next slot in
     /// `storage` to write during `push`.
     head: Cell<usize>,
@@ -25,31 +50,36 @@ pub struct Queue<'a, T> {
     push_waiters: List<()>,
     /// List of tasks waiting to pop, when the queue has data.
     pop_waiters: List<()>,
-
-    _marker: PhantomData<&'a mut [T]>,
 }
 
-impl<'a, T> Queue<'a, T> {
-    pub unsafe fn new(storage: &'a mut [MaybeUninit<T>]) -> ManuallyDrop<Self> {
+impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
+    pub unsafe fn new(storage: S) -> ManuallyDrop<Self> {
         ManuallyDrop::new(Queue {
-            storage: storage.as_mut_ptr(),
-            capacity: storage.len(),
+            storage_ptr: NonNull::dangling(),
+            storage,
             head: Cell::new(0),
             tail: Cell::new(0),
             push_waiters: ManuallyDrop::into_inner(List::new()),
             pop_waiters: ManuallyDrop::into_inner(List::new()),
-
-            _marker: PhantomData,
         })
     }
 
     pub unsafe fn finish_init(mut self: Pin<&mut Self>) {
+        // If `S` stores `T`s by value (i.e. we contain an array), its base
+        // address may have changed, so we patch the pointer now.
+        Pin::get_unchecked_mut(self.as_mut()).storage_ptr =
+            NonNull::from(&mut self.as_mut().storage_mut().as_mut_slice()[0]);
+
         List::finish_init(self.as_mut().push_waiters_mut());
         List::finish_init(self.as_mut().pop_waiters_mut());
     }
 
+    pub fn capacity(&self) -> usize {
+        self.storage.as_slice().len()
+    }
+
     pub fn is_full(&self) -> bool {
-        self.head.get().wrapping_sub(self.tail.get()) == self.capacity
+        self.head.get().wrapping_sub(self.tail.get()) == self.capacity()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -75,9 +105,10 @@ impl<'a, T> Queue<'a, T> {
 
         // not full
         let h = self.head.get();
+        let c = self.capacity();
         unsafe {
             core::ptr::write(
-                self.storage.add(h % self.capacity),
+                self.storage_ptr.as_ptr().add(h % c),
                 MaybeUninit::new(value),
             );
         }
@@ -108,14 +139,20 @@ impl<'a, T> Queue<'a, T> {
 
         // not empty
         let t = self.tail.get();
+        let c = self.capacity();
         self.tail.set(t + 1);
         // If we were full...
-        if self.head.get().wrapping_sub(t) == self.capacity {
+        if self.head.get().wrapping_sub(t) == c {
             self.push_waiters().wake_one();
         }
         unsafe {
-            core::ptr::read(self.storage.add(t % self.capacity)).assume_init()
+            core::ptr::read(self.storage_ptr.as_ptr().add(t % c)).assume_init()
         }
+    }
+
+    /// Internal pin projection.
+    fn storage_mut(self: Pin<&mut Self>) -> &mut [MaybeUninit<T>] {
+        unsafe { Pin::get_unchecked_mut(self).storage.as_mut_slice() }
     }
 
     /// Internal pin projection.
@@ -143,18 +180,19 @@ impl<'a, T> Queue<'a, T> {
 ///
 /// It's not possible to drop a queue while any futures are operating on it,
 /// because they borrow the queue.
-impl<'a, T> Drop for Queue<'a, T> {
+impl<T, S: AsMutSlice<Element = MaybeUninit<T>>> Drop for Queue<T, S> {
     fn drop(&mut self) {
         inner_drop(unsafe { Pin::new_unchecked(self) });
 
-        fn inner_drop<'a, T>(this: Pin<&mut Queue<'a, T>>) {
+        fn inner_drop<T, S: AsMutSlice<Element = MaybeUninit<T>>>(
+            this: Pin<&mut Queue<T, S>>,
+        ) {
             let h = this.head.get();
             let mut t = this.tail.get();
+            let s = this.storage_mut();
             while t != h {
                 unsafe {
-                    core::ptr::drop_in_place(
-                        this.storage.add(t % this.capacity),
-                    );
+                    core::ptr::drop_in_place(s[t % s.len()].as_mut_ptr());
                 }
                 t = t.wrapping_add(1);
             }
@@ -163,13 +201,37 @@ impl<'a, T> Drop for Queue<'a, T> {
 }
 
 /// Creates a pinned queue on the stack.
+///
+/// Because a pinned value must not move, this does not *return* the queue, but
+/// instead binds it under the name of your choice:
+///
+/// ```ignore
+/// create_queue!(q, [MaybeUninit::<u32>::uninit(); 100]);
+/// // and the type of q is...
+/// let q: Pin<&Queue<u32, _>> = q;
+/// ```
+///
+/// For the common case of declaring a queue with owned storage, there's also a
+/// three-argument version that saves you the trouble of typing out
+/// `MaybeUninit`:
+///
+/// ```ignore
+/// create_queue!(q, u32, 100);
+/// ```
+///
+/// which expands into the code in the previous example.
 #[macro_export]
 macro_rules! create_queue {
-    ($var:ident) => {
+    ($var:ident, $t:ty, $n:expr) => {
+        create_queue!($var, [core::mem::MaybeUninit::<$t>::uninit(); $n]);
+    };
+    ($var:ident, $stor:expr) => {
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
         let $var = unsafe {
-            core::mem::ManuallyDrop::into_inner($crate::queue::Queue::new())
+            core::mem::ManuallyDrop::into_inner($crate::queue::Queue::new(
+                $stor,
+            ))
         };
         pin_utils::pin_mut!($var);
         // Safety: the value has not been operated on since `new` except for
@@ -177,6 +239,85 @@ macro_rules! create_queue {
         unsafe {
             $crate::queue::Queue::finish_init($var.as_mut());
         }
+        // Downgrade the &mut
+        let $var = $var.into_ref();
     };
 }
 
+/// Creates a queue at static scope backed by an array.
+///
+/// The expression
+///
+/// ```ignore
+/// let q = create_static_queue!([u32; 100]);
+/// ```
+///
+/// statically allocates space for a buffer of 100 `u32`s and the state of one
+/// `Queue`. It returns a pinned queue reference; specifically:
+///
+/// ```ignore
+/// let q: Pin<&'static Queue<u32, _>>  = create_static_queue!([u32; 100]);
+/// ```
+///
+/// Each site where `create_static_queue!` gets used creates a separate queue.
+/// At runtime, each site must be executed *exactly once* to initialize the
+/// queue and produce a reference (e.g. in `main`). This property is tracked
+/// using an atomic flag; if code tries to initialize the queue a second time,
+/// it panics.
+macro_rules! create_static_queue {
+    ([$t:ty; $sz:expr]) => {{
+        use core::mem::MaybeUninit;
+        use core::sync::atomic::{AtomicBool, Ordering};
+        use $crate::queue::Queue;
+
+        static INIT: AtomicBool = AtomicBool::new(false);
+        static mut Q_STOR: [MaybeUninit<$t>; $sz] =
+            [MaybeUninit::uninit(); $sz];
+        static mut Q: MaybeUninit<
+            Queue<$t, &'static mut [MaybeUninit<$t>; $sz]>,
+        > = MaybeUninit::uninit();
+
+        // Ensure that code only makes it past this point once.
+        assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
+
+        // Initialize the queue enough that we can start using references.
+        unsafe {
+            core::ptr::write(
+                Q.as_mut_ptr(),
+                ManuallyDrop::into_inner(Queue::new(&mut Q_STOR)),
+            );
+        }
+
+        let mut q: Pin<&'static mut _> =
+            unsafe { Pin::new_unchecked(&mut *Q.as_mut_ptr()) };
+        unsafe {
+            Queue::finish_init(q.as_mut());
+        }
+
+        // Downgrade the &mut to keep any smart alec from calling
+        // finish_init again.
+        q.into_ref()
+    }};
+}
+
+#[allow(dead_code)]
+async fn static_queue_test() {
+    // Check that the convenient syntax works:
+    let q = create_static_queue!([bool; 123]);
+    // Check that the type is what we expect.
+    let q: Pin<&'static Queue<bool, &'static mut [MaybeUninit<bool>; 123]>> = q;
+
+    q.push(true).await;
+    q.pop().await;
+}
+
+#[allow(dead_code)]
+async fn queue_test() {
+    // Check that the convenient syntax works:
+    create_queue!(q, [MaybeUninit::<bool>::uninit(); 123]);
+    // Check that the type is what we expect.
+    let q: Pin<&Queue<bool, [MaybeUninit<bool>; 123]>> = q;
+
+    q.push(true).await;
+    q.pop().await;
+}

@@ -10,6 +10,7 @@ cortex-m = "0.6"
 cortex-m-rt = "0.6.10"
 futures-preview = {version = "=0.3.0-alpha.19", default-features = false}
 pin-utils = "0.1.0-alpha.4"
+as-slice = "0.2.0"
 
 [lib]
 test = false
