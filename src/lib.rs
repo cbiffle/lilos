@@ -10,6 +10,7 @@
 pub mod time;
 pub mod exec;
 pub mod mutex;
+pub mod queue;
 
 use core::marker::PhantomData;
 
