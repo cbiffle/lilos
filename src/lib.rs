@@ -19,14 +19,14 @@ use core::marker::PhantomData;
 ///
 /// A type that includes this may still be inferred as `Send`.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct NotSyncMarker(PhantomData<core::cell::Cell<()>>);
+struct NotSyncMarker(PhantomData<core::cell::Cell<()>>);
 
 /// Zero-sized marker type that can be included to ensure that a data structure
 /// is not automatically made `Send` (i.e. safe for transfer across threads).
 ///
 /// This also blocks `Sync`.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct NotSendMarker(PhantomData<*const ()>);
+struct NotSendMarker(PhantomData<*const ()>);
 
 trait FromNever {
     type Output;
