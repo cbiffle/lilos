@@ -216,7 +216,6 @@ pub fn wake_task_by_index(index: usize) {
 }
 
 /// Tracks the timer list currently in scope.
-#[thread_local]
 static mut TIMER_LIST: Option<NonNull<List<Ticks>>> = None;
 
 /// Sets the timer list for the duration of `body`.

@@ -4,7 +4,7 @@
 //! on ARM Cortex-M microprocessors, plus some useful doodads and gizmos.
 
 #![no_std]
-#![feature(never_type, thread_local)]
+#![feature(never_type)]
 
 #[macro_use] pub mod list;
 pub mod time;
