@@ -1,0 +1,43 @@
+//! Minimal example of using the OS to blink an LED.
+//!
+//! This starts a single task, which uses the scheduler and timer to
+//! periodically toggle a GPIO pin.
+
+#![no_std]
+#![no_main]
+
+extern crate panic_halt;
+
+use core::time::Duration;
+
+use os::exec::PeriodicGate;
+use pin_utils::pin_mut;
+use stm32f4::stm32f407 as device;
+
+#[cortex_m_rt::entry]
+fn main() -> ! {
+    // Check out peripherals from the runtime.
+    let mut cp = cortex_m::Peripherals::take().unwrap();
+    let p = device::Peripherals::take().unwrap();
+
+    // Configure our output pin.
+    p.RCC.ahb1enr.modify(|_, w| w.gpioden().enabled());
+    p.GPIOD.moder.modify(|_, w| w.moder12().output());
+
+    // Create a task to blink the LED.
+    let blink = async {
+        let mut period = PeriodicGate::new(Duration::from_millis(500));
+
+        loop {
+            p.GPIOD.bsrr.write(|w| w.bs12().set_bit());
+            period.next().await;
+            p.GPIOD.bsrr.write(|w| w.br12().set_bit());
+            period.next().await;
+        }
+    };
+    pin_mut!(blink);
+
+    // Set up and run the scheduler.
+    os::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
+    os::exec::run_tasks(&mut [blink], !0)
+}

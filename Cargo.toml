@@ -12,6 +12,15 @@ futures-preview = {version = "=0.3.0-alpha.19", default-features = false}
 pin-utils = "0.1.0-alpha.4"
 as-slice = "0.2.0"
 
+# Mostly for examples
+[dev-dependencies]
+panic-halt = "0.2.0"
+
+[dev-dependencies.stm32f4]
+default-features = false
+features = ["rt", "stm32f407"]
+version = "0.8.0"
+
 [lib]
 test = false
 bench = false
