@@ -329,3 +329,36 @@ where
         next += period;
     }
 }
+
+/// Utility for doing something periodically.
+///
+/// A `PeriodicGate` can be used to *gate* (pause) execution of a task until a
+/// point in time arrives; that point in time is *periodic*, meaning it repeats
+/// at regular intervals. For example, to call the function `f` every 30
+/// milliseconds, you would write:
+///
+/// ```ignore
+/// let gate = PeriodicGate::new(Duration::from_millis(30));
+/// loop {
+///     f();
+///     gate.next().await;
+/// }
+/// ```
+pub struct PeriodicGate {
+    interval: Duration,
+    next: Ticks,
+}
+
+impl PeriodicGate {
+    pub fn new(interval: Duration) -> Self {
+        PeriodicGate {
+            interval,
+            next: Ticks::now()
+        }
+    }
+
+    pub async fn next(&mut self) {
+        sleep_until(self.next).await;
+        self.next += self.interval;
+    }
+}
