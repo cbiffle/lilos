@@ -6,11 +6,12 @@
 #![no_std]
 #![feature(never_type)]
 
-#[macro_use] pub mod list;
-pub mod time;
+#[macro_use]
+pub mod list;
 pub mod exec;
 pub mod mutex;
 pub mod queue;
+pub mod time;
 
 use core::marker::PhantomData;
 

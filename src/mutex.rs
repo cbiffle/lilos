@@ -52,7 +52,7 @@ impl<T> Mutex<T> {
     pub async fn lock(self: Pin<&Self>) -> MutexGuard<'_, T> {
         // Complete synchronously if the mutex is uncontended.
         if self.state.fetch_or(1, Ordering::Acquire) == 0 {
-            return MutexGuard { mutex: self }
+            return MutexGuard { mutex: self };
         }
 
         // We'd like to put our name on the wait list, please.

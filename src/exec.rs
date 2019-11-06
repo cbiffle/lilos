@@ -353,7 +353,7 @@ impl PeriodicGate {
     pub fn new(interval: Duration) -> Self {
         PeriodicGate {
             interval,
-            next: Ticks::now()
+            next: Ticks::now(),
         }
     }
 
