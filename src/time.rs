@@ -42,19 +42,19 @@ impl Ticks {
         }
     }
 
-    pub fn duration_since(&self, earlier: Ticks) -> Duration {
+    pub fn duration_since(self, earlier: Ticks) -> Duration {
         Duration::from_millis(self.0.checked_sub(earlier.0).unwrap())
     }
 
-    pub fn elapsed(&self) -> Duration {
-        Self::now().duration_since(*self)
+    pub fn elapsed(self) -> Duration {
+        Self::now().duration_since(self)
     }
 
-    pub fn checked_add(&self, duration: Duration) -> Option<Self> {
+    pub fn checked_add(self, duration: Duration) -> Option<Self> {
         self.0.checked_add(duration.as_millis() as u64).map(Ticks)
     }
 
-    pub fn checked_sub(&self, duration: Duration) -> Option<Self> {
+    pub fn checked_sub(self, duration: Duration) -> Option<Self> {
         self.0.checked_sub(duration.as_millis() as u64).map(Ticks)
     }
 }

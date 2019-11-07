@@ -70,18 +70,12 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    /// Creates a `Node` in a bogus but initialized state.
-    ///
-    /// It's "initialized" in the narrow sense that it does not create undefined
-    /// behavior, but it is not ready to use; see below.
+    /// Creates a `Node` in a semi-initialized state.
     ///
     /// # Safety
     ///
-    /// To use this safely, it is your responsibility to immediately move the
-    /// `Node` into its final location where it can be pinned, without dropping
-    /// it. (It's returned in `ManuallyDrop` to make this harder to mess up.)
-    ///
-    /// Once it has been pinned, call `finish_init` on it. Then, it is safe.
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call `finish_init`.
     pub unsafe fn new(contents: T, waker: Waker) -> ManuallyDrop<Self> {
         ManuallyDrop::new(Node {
             prev: Cell::new(NonNull::dangling()),

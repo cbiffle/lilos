@@ -53,6 +53,12 @@ pub struct Queue<T, S: AsMutSlice<Element = MaybeUninit<T>>> {
 }
 
 impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
+    /// Creates an initialized but bogus `Queue`.
+    ///
+    /// # Safety
+    ///
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call `finish_init`.
     pub unsafe fn new(storage: S) -> ManuallyDrop<Self> {
         ManuallyDrop::new(Queue {
             storage_ptr: NonNull::dangling(),
@@ -64,6 +70,13 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         })
     }
 
+    /// Finishes initializing a queue, discharging obligations from `new`.
+    ///
+    /// # Safety
+    ///
+    /// This is safe to call exactly once on the result of `new`, after taking
+    /// it out of `ManuallyDrop`, moving it to its final resting place, and
+    /// pinning it.
     pub unsafe fn finish_init(mut self: Pin<&mut Self>) {
         // If `S` stores `T`s by value (i.e. we contain an array), its base
         // address may have changed, so we patch the pointer now.

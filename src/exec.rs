@@ -61,14 +61,14 @@ fn extract_mask(waker: &Waker) -> usize {
 
     // Safety: `Waker` is a `repr(transparent)` wrapper around `RawWaker`, so we
     // can transmute even if it's technically ill-advised.
-    let waker: &RawWaker = unsafe { mem::transmute(waker) };
+    let waker: &RawWaker = unsafe { &*(waker as *const _ as *const _) };
     // Safety: this is less justifiable, but at the moment, `RawWaker` consists
     // exactly of a `*const ()` and a `&'static RawWakerVTable`, and this is
     // unlikely to change. If it changes size in the future, the transmutes will
     // fail; if it doesn't change size, then it's likely to contain the two
     // required pointer members. So let's access them.
     unsafe {
-        let parts = mem::transmute::<_, &(usize, usize)>(waker);
+        let parts = &*(waker as *const _ as *const (usize, usize));
         if ptr_first {
             parts.0
         } else {
@@ -357,7 +357,7 @@ impl PeriodicGate {
         }
     }
 
-    pub async fn next(&mut self) {
+    pub async fn next_time(&mut self) {
         sleep_until(self.next).await;
         self.next += self.interval;
     }

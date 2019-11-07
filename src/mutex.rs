@@ -35,6 +35,12 @@ pub struct Mutex<T: ?Sized> {
 }
 
 impl<T> Mutex<T> {
+    /// Returns an initialized but invalid mutex.
+    ///
+    /// # Safety
+    ///
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call `finish_init`.
     pub unsafe fn new(contents: T) -> ManuallyDrop<Self> {
         ManuallyDrop::new(Mutex {
             state: AtomicUsize::new(0),
@@ -43,6 +49,12 @@ impl<T> Mutex<T> {
         })
     }
 
+    /// Finishes initializing a mutex, discharging obligations from `new`.
+    ///
+    /// # Safety
+    ///
+    /// This is safe to call exactly once on the result of `new`, after it has
+    /// been moved to its final position and pinned.
     pub unsafe fn finish_init(this: Pin<&mut Self>) {
         List::finish_init(this.waiters_mut());
     }

@@ -30,9 +30,9 @@ fn main() -> ! {
 
         loop {
             p.GPIOD.bsrr.write(|w| w.bs12().set_bit());
-            period.next().await;
+            period.next_time().await;
             p.GPIOD.bsrr.write(|w| w.br12().set_bit());
-            period.next().await;
+            period.next_time().await;
         }
     };
     pin_mut!(blink);
