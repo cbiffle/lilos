@@ -39,11 +39,15 @@ pub struct Queue<T, S: AsMutSlice<Element = MaybeUninit<T>>> {
     /// it to mutate `S` even though it's aliased. We can do this because we
     /// require pinning.
     storage_ptr: NonNull<MaybeUninit<T>>,
-    /// Number of pushes; `head % capacity` gives the index of the next slot in
-    /// `storage` to write during `push`.
+
+    /// Number of items present in the queue.
+    pending: Cell<usize>,
+
+    /// Index of next slot in `storage` to write during `push`. Must fall in the
+    /// range `0..storage.len()`.
     head: Cell<usize>,
-    /// Number of pops; `tail % capacity` gives the index of the next slot in
-    /// `storage` to read during `pop`.
+    /// Index of next slot in `storage` to read during `pop`. Must fall in the
+    /// range `0..storage.len()`.
     tail: Cell<usize>,
 
     /// List of tasks waiting to push, when the queue has room.
@@ -63,6 +67,7 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         ManuallyDrop::new(Queue {
             storage_ptr: NonNull::dangling(),
             storage,
+            pending: Cell::new(0),
             head: Cell::new(0),
             tail: Cell::new(0),
             push_waiters: ManuallyDrop::into_inner(List::new()),
@@ -92,11 +97,15 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
     }
 
     pub fn is_full(&self) -> bool {
-        self.head.get().wrapping_sub(self.tail.get()) == self.capacity()
+        self.pending.get() == self.capacity()
+    }
+
+    pub fn len(&self) -> usize {
+        self.pending.get()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.head.get() == self.tail.get()
+        self.pending.get() == 0
     }
 
     /// Returns a future that will insert `value` at the head of the queue, once
@@ -116,16 +125,26 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
             }
         }
 
+        debug_assert!(!self.is_full());
+
         // not full
         let h = self.head.get();
-        let c = self.capacity();
+        debug_assert!(h < self.capacity());
+
+        // Begin committing changes.
+        // Move `value` into queue memory.
         unsafe {
             core::ptr::write(
-                self.storage_ptr.as_ptr().add(h % c),
+                self.storage_ptr.as_ptr().add(h),
                 MaybeUninit::new(value),
             );
         }
-        self.head.set(h + 1);
+        // Advance head modulo capacity.
+        self.head
+            .set(if h == self.capacity() - 1 { 0 } else { h + 1 });
+        // Update pending count.
+        self.pending.set(self.pending.get() + 1);
+
         // If we were empty...
         if h == self.tail.get() {
             self.pop_waiters().wake_one();
@@ -150,17 +169,29 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
             }
         }
 
+        debug_assert!(!self.is_empty());
+
         // not empty
         let t = self.tail.get();
-        let c = self.capacity();
-        self.tail.set(t + 1);
+        debug_assert!(t < self.capacity());
+
+        // Begin committing changes.
+        // Move result out of queue memory.
+        let result = unsafe {
+            core::ptr::read(self.storage_ptr.as_ptr().add(t)).assume_init()
+        };
+        // Advance tail pointer modulo capacity
+        self.tail
+            .set(if t == self.capacity() - 1 { 0 } else { t + 1 });
+        // Update pending count.
+        self.pending.set(self.pending.get() - 1);
+
         // If we were full...
-        if self.head.get().wrapping_sub(t) == c {
+        if t == self.head.get() {
             self.push_waiters().wake_one();
         }
-        unsafe {
-            core::ptr::read(self.storage_ptr.as_ptr().add(t % c)).assume_init()
-        }
+
+        result
     }
 
     /// Internal pin projection.
@@ -200,14 +231,14 @@ impl<T, S: AsMutSlice<Element = MaybeUninit<T>>> Drop for Queue<T, S> {
         fn inner_drop<T, S: AsMutSlice<Element = MaybeUninit<T>>>(
             this: Pin<&mut Queue<T, S>>,
         ) {
-            let h = this.head.get();
             let mut t = this.tail.get();
+            let n = this.pending.get();
             let s = this.storage_mut();
-            while t != h {
+            for _ in 0..n {
                 unsafe {
-                    core::ptr::drop_in_place(s[t % s.len()].as_mut_ptr());
+                    core::ptr::drop_in_place(s[t].as_mut_ptr());
                 }
-                t = t.wrapping_add(1);
+                t = (t + 1) % s.len();
             }
         }
     }
