@@ -116,16 +116,28 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
     /// resolves, cancelling/dropping the future will also drop `value`.
     ///
     /// When the future resolves, `value` is owned by the queue.
-    pub async fn push(self: Pin<&Self>, value: T) {
-        if self.is_full() {
-            let waker = core::future::get_task_context(|cx| cx.waker().clone());
-            create_node!(node, (), waker);
-            while self.is_full() {
-                self.push_waiters().insert_and_wait(node.as_mut()).await;
+    pub async fn push(self: Pin<&Self>, mut value: T) {
+        loop {
+            match self.try_push(value) {
+                Ok(_) => return,
+                Err(revalue) => {
+                    value = revalue;
+                    let waker =
+                        core::future::get_task_context(|cx| cx.waker().clone());
+                    create_node!(node, (), waker);
+                    self.push_waiters().insert_and_wait(node.as_mut()).await;
+                }
             }
         }
+    }
 
-        debug_assert!(!self.is_full());
+    /// Insert `value` at the head of the queue if space is currently available.
+    ///
+    /// This is the non-blocking equivalent of `push`.
+    pub fn try_push(self: Pin<&Self>, value: T) -> Result<(), T> {
+        if self.is_full() {
+            return Err(value);
+        }
 
         // not full
         let h = self.head.get();
@@ -149,6 +161,8 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         if h == self.tail.get() {
             self.pop_waiters().wake_one();
         }
+
+        Ok(())
     }
 
     /// Returns a future that will resolve to a value removed from the tail of
