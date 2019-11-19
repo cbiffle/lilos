@@ -308,9 +308,10 @@ macro_rules! create_queue {
 /// queue and produce a reference (e.g. in `main`). This property is tracked
 /// using an atomic flag; if code tries to initialize the queue a second time,
 /// it panics.
+#[macro_export]
 macro_rules! create_static_queue {
     ([$t:ty; $sz:expr]) => {{
-        use core::mem::MaybeUninit;
+        use core::mem::{ManuallyDrop, MaybeUninit};
         use core::sync::atomic::{AtomicBool, Ordering};
         use $crate::queue::Queue;
 
