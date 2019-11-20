@@ -88,12 +88,11 @@ impl<T> Mutex<T> {
 #[macro_export]
 macro_rules! create_mutex {
     ($var:ident, $contents:expr) => {
+        let $var = $contents;
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
         let $var = unsafe {
-            core::mem::ManuallyDrop::into_inner($crate::mutex::Mutex::new(
-                $contents,
-            ))
+            core::mem::ManuallyDrop::into_inner($crate::mutex::Mutex::new($var))
         };
         pin_utils::pin_mut!($var);
         // Safety: the value has not been operated on since `new` except for
@@ -101,6 +100,8 @@ macro_rules! create_mutex {
         unsafe {
             $crate::mutex::Mutex::finish_init($var.as_mut());
         }
+        // Drop mutability.
+        let $var = $var.as_ref();
     };
 }
 
