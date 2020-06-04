@@ -13,6 +13,7 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::list::List;
+use crate::exec::noop_waker;
 
 /// Holds a `T` that can be accessed from multiple concurrent futures/tasks, but
 /// only one at a time.
@@ -68,8 +69,7 @@ impl<T> Mutex<T> {
         }
 
         // We'd like to put our name on the wait list, please.
-        let waker = core::future::get_task_context(|cx| cx.waker().clone());
-        create_node!(wait_node, (), waker);
+        create_node!(wait_node, (), noop_waker());
 
         self.waiters().insert_and_wait(wait_node.as_mut()).await;
 

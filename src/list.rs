@@ -124,6 +124,13 @@ impl<T> Node<T> {
         // node would violate our invariants.
         self.prev.get() == NonNull::from(self)
     }
+
+    /// Replaces the node's waker in case its context has changed.
+    pub fn update_waker(self: Pin<&mut Self>, waker: Waker) {
+        unsafe {
+            Pin::get_unchecked_mut(self).waker = waker;
+        }
+    }
 }
 
 /// A `Node` will detach itself from any list on drop.
@@ -242,10 +249,11 @@ impl<T: PartialOrd> List<T> {
         mut node: Pin<&'a mut Node<T>>,
     ) -> impl Future<Output = ()> + 'a {
         self.insert(node.as_mut());
-        futures::future::poll_fn(move |_| {
+        futures::future::poll_fn(move |ctx| {
             if node.is_detached() {
                 Poll::Ready(())
             } else {
+                node.as_mut().update_waker(ctx.waker().clone());
                 Poll::Pending
             }
         })

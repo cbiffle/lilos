@@ -29,6 +29,7 @@ use core::ptr::NonNull;
 use as_slice::AsMutSlice;
 
 use crate::list::List;
+use crate::exec::noop_waker;
 
 /// A queue of `T`s that can be sent between tasks, stored as `S`, which may be
 /// an array or a slice.
@@ -122,9 +123,7 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
                 Ok(_) => return,
                 Err(revalue) => {
                     value = revalue;
-                    let waker =
-                        core::future::get_task_context(|cx| cx.waker().clone());
-                    create_node!(node, (), waker);
+                    create_node!(node, (), noop_waker());
                     self.push_waiters().insert_and_wait(node.as_mut()).await;
                 }
             }
@@ -176,8 +175,7 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
     /// of the queue to return it.
     pub async fn pop(self: Pin<&Self>) -> T {
         if self.is_empty() {
-            let waker = core::future::get_task_context(|cx| cx.waker().clone());
-            create_node!(node, (), waker);
+            create_node!(node, (), noop_waker());
             while self.is_empty() {
                 self.pop_waiters().insert_and_wait(node.as_mut()).await;
             }

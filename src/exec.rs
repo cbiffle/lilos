@@ -1,6 +1,6 @@
 //! Executor / task support.
 
-use core::future::{get_task_context, set_task_context, Future};
+use core::future::Future;
 use core::mem;
 use core::pin::Pin;
 use core::ptr::NonNull;
@@ -31,6 +31,20 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
     // drop
     |_| (),
 );
+
+/// Used to construct wakers do nothing, as a placeholder.
+static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
+    |x| RawWaker::new(x, &NOOP_VTABLE), // clone
+    |_| (), // wake
+    |_| (), // wake_by_ref
+    |_| (),  // drop
+);
+
+pub fn noop_waker() -> Waker {
+    unsafe {
+        Waker::from_raw(RawWaker::new(core::ptr::null(), &NOOP_VTABLE))
+    }
+}
 
 /// Produces a `Waker` that will wake *at least* task `index` on invocation.
 ///
@@ -85,7 +99,7 @@ fn poll_task<T>(
 ) -> Poll<T> {
     let waker = waker_for_task(index);
     let mut cx = Context::from_waker(&waker);
-    set_task_context(&mut cx, || get_task_context(|cx| future.poll(cx)))
+    future.poll(&mut cx)
 }
 
 /// Runs the given futures forever, sleeping when possible. Each future acts as
@@ -283,8 +297,7 @@ pub async fn sleep_until(deadline: Ticks) {
         return;
     }
 
-    let waker = get_task_context(|cx| cx.waker().clone());
-    crate::create_node!(node, deadline, waker);
+    crate::create_node!(node, deadline, noop_waker());
 
     // Insert our node into the pending timer list. If we get cancelled, the
     // node will detach itself as it's being dropped.
