@@ -28,8 +28,8 @@ use core::ptr::NonNull;
 
 use as_slice::AsMutSlice;
 
-use crate::list::List;
 use crate::exec::noop_waker;
+use crate::list::List;
 
 /// A queue of `T`s that can be sent between tasks, stored as `S`, which may be
 /// an array or a slice.

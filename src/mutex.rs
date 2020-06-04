@@ -12,8 +12,8 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::list::List;
 use crate::exec::noop_waker;
+use crate::list::List;
 
 /// Holds a `T` that can be accessed from multiple concurrent futures/tasks, but
 /// only one at a time.

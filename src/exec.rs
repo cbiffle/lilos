@@ -35,15 +35,13 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
 /// Used to construct wakers do nothing, as a placeholder.
 static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
     |x| RawWaker::new(x, &NOOP_VTABLE), // clone
-    |_| (), // wake
-    |_| (), // wake_by_ref
-    |_| (),  // drop
+    |_| (),                             // wake
+    |_| (),                             // wake_by_ref
+    |_| (),                             // drop
 );
 
 pub fn noop_waker() -> Waker {
-    unsafe {
-        Waker::from_raw(RawWaker::new(core::ptr::null(), &NOOP_VTABLE))
-    }
+    unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &NOOP_VTABLE)) }
 }
 
 /// Produces a `Waker` that will wake *at least* task `index` on invocation.
