@@ -1,5 +1,100 @@
 //! Doubly-linked intrusive lists for scheduling and waking.
 //!
+//! A [`List<T>`][List] keeps track of nodes (of type [`Node<T>`][Node]) that
+//! each contain some value `T`. The list is kept in *sorted* order by comparing
+//! the `T`s:
+//!
+//! - [`List::insert`] traverses the list to insert the `Node` in its proper
+//!   place.
+//! - [`List::wake_less_than`] starts at one end and removes every `Node` with a
+//!   value less than a threshold.
+//!
+//! The sort order is used to order things by timestamps.
+//!
+//! If you just want to keep things in a list, and don't care about order or
+//! need to associate a timestamp, using `()` for `T` disables the sorting and
+//! causes the list and node to become smaller.
+//!
+//! # Pinning
+//!
+//! Because `List` and `Node` create circular, self-referential data structures,
+//! all operations require that they be
+//! [pinned](https://doc.rust-lang.org/core/pin/). Because we don't use the
+//! heap, we provide ways to create and use pinned data structures on the stack.
+//! This is, unfortunately, kind of involved -- but the [`create_node!`] and
+//! [`create_list!`] convenience macros help.
+//!
+//! Here is an example of creating a `Node`, since that's what user code creates
+//! most often; see the sources for [`mutex`](crate::mutex) for a real-world
+//! example.
+//!
+//! ```ignore
+//! # fn foo() {
+//! // This creates a local variable called "my_node"
+//! os::create_node!(my_node, (), os::exec::noop_waker());
+//!
+//! // Join a wait list
+//! wait_list.insert_and_wait(my_node.as_mut()).await;
+//!
+//! // All done, my_node can be dropped
+//! # }
+//! ```
+//!
+//! Creating a list or node is a three-step process. We'll use `Node` as a
+//! running example here, but the same applies to `List`.
+//!
+//! 1. Create a partially-initialized version using [`Node::new`] and extract it
+//!    from the `ManuallyDrop` container. This is unsafe, because the object
+//!    you're now holding will dereference bogus pointers if dropped. This makes
+//!    it very important to proceed to the next two steps *without doing
+//!    anything else*, particularly anything that could panic.
+//!
+//! 2. Put the `Node` in its final resting place (which may be a local, or might
+//!    be a field of a struct, etc.) and pin it. The
+//!    [`pin_mut!`](https://docs.rs/pin-utils/0.1/pin_utils/macro.pin_mut.html)
+//!    macro makes doing this on the stack easier.
+//!
+//! 3. Finish setting it up by calling [`Node::finish_init`].
+//!
+//! While each of these steps is unsafe, if you do them in sequence without
+//! panicking, the result can be used safely -- and so the `create_node!` and
+//! `create_list!` macros themselves are safe.
+//!
+//! (These operations must be macros, not functions, because we can't return an
+//! object by-value once it's pinned.)
+//!
+//! So, with that in mind, the fully-manual version of the example above reads
+//! as follows:
+//!
+//! ```ignore
+//! # fn foo() {
+//! // Create a partially initialized node.
+//! //
+//! // Safety: this is safe as long as we fulfill the rest of the conditions
+//! // required by Node::new before doing anything that could result in dropping
+//! // the node, including `panic!` or `await`.
+//! let my_node = unsafe {
+//!     core::mem::ManuallyDrop::into_inner(
+//!         os::list::Node::new((), os::exec::noop_waker())
+//!     )
+//! };
+//! // Shadow the local binding with a pinned version.
+//! pin_utils::pin_mut!(my_node);
+//! // Finish initialization.
+//! //
+//! // Safety: this discharges the rest of the obligations laid out by
+//! // Node::new.
+//! unsafe {
+//!     os::list::Node::finish_init(my_node.as_mut());
+//! }
+//!
+//! // Join a wait list
+//! wait_list.insert_and_wait(my_node.as_mut()).await;
+//!
+//! // All done, my_node can be dropped
+//! # }
+//! ```
+//!
 //! # How to use for sleep/wake
 //!
 //! The basics are straightforward: given a `List` tracking waiters on a
@@ -13,12 +108,14 @@
 //! As with any blocking future, the task must be prepared to tolerate spurious
 //! wakeups. Because many futures are bundled into a single task, but wakeups
 //! happen at *task* level, the fact that your *task* has awoken does *not*
-//! imply that your event has happened. Check.
+//! imply that your event has happened. You must check.
 //!
-//! The easiest way to check is to inspect the `Node` and see if it's still in a
-//! `List` (using `is_detached`). At the moment, this check is sufficient; the
-//! other condition that could cause a `Node` to leave a `List` is if the `List`
-//! were dropped, but we don't currently allow full lists to be dropped.
+//! When using a `List`, the easiest way to check is to inspect the `Node` and
+//! see if it's still a member of `List` (using `is_detached`) -- because the
+//! `List` will wake the task associated with a `Node` when the `Node` is
+//! removed. At the moment, this check is sufficient; the other condition that
+//! could cause a `Node` to leave a `List` is if the `List` were dropped, but we
+//! don't currently allow full lists to be dropped.
 //!
 //! This insert-and-wait-for-detach pattern is common enough that it's wrapped
 //! up in the method `List::insert_and_wait`.
@@ -147,11 +244,21 @@ impl<T> Drop for Node<T> {
 
 /// A list of `Node`s.
 ///
-/// The list references but does not own the nodes.
+/// The list *references*, but does not *own*, the nodes. The creator of each
+/// node keeps ownership of it, and if they drop the node, it leaves the list.
 ///
 /// Because lists contain self-referential pointers, creating one is somewhat
-/// involved. Use the `create_list` macro when possible, or see `List::new` for
-/// instructions.
+/// involved. Use the [`create_list!`] macro when possible, or see `List::new`
+/// for instructions.
+///
+/// # Drop
+///
+/// You must remove/wake all the nodes in a list before dropping the list.
+/// Dropping a list without emptying it is treated as a programming error, and
+/// will panic.
+///
+/// This isn't the only way we could do things, but it is the safest. If you're
+/// curious about the details, see the source code for `Drop`.
 pub struct List<T> {
     root: Node<T>,
     _marker: NotSendMarker,
@@ -170,8 +277,12 @@ impl<T: Default> List<T> {
     ///
     /// For this to be safe, you must do only one of two things with the result:
     ///
-    /// 1. Drop it immediately.
+    /// 1. Drop it immediately (i.e. without removing it from `ManuallyDrop`).
     /// 2. Unwrap it, pin it, and then call `List::finish_init`.
+    ///
+    /// You must *not* do anything that might `panic!` or `await` between these
+    /// steps! To make this process easier, consider using the [`create_list!`]
+    /// macro where possible.
     pub unsafe fn new() -> ManuallyDrop<List<T>> {
         ManuallyDrop::new(List {
             root: ManuallyDrop::into_inner(Node::new(
@@ -209,7 +320,7 @@ impl<T: PartialOrd> List<T> {
     ///
     /// # Panics
     ///
-    /// If `node` is not detached.
+    /// If `node` is not detached (if it's in another list).
     pub fn insert(self: Pin<&Self>, node: Pin<&mut Node<T>>) {
         let nnn = NonNull::from(&*node);
         // Node should not already belong to a list.
@@ -242,12 +353,19 @@ impl<T: PartialOrd> List<T> {
         cref.prev.set(nnn);
     }
 
-    /// Variant of `insert` that can be used to wait for the `Node` to be kicked
-    /// back out of the list.
+    /// Variant of [`List::insert`] that can be used to wait for the `Node` to
+    /// be kicked back out of the list.
+    ///
+    /// When the returned future completes, `node` has been detached again.
+    ///
+    /// # Panics
+    ///
+    /// If `node` is not detached (if it's in another list) when this is called.
     pub fn insert_and_wait<'a>(
         self: Pin<&Self>,
         mut node: Pin<&'a mut Node<T>>,
     ) -> impl Future<Output = ()> + 'a {
+        // TODO improve cancellation semantics?
         self.insert(node.as_mut());
         futures::future::poll_fn(move |ctx| {
             if node.is_detached() {
@@ -307,6 +425,8 @@ impl List<()> {
     }
 }
 
+/// Dropping a non-empty list currently indicates a programming error in the OS,
+/// and so it will `panic!`.
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
         // We assume we are pinned.
@@ -327,6 +447,9 @@ impl<T> Drop for List<T> {
 }
 
 /// Used to construct wakers that will crash the program if used.
+///
+/// We use this for the placeholder Waker installed in List, because it should
+/// never be awoken -- that would indicate list corruption.
 static EXPLODING_VTABLE: RawWakerVTable = {
     // Reduce number of panic sites
     #[inline(never)]
@@ -361,6 +484,9 @@ fn exploding_waker() -> Waker {
 }
 
 /// Creates a pinned list on the stack.
+///
+/// `create_list!(ident)` is equivalent to `let ident = ...;` -- it creates a
+/// local variable called `ident`, holding an initialized list.
 #[macro_export]
 macro_rules! create_list {
     ($var:ident) => {
@@ -379,6 +505,13 @@ macro_rules! create_list {
 }
 
 /// Creates a pinned node on the stack.
+///
+/// `create_node!(ident, val, waker)` is equivalent to `let ident = ...;` -- it
+/// creates a local variable called `ident`, holding an initialized node. The
+/// node's contents are set to `val`, and its waker is `waker`.
+///
+/// (Note: `waker` should almost always be
+/// [`exec::noop_waker()`][exec::noop_waker].)
 #[macro_export]
 macro_rules! create_node {
     ($var:ident, $dl:expr, $w: expr) => {

@@ -1,4 +1,14 @@
 //! Timekeeping.
+//!
+//! The OS uses the Cortex-M SysTick Timer to maintain a count of ticks since
+//! boot. You can get the value of this counter using
+//! [`Ticks::now()`][Ticks::now].
+//!
+//! Ticks are currently fixed at 1ms.
+//!
+//! Application startup code needs to call [`initialize_sys_tick`] to inform the
+//! OS of the system clock speed. Otherwise, no timing-related calls will behave
+//! correctly.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
@@ -74,6 +84,7 @@ impl core::ops::AddAssign<Duration> for Ticks {
 
 /// System tick ISR. Advances the tick counter. This doesn't wake any tasks; see
 /// code in `exec` for that.
+#[doc(hidden)]
 #[cortex_m_rt::exception]
 fn SysTick() {
     if TICK.fetch_add(1, Ordering::Release) == core::u32::MAX {

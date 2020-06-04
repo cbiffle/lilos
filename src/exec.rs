@@ -1,4 +1,99 @@
-//! Executor / task support.
+//! A system for polling an array of tasks forever, plus `Notify` and other
+//! scheduling tools.
+//!
+//! # Scheduler entry point
+//!
+//! The mechanism for "starting the OS" is [`run_tasks`].
+//!
+//! # Time
+//!
+//! The executor uses the timekeeping provided by the [`time`][crate::time]
+//! module to enable tasks to be woken at particular times. [`sleep_until`]
+//! produces a future that resolves at a particular time, while [`sleep_for`]
+//! expresses the time relative to the current time.
+//!
+//! As their names imply, these functions can be used to delay the current task
+//! -- but they can also be used to impose a timeout on any async operation, by
+//! using [`select!`](https://docs.rs/futures/0.3/futures/macro.select.html).
+//!
+//! For the common case of needing to do an operation periodically, consider
+//! [`every_until`], which tries to minimize jitter and drift.
+//!
+//! # Interrupts, wait, and notify
+//!
+//! So, you've given the OS an array of tasks that need to each be polled
+//! forever. The OS could simply poll every task in a big loop (a pattern known
+//! in embedded development as a "superloop"), but this has some problems:
+//!
+//! 1. By constantly checking whether each task can make progress, we keep the
+//!    CPU running full-tilt, burning power needlessly.
+//!
+//! 2. Because any given task may have to wait for *every other task* to be
+//!    polled before it gets control, the minimum response latency to events is
+//!    increased, possibly by a lot.
+//!
+//! We can do better.
+//!
+//! There are, in practice, two reasons why a task might yield.
+//!
+//! 1. Because it wants to leave room for other tasks to execute during a
+//!    long-running operation. In this case, we actually *do* want to come right
+//!    back and poll the task. (To do this, use [`yield_cpu`].)
+//!
+//! 2. Because it is waiting for an event -- a particular timer tick, an
+//!    interrupt from a peripheral, a signal from another task, etc. In this
+//!    case, we don't need to poll the task again *until that event occurs.*
+//!
+//! The OS tracks a *wake bit* per task. When this bit is set, it means that
+//! the task should be polled. Each time through the outer poll loop, the OS
+//! will determine which tasks have their wake bits set, *clear the wake bits*,
+//! and then poll the tasks.
+//!
+//! (Tasks might be polled even when their bit isn't set -- that's technically a
+//! waste of energy, but not incorrect for a Rust `Future`. Giving the OS some
+//! slack on this dramatically simplifies the implementation. However, the OS
+//! tries to poll the smallest feasible set of tasks each time it polls.)
+//!
+//! This is embodied by the [`Notify`] type, which provides a kind of event
+//! broadcast. Tasks can subscribe to a `Notify`, and when it is signaled, all
+//! subscribed tasks get their wake bits set.
+//!
+//! `Notify` is very low level -- the more pleasant abstractions of
+//! [`queue`][crate::queue], [`mutex`][crate::mutex], and
+//! [`sleep_until`]/[`sleep_for`] are built on top of it. However, `Notify` is
+//! the only OS facility that's safe to use from interrupt service routines,
+//! making it an ideal way to wake tasks when hardware events occur.
+//!
+//! Here is a basic example of using `Notify`; see the `queueq and `mutex`
+//! modules for details on the higher-level options.
+//!
+//! ```ignore
+//! /// Global notification signal for ethernet interrupts.
+//! static ETH_NOTIFY: os::exec::Notify = os::exec::Notify::new();
+//!
+//! #[interrupt]
+//! fn ETH() {
+//!     // omitted: code to clear interrupt condition so it doesn't just recur
+//!
+//!     // Signal any tasks waiting for this interrupt.
+//!     ETH_NOTIFY.notify();
+//! }
+//!
+//! async fn ethernet_driver() {
+//!     // ... stuff ...
+//!
+//!     // Wait for the interrupt we care about. Check the status register to
+//!     // distinguish interrupt conditions and to handle spurious wakeups.
+//!     ETH_NOTIFY.wait_until(|| dma.dmasr.read().nis());
+//!
+//!     // ... continue ...
+//! }
+//! ```
+//!
+//! # Building your own task notification mechanism
+//!
+//! If `Notify` doesn't meet your needs, you can use the [`wake_task_by_index`]
+//! and [`wake_tasks_by_mask`] functions to explicitly wake one or more tasks.
 
 use core::future::Future;
 use core::mem;
@@ -40,6 +135,8 @@ static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
     |_| (),                             // drop
 );
 
+/// Returns a [`Waker`] that doesn't do anything and costs nothing to `clone`.
+/// This is useful as a placeholder before a *real* `Waker` becomes available.
 pub fn noop_waker() -> Waker {
     unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &NOOP_VTABLE)) }
 }
@@ -360,7 +457,7 @@ impl Future for Yield {
 /// time.
 ///
 /// This means that, if your requirement is to ensure that some amount of time
-/// elapses between operations, this is *not* the right function -- you should
+/// elapses *between* operations, this is *not* the right function -- you should
 /// just `loop` and call `sleep_for` instead.
 pub async fn every_until<F>(period: Duration, mut action: impl FnMut() -> F)
 where

@@ -9,16 +9,28 @@
 //! - `Queue<T, &'a mut [MaybeUninit<T>]>`: the queue borrows its storage with
 //!   lifetime `'a`.
 //!
-//! Notice that queue storage is `MaybeUninit`. The memory that backs the queue
+//! Notice that queue storage is [`MaybeUninit`]. The memory that backs the queue
 //! is assumed to be uninitialized by default. The queue will take care of
 //! initializing the portions it's using and ensuring that e.g. `drop` gets run
-//! at the right times. If you loan memory to a queue and then drop it, the
-//! memory is *again uninitialized,* because the queue will have dropped any
+//! at the right times. If you loan memory to a queue and then drop the queue,
+//! the memory is *again uninitialized,* because the queue will have dropped any
 //! contents in-place.
 //!
 //! If you'd prefer not to worry about the lifetime of the queue's storage, we
-//! provide macros for the two common cases: `create_queue` for queues that live
-//! on the stack, and `create_static_queue` for queues at static scope.
+//! provide macros for the two common cases: [`create_queue!`] for queues that
+//! live on the stack, and [`create_static_queue!`] for queues at static scope.
+//!
+//! # Blocking push and pop
+//!
+//! `Queue::push` and `Queue::pop` are blocking operations. This means they
+//! return a future that you must `await` for anything to happen to the queue.
+//! If the queue can't satisfy the operation immediately, your task will be
+//! placed in a wait list and processed in order of appearance.
+//!
+//! This means that the queue's *capacity* reflects only the number of elements
+//! that can be waiting in the queue while all tasks are doing other work -- the
+//! queue wait list effectively extends the queue's depth while tasks are
+//! blocked on it.
 
 use core::cell::Cell;
 
@@ -31,8 +43,9 @@ use as_slice::AsMutSlice;
 use crate::exec::noop_waker;
 use crate::list::List;
 
-/// A queue of `T`s that can be sent between tasks, stored as `S`, which may be
-/// an array or a slice.
+/// A queue of items that can be sent between tasks.
+///
+/// See the [module documentation](./index.html) for more details.
 pub struct Queue<T, S: AsMutSlice<Element = MaybeUninit<T>>> {
     /// Copy of `S`, which mostly matters if `S` is an array.
     storage: S,
@@ -93,18 +106,25 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         List::finish_init(self.as_mut().pop_waiters_mut());
     }
 
+    /// Returns the maximum number of elements of type `T` that can be stored in
+    /// the queue.
     pub fn capacity(&self) -> usize {
         self.storage.as_slice().len()
     }
 
+    /// Checks whether the queue is full and can't accept any more pushes at
+    /// this time.
     pub fn is_full(&self) -> bool {
         self.pending.get() == self.capacity()
     }
 
+    /// Returns the number of elements currently waiting in the queue.
     pub fn len(&self) -> usize {
         self.pending.get()
     }
 
+    /// Checks whether the queue is empty and can't produce any elements at this
+    /// time.
     pub fn is_empty(&self) -> bool {
         self.pending.get() == 0
     }

@@ -1,5 +1,13 @@
 //! Fair mutex that must be pinned.
 //!
+//! This implements a mutex, or lock, guarding a value of type `T`. Creating a
+//! `Mutex` by hand is somewhat involved (see [`Mutex::new`] for details), so
+//! there's a convenience macro, [`create_mutex!`].
+//!
+//! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
+//!
+//! # Implementation details
+//!
 //! This implementation uses a wait-list to track all processes that are waiting
 //! to unlock the mutex. This makes unlocking more expensive, but means that the
 //! unlock operation is *fair*, preventing starvation of contending tasks.
@@ -85,6 +93,11 @@ impl<T> Mutex<T> {
     }
 }
 
+/// Convenience macro for creating a pinned mutex on the stack.
+///
+/// This declares a local variable `ident` of type `Pin<&mut Mutex<T>>`, where
+/// `T` is the type of `expr`. The contents of the mutex are initialized to the
+/// value of `expr`.
 #[macro_export]
 macro_rules! create_mutex {
     ($var:ident, $contents:expr) => {
