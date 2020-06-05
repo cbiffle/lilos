@@ -18,9 +18,16 @@ fn main() -> ! {
     // Enable power to GPIOD.
     p.RCC.ahb1enr.modify(|_, w| w.gpioden().enabled());
     // Set pins to outputs.
-    p.GPIOD
-        .moder
-        .modify(|_, w| w.moder12().output().moder13().output());
+    p.GPIOD.moder.modify(|_, w| {
+        w.moder12()
+            .output()
+            .moder13()
+            .output()
+            .moder14()
+            .output()
+            .moder15()
+            .output()
+    });
 
     // Allocate some tasks, each with different LED mask and period. Note that
     // we're able to have each task *borrow* a reference to GPIOD, which is not
@@ -29,14 +36,14 @@ fn main() -> ! {
     pin_mut!(fut1);
     let fut2 = blinky(1 << 13, 300, &p.GPIOD);
     pin_mut!(fut2);
-    let fut3 = blinky(1 << 13, 700, &p.GPIOD);
+    let fut3 = blinky(1 << 14, 700, &p.GPIOD);
     pin_mut!(fut3);
-    let fut4 = blinky(1 << 13, 100, &p.GPIOD);
+    let fut4 = blinky(1 << 15, 100, &p.GPIOD);
     pin_mut!(fut4);
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.
-    lilos::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
+    lilos::time::initialize_sys_tick(&mut cp.SYST, 16_000_000);
 
     // Run them in parallel. The final parameter specifies which tasks to poll
     // on the first iteration as a bitmask, so `!0` means "all."
