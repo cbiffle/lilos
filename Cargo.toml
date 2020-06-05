@@ -9,7 +9,7 @@ cortex-m = "0.6"
 cortex-m-rt = "0.6.10"
 futures = {version = "0.3", default-features = false}
 pin-utils = "0.1.0-alpha.4"
-as-slice = "0.2.0"
+as-slice = "0.1.2"
 
 # Mostly for examples
 [dev-dependencies]
