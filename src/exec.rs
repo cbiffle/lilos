@@ -216,6 +216,21 @@ pub fn run_tasks(
     futures: &mut [Pin<&mut dyn Future<Output = !>>],
     initial_mask: usize,
 ) -> ! {
+    run_tasks_with_idle(futures, initial_mask, cortex_m::asm::wfi)
+}
+
+/// Extended version of `run_tasks` that replaces the default idle behavior
+/// (sleeping until the next interrupt) with code of your choosing.
+///
+/// If you would like the processor to sleep when idle, you will need to call
+/// WFI yourself from within the implementation of `idle_hook`.
+///
+/// See [`run_tasks`] for more details.
+pub fn run_tasks_with_idle(
+    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    initial_mask: usize,
+    mut idle_hook: impl FnMut(),
+) -> ! {
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
 
     create_list!(timer_list);
@@ -240,12 +255,16 @@ pub fn run_tasks(
             // If none of the futures woke each other, we're relying on an
             // interrupt to set bits -- so we can sleep waiting for it.
             if WAKE_BITS.load(Ordering::SeqCst) == 0 {
-                cortex_m::asm::wfi();
+                idle_hook();
             }
         });
         // Now interrupts are enabled for a brief period before diving back in.
         // Note that we allow interrupt-wake even when some wake bits are set;
         // this reduces interrupt event latency.
+
+        // Ensure that any pending exceptions have time to execute before we
+        // loop and disable interrupts again.
+        cortex_m::asm::isb();
     })
 }
 
