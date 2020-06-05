@@ -10,8 +10,6 @@ extern crate panic_halt;
 
 use core::time::Duration;
 
-use os::exec::PeriodicGate;
-use pin_utils::pin_mut;
 use stm32f4::stm32f407 as device;
 
 #[cortex_m_rt::entry]
@@ -26,16 +24,17 @@ fn main() -> ! {
 
     // Create a task to blink the LED.
     let blink = async {
-        let mut period = PeriodicGate::new(Duration::from_millis(500));
+        const PERIOD: Duration = Duration::from_millis(500);
+        let mut gate = os::exec::PeriodicGate::new(PERIOD);
 
         loop {
             p.GPIOD.bsrr.write(|w| w.bs12().set_bit());
-            period.next_time().await;
+            gate.next_time().await;
             p.GPIOD.bsrr.write(|w| w.br12().set_bit());
-            period.next_time().await;
+            gate.next_time().await;
         }
     };
-    pin_mut!(blink);
+    pin_utils::pin_mut!(blink);
 
     // Set up and run the scheduler.
     os::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
