@@ -241,9 +241,9 @@ checksum = "dba1a27d3efae4351c8051072d619e3ade2820635c3958d826bfea39d59b54c8"
 
 [[package]]
 name = "stm32f4"
-version = "0.8.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec5833f4399bfeca7c33a3797d2cfc4db14e871794cc4796de80d2a44864cc2a"
+checksum = "11460b4de3a84f072e2cf6e76306c64d27f405a0e83bace0a726f555ddf4bf33"
 dependencies = [
  "bare-metal",
  "cortex-m",
