@@ -1,7 +1,14 @@
-# A minimal RTOS
+# `lilos` 2: A minimal RTOS
 
 This is a wee RTOS written to support the `async` style of programming in Rust.
-It's somewhat unusual for an RTOS.
+It's a research project, a playground, and a proof of concept.
+
+([`lilos` 1](https://github.com/cbiffle/lilos1) was a wee RTOS written to
+support multithreaded message-passing programs on AVR.)
+
+# About
+
+`lilos` is somewhat unusual for an RTOS.
 
 This system supports
 
@@ -10,7 +17,9 @@ This system supports
 
 - Arbitrary concurrent tasks, written as sequential programs or state machines.
 
-- Essentially free context switches.
+- Stackless tasks for lower memory consumption.
+
+- Nearly free context switches.
 
 - Medium-fast response to interrupts (~10 microseconds).
 
@@ -18,12 +27,13 @@ This system supports
 
 - Applications written entirely in safe Rust (though `unsafe` can also be used,
   of course).
-b
+
 What makes this system interesting, to me, is what it *doesn't* have:
 conventional threads or preemptive multitasking. Instead, the kernel provides a
 single thread that can be multiplexed between concurrent *futures*. This sort of
 architecture has, in the past, had serious ergonomic consequences: programs
-could not be expressed as straight-line sequential code.
+could not be expressed as straight-line sequential code. (See: FreeRTOS
+coroutines.)
 
 But that was before systems programming languages supported `async`. With
 `async` (sometimes called a "stackless transform" in other languages) we can
@@ -35,8 +45,9 @@ Concrete example: code to blink an LED on the STM32F407's pin D13.
 ```rust
 use core::time::Duration;
 use os::exec::sleep_for;
+use stm32f4xx::stm32f407::GPIOD;
 
-async fn blinky_task(gpiod: GPIOD) -> ! {
+async fn blinky_task(gpiod: &GPIOD) -> ! {
     let period = Duration::from_millis(500);
     loop {
         gpiod.bsrr.write(|w| w.bs13().set_bit()); 
@@ -47,6 +58,8 @@ async fn blinky_task(gpiod: GPIOD) -> ! {
 }
 ```
 
+# Advantages
+
 Compared to a conventional multitasking operating system, this has several
 advantages.
 
@@ -54,3 +67,30 @@ advantages.
    single stack, and the `async` transform means that each future's storage can
    be allocated up-front. The only dynamic portion of the stack is that used to
    evaluate each step in each process.
+
+# Disadvantages
+
+I'm still making up my mind about `async`. On the one hand, the stackless
+transform is really powerful, and it makes a lot of patterns feasible that
+weren't before.
+
+On the other hand,
+
+- The error messages are awful.
+- It's really difficult to use in a higher-order style (I've written an
+  `AsyncFnMut` trait but it was *not fun*).
+- Traits can't contain `async fn`.
+- Code size is larger than I'd like.
+
+On the third hand, the Rust features that cause trouble with async aren't even
+available in the last language I was using for this sort of thing (C), so ...
+still a step up.
+
+# Contact and License
+
+If you have questions, or you use it for something, I'd love to find out! Send
+me an email.
+
+I'm experimenting with using the MPL-2 for subversive reasons. I'm open to
+relicensing this code if MPL-2 doesn't work for your organization, we'll just
+need to discuss your labor practices. ;-)

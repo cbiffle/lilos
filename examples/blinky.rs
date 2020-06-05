@@ -5,7 +5,7 @@ extern crate panic_halt;
 
 use core::time::Duration;
 
-use os::exec::sleep_for;
+use lilos::exec::sleep_for;
 use pin_utils::pin_mut;
 use stm32f4::stm32f407 as device;
 
@@ -36,11 +36,11 @@ fn main() -> ! {
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.
-    os::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
+    lilos::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
 
     // Run them in parallel. The final parameter specifies which tasks to poll
     // on the first iteration as a bitmask, so `!0` means "all."
-    os::exec::run_tasks(&mut [fut1, fut2, fut3, fut4], !0)
+    lilos::exec::run_tasks(&mut [fut1, fut2, fut3, fut4], !0)
 }
 
 /// A task that will blink LED(s) attached to GPIOD.

@@ -141,7 +141,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "os"
+name = "lilos"
 version = "0.1.0"
 dependencies = [
  "as-slice",

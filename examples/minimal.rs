@@ -25,7 +25,7 @@ fn main() -> ! {
     // Create a task to blink the LED.
     let blink = async {
         const PERIOD: Duration = Duration::from_millis(500);
-        let mut gate = os::exec::PeriodicGate::new(PERIOD);
+        let mut gate = lilos::exec::PeriodicGate::new(PERIOD);
 
         loop {
             p.GPIOD.bsrr.write(|w| w.bs12().set_bit());
@@ -37,6 +37,6 @@ fn main() -> ! {
     pin_utils::pin_mut!(blink);
 
     // Set up and run the scheduler.
-    os::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
-    os::exec::run_tasks(&mut [blink], !0)
+    lilos::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
+    lilos::exec::run_tasks(&mut [blink], !0)
 }

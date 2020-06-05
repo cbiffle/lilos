@@ -1,8 +1,9 @@
 [package]
-name = "os"
+name = "lilos"
 version = "0.1.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2018"
+license = "MPL-2.0"
 
 [dependencies]
 cortex-m = "0.6.2"
