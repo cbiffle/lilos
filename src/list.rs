@@ -492,12 +492,14 @@ macro_rules! create_list {
     ($var:ident) => {
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
+        #[allow(unused_unsafe)]
         let $var = unsafe {
             core::mem::ManuallyDrop::into_inner($crate::list::List::new())
         };
         pin_utils::pin_mut!($var);
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.
+        #[allow(unused_unsafe)]
         unsafe {
             $crate::list::List::finish_init($var.as_mut());
         }

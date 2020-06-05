@@ -39,5 +39,8 @@ fn main() -> ! {
 
     // Set up and run the scheduler.
     lilos::time::initialize_sys_tick(&mut cp.SYST, 16_000_000);
-    lilos::exec::run_tasks(&mut [blink], !0)
+    lilos::exec::run_tasks(
+        &mut [blink],
+        lilos::exec::ALL_TASKS,
+    )
 }

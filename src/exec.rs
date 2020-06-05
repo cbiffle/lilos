@@ -197,6 +197,56 @@ fn poll_task<T>(
     future.poll(&mut cx)
 }
 
+/// Selects an interrupt control strategy for the scheduler.
+#[derive(Copy, Clone, Debug)]
+pub enum Interrupts {
+    /// Use PRIMASK to completely disable interrupts while task code is running.
+    Masked,
+    /// Use BASEPRI to mask interrupts of the given priority and lower.
+    Filtered(u8),
+}
+
+impl Interrupts {
+    fn scope<R>(self, body: impl FnOnce() -> R) -> R {
+        let r = match self {
+            Interrupts::Masked => {
+                let on = cortex_m::register::primask::read();
+                cortex_m::interrupt::disable();
+
+                let r = body();
+
+                if on == cortex_m::register::primask::Primask::Active {
+                    // Safety: interrupts were just on, so this won't compromise
+                    // memory safety.
+                    unsafe {
+                        cortex_m::interrupt::enable();
+                    }
+                }
+
+                r
+            }
+            Interrupts::Filtered(priority) => {
+                let prev = cortex_m::register::basepri::read();
+                cortex_m::register::basepri_max::write(priority);
+
+                let r = body();
+
+                // Safety: just restoring state
+                unsafe {
+                    cortex_m::register::basepri::write(prev);
+                }
+
+                r
+            }
+        };
+
+        // Make sure newly-enabled interrupt handlers fire.
+        cortex_m::asm::isb();
+
+        r
+    }
+}
+
 /// Runs the given futures forever, sleeping when possible. Each future acts as
 /// a task, in the sense of `core::task`.
 ///
@@ -216,7 +266,10 @@ pub fn run_tasks(
     futures: &mut [Pin<&mut dyn Future<Output = !>>],
     initial_mask: usize,
 ) -> ! {
-    run_tasks_with_idle(futures, initial_mask, cortex_m::asm::wfi)
+    // Safety: we're passing Interrupts::Masked, the always-safe option
+    unsafe {
+        run_tasks_with_preemption_and_idle(futures, initial_mask, Interrupts::Masked, cortex_m::asm::wfi)
+    }
 }
 
 /// Extended version of `run_tasks` that replaces the default idle behavior
@@ -229,6 +282,61 @@ pub fn run_tasks(
 pub fn run_tasks_with_idle(
     futures: &mut [Pin<&mut dyn Future<Output = !>>],
     initial_mask: usize,
+    idle_hook: impl FnMut(),
+) -> ! {
+    // Safety: we're passing Interrupts::Masked, the always-safe option
+    unsafe {
+        run_tasks_with_preemption_and_idle(futures, initial_mask, Interrupts::Masked, idle_hook)
+    }
+}
+
+/// Extended version of `run_tasks` that configures the scheduler with a custom
+/// interrupt policy.
+///
+/// Passing `Interrupts::Masked` here gets the same behavior as `run_tasks`.
+///
+/// Passing `Interrupts::Filtered(p)` causes the scheduler to only disable
+/// interrupts with priority equal to or numerically greater than `p`. This can
+/// be used to ensure that the OS systick ISR (priority 0) can preempt
+/// long-running tasks.
+///
+/// # Safety
+///
+/// This can be used safely as long as ISRs and task code that share data
+/// structures use appropriate critical sections.
+///
+/// In particular, the *only* OS operation ISRs can perform in this case is
+/// `Notify::notify`.
+pub unsafe fn run_tasks_with_preemption(
+    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    initial_mask: usize,
+    interrupts: Interrupts,
+) -> ! {
+    run_tasks_with_preemption_and_idle(futures, initial_mask, interrupts, cortex_m::asm::wfi)
+}
+
+/// Extended version of `run_tasks` that configures the scheduler with a custom
+/// interrupt policy and idle hook.
+///
+/// Passing `Interrupts::Masked` here gets the same behavior as
+/// `run_tasks_with_idle`.
+///
+/// Passing `Interrupts::Filtered(p)` causes the scheduler to only disable
+/// interrupts with priority equal to or numerically greater than `p`. This can
+/// be used to ensure that the OS systick ISR (priority 0) can preempt
+/// long-running tasks.
+///
+/// # Safety
+///
+/// This can be used safely as long as ISRs and task code that share data
+/// structures use appropriate critical sections.
+///
+/// In particular, the *only* OS operation ISRs can perform in this case is
+/// `Notify::notify`.
+pub unsafe fn run_tasks_with_preemption_and_idle(
+    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    initial_mask: usize,
+    interrupts: Interrupts,
     mut idle_hook: impl FnMut(),
 ) -> ! {
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
@@ -236,7 +344,7 @@ pub fn run_tasks_with_idle(
     create_list!(timer_list);
 
     set_timer_list(timer_list, || loop {
-        cortex_m::interrupt::free(|_| {
+        interrupts.scope(|| {
             // Scan for any expired timers.
             with_timer_list(|tl| tl.wake_less_than(Ticks::now()));
 
@@ -257,16 +365,18 @@ pub fn run_tasks_with_idle(
             if WAKE_BITS.load(Ordering::SeqCst) == 0 {
                 idle_hook();
             }
+
         });
+
         // Now interrupts are enabled for a brief period before diving back in.
         // Note that we allow interrupt-wake even when some wake bits are set;
-        // this reduces interrupt event latency.
-
-        // Ensure that any pending exceptions have time to execute before we
-        // loop and disable interrupts again.
-        cortex_m::asm::isb();
+        // this prevents ISR starvation by polling tasks.
     })
 }
+
+/// Constant that can be passed to `run_tasks` and `wake_tasks_by_mask` to mean
+/// "all tasks."
+pub const ALL_TASKS: usize = !0;
 
 /// A lightweight task notification scheme that can safely be used from
 /// interrupt handlers.

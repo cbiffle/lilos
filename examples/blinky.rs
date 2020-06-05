@@ -52,7 +52,10 @@ fn main() -> ! {
 
     // Run them in parallel. The final parameter specifies which tasks to poll
     // on the first iteration as a bitmask, so `!0` means "all."
-    lilos::exec::run_tasks(&mut [fut1, fut2, fut3, fut4], !0)
+    lilos::exec::run_tasks(
+        &mut [fut1, fut2, fut3, fut4],
+        lilos::exec::ALL_TASKS,
+    )
 }
 
 /// A task that will blink LED(s) attached to GPIOD.
