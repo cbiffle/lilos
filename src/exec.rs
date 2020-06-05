@@ -484,7 +484,7 @@ where
 /// let gate = PeriodicGate::new(Duration::from_millis(30));
 /// loop {
 ///     f();
-///     gate.next().await;
+///     gate.next_time().await;
 /// }
 /// ```
 pub struct PeriodicGate {
@@ -493,6 +493,8 @@ pub struct PeriodicGate {
 }
 
 impl PeriodicGate {
+    /// Creates a periodic gate that can be used to release execution every
+    /// `interval`, starting right now.
     pub fn new(interval: Duration) -> Self {
         PeriodicGate {
             interval,
@@ -500,6 +502,7 @@ impl PeriodicGate {
         }
     }
 
+    /// Returns a future that will resolve when it's time to execute again.
     pub async fn next_time(&mut self) {
         sleep_until(self.next).await;
         self.next += self.interval;

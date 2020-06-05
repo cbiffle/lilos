@@ -1,3 +1,8 @@
+//! Slightly more interesting example demonstrating parameterized tasks.
+//!
+//! This blinks four LEDs on the STM32F4DISCOVERY board. Each LED uses the same
+//! task function, but customized with different parameters.
+
 #![no_std]
 #![no_main]
 
@@ -32,11 +37,11 @@ fn main() -> ! {
     // Allocate some tasks, each with different LED mask and period. Note that
     // we're able to have each task *borrow* a reference to GPIOD, which is not
     // `Sync` -- because the tasks are cooperative, it doesn't need to be.
-    let fut1 = blinky(1 << 12, 500, &p.GPIOD);
+    let fut1 = blinky(1 << 12, 800, &p.GPIOD);
     pin_mut!(fut1);
-    let fut2 = blinky(1 << 13, 300, &p.GPIOD);
+    let fut2 = blinky(1 << 13, 400, &p.GPIOD);
     pin_mut!(fut2);
-    let fut3 = blinky(1 << 14, 700, &p.GPIOD);
+    let fut3 = blinky(1 << 14, 200, &p.GPIOD);
     pin_mut!(fut3);
     let fut4 = blinky(1 << 15, 100, &p.GPIOD);
     pin_mut!(fut4);

@@ -1,4 +1,5 @@
-//! Minimal example of using the OS to blink an LED.
+//! Minimal example of using the OS to blink an LED at 1Hz on the
+//! STM32F4DISCOVERY board.
 //!
 //! This starts a single task, which uses the scheduler and timer to
 //! periodically toggle a GPIO pin.
@@ -37,6 +38,6 @@ fn main() -> ! {
     pin_utils::pin_mut!(blink);
 
     // Set up and run the scheduler.
-    lilos::time::initialize_sys_tick(&mut cp.SYST, 8_000_000);
+    lilos::time::initialize_sys_tick(&mut cp.SYST, 16_000_000);
     lilos::exec::run_tasks(&mut [blink], !0)
 }
