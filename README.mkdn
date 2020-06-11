@@ -19,14 +19,13 @@ This system supports
 
 - Stackless tasks for lower memory consumption.
 
-- Nearly free context switches.
+- Medium-fast response to interrupts, with options for trading off simplicity
+  vs. response time.
 
-- Medium-fast response to interrupts (~10 microseconds).
+- Can support fairly complex applications without using dynamic memory *at all.*
 
-- Operation without dynamic memory allocation of any kind.
-
-- Applications written entirely in safe Rust (though `unsafe` can also be used,
-  of course).
+- Applications can be written entirely in safe Rust (though `unsafe` can also be
+  used, of course).
 
 What makes this system interesting, to me, is what it *doesn't* have:
 conventional threads or preemptive multitasking. Instead, the kernel provides a
@@ -67,6 +66,24 @@ advantages.
    single stack, and the `async` transform means that each future's storage can
    be allocated up-front. The only dynamic portion of the stack is that used to
    evaluate each step in each process.
+
+2. You can easily express concurrency patterns that are somewhere between
+   error-prone and downright hard in conventional RTOSes (at least, outside of
+   Ada). Need to call two concurrent functions, loaning them each buffers from
+   your current stack frame, and then run them concurrently until they both
+   return results, before proceeding -- without allocating, using all safe code?
+   Easy.
+
+3. `async` opens up the use of normal-looking straight-line code, with loops and
+   local variables, in situations where a conventional thread isn't an option,
+   such as an interrupt service routine. (I'm not currently making use of this,
+   but it is an option.)
+
+4. A simple executor like `lilos` together with `async` takes cooperative
+   multitasking, which is already easier to reason about than preemption, and
+   adds additional ease. Where can your program yield control? At `await`. This
+   is true even if it calls library functions! They can't `await` on your behalf
+   unless you let them.
 
 # Disadvantages
 
