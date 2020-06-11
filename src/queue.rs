@@ -162,12 +162,17 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         let h = self.head.get();
         debug_assert!(h < self.capacity());
 
-        // Begin committing changes.
-        // Move `value` into queue memory.
+        // Begin committing changes. Not safe to fail past this point.
+
+        // Move `value` into queue memory at slot `h`.
+        let value = MaybeUninit::new(value);
+        // Safety: we're using a raw pointer write to avoid attempting to drop
+        // the (uninitialized) queue memory we're overwriting. TODO: and yet,
+        // MaybeUninit overrides drop, so I bet I could _not do this._
         unsafe {
             core::ptr::write(
                 self.storage_ptr.as_ptr().add(h),
-                MaybeUninit::new(value),
+                value,
             );
         }
         // Advance head modulo capacity.
@@ -207,8 +212,11 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
         let t = self.tail.get();
         debug_assert!(t < self.capacity());
 
-        // Begin committing changes.
+        // Begin committing changes. Not safe to fail past this point.
+
         // Move result out of queue memory.
+        // Safety: the invariants around head and tail ensure that we have
+        // written this memory in the past, despite its type.
         let result = unsafe {
             core::ptr::read(self.storage_ptr.as_ptr().add(t)).assume_init()
         };
@@ -228,26 +236,31 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
 
     /// Internal pin projection.
     fn storage_mut(self: Pin<&mut Self>) -> &mut [MaybeUninit<T>] {
+        // Safety: this is a non-structural component projection.
         unsafe { Pin::get_unchecked_mut(self).storage.as_mut_slice() }
     }
 
     /// Internal pin projection.
     fn push_waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
+        // Safety: this is a structural component projection.
         unsafe { Pin::map_unchecked_mut(self, |s| &mut s.push_waiters) }
     }
 
     /// Internal pin projection.
     fn pop_waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
+        // Safety: this is a structural component projection.
         unsafe { Pin::map_unchecked_mut(self, |s| &mut s.pop_waiters) }
     }
 
     /// Internal pin projection.
     fn push_waiters(self: Pin<&Self>) -> Pin<&List<()>> {
+        // Safety: this is a structural component projection.
         unsafe { Pin::map_unchecked(self, |s| &s.push_waiters) }
     }
 
     /// Internal pin projection.
     fn pop_waiters(self: Pin<&Self>) -> Pin<&List<()>> {
+        // Safety: this is a structural component projection.
         unsafe { Pin::map_unchecked(self, |s| &s.pop_waiters) }
     }
 }
@@ -267,6 +280,9 @@ impl<T, S: AsMutSlice<Element = MaybeUninit<T>>> Drop for Queue<T, S> {
             let n = this.pending.get();
             let s = this.storage_mut();
             for _ in 0..n {
+                // Safety: the head/tail invariants on queue ensure that we've
+                // written `pending` elements. starting at `s[t]`; we're
+                // dropping them to keep from leaking them.
                 unsafe {
                     core::ptr::drop_in_place(s[t].as_mut_ptr());
                 }
@@ -358,6 +374,11 @@ macro_rules! create_static_queue {
         assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
 
         // Initialize the queue enough that we can start using references.
+        // Safety: this is unsafe due to the raw pointer write (which we could
+        // probably avoid, TODO) and use of Queue::new. new is unsafe because it
+        // leaves us with obligations we must fulfill before dropping the queue;
+        // loading it in a static is a pretty good way to prevent it from being
+        // dropped.
         unsafe {
             core::ptr::write(
                 Q.as_mut_ptr(),
@@ -365,8 +386,13 @@ macro_rules! create_static_queue {
             );
         }
 
+        // Safety: we know the queue is not going to get moved, ever, so it's
+        // safe to pin it.
         let mut q: Pin<&'static mut _> =
             unsafe { Pin::new_unchecked(&mut *Q.as_mut_ptr()) };
+
+        // Safety: the last thing we did to the queue was to `new` it, so
+        // `finish_init` is legal and discharges our obligations.
         unsafe {
             Queue::finish_init(q.as_mut());
         }

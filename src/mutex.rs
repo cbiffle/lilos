@@ -85,10 +85,12 @@ impl<T> Mutex<T> {
     }
 
     fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
+        // Safety: this is a structural pin projection.
         unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).waiters) }
     }
 
     fn waiters(self: Pin<&Self>) -> Pin<&List<()>> {
+        // Safety: this is a structural pin projection.
         unsafe { Pin::map_unchecked(self, |s| &s.waiters) }
     }
 }
@@ -133,12 +135,24 @@ impl<'a, T> Drop for MutexGuard<'a, T> {
 impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.mutex.value.get() }
+        let v = &self.mutex.value;
+        // Safety: this is deriving a shared reference to the contents of the
+        // UnsafeCell. Because `self`, a guard, exists, we know the mutex is
+        // locked. Because the caller was able to call a method on `&self`, we
+        // further know that no other `&mut` references to this guard or its
+        // contents exist.
+        unsafe { &*v.get() }
     }
 }
 
 impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.mutex.value.get() }
+        let v = &self.mutex.value;
+        // Safety: this is deriving an exclusive reference to the contents of
+        // the UnsafeCell. Because `self`, a guard, exists, we know the mutex is
+        // locked. Because the caller was able to call a method on `&mut self`,
+        // we further know that no other `&` or `&mut` references to this guard
+        // or its contents exist.
+        unsafe { &mut *v.get() }
     }
 }
