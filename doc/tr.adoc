@@ -1,0 +1,955 @@
+:showtitle:
+:toc: left
+:numbered:
+:icons: font
+:source-language: rust
+:source-highlighter: rouge
+
+= `lilos` 2: initial technical report
+Cliff L. Biffle
+
+This report gives an overview of the design of the `lilos` (second of its name)
+executive, analysis of its effect on system architecture, and thoughts for
+future development.
+
+I'm writing this to try to capture my thoughts, having worked with this system
+for almost a year. There are interesting parts, and there are drawbacks. (This
+report should also help me come back up to speed when I forget things later.)
+
+`lilos` is pronounced LIE-lohz.
+
+== History
+
+`lilos` 1 is an entirely unrelated system -- it was the first real-time
+executive I wrote, targeting AVR microcontrollers. Since nobody uses it for
+anything (myself included) I felt comfortable reassigning its name.
+
+`lilos` 2 -- which I'll just call `lilos` from here on out -- originated in an
+art project in 2019. I needed a real-time embedded operating system, but wanted
+to avoid trying to integrate a Rust application with a C RTOS. There weren't
+(and, I would argue, aren't) a lot of great options in this space -- Tock has
+some core design decisions I disagree with and wants you to write applications
+in C; RTFM is really slick but full of magical macros and _very, very
+opinionated_ about how you structure your application (to a "framework" degree).
+
+Plus, every time I write an embedded driver stack, I wind up having to make an
+uncomfortable choice. Do I...
+
+1. Write driver state machines as explicit state machines, thereby making them
+lighter on resources but significantly harder to read and maintain? (Yes,
+they're harder to maintain; see my <<explicit-state-machines,screed later in
+this document>>.)
+
+2. Or do I write code the straightforward way and burn a thread, with its stack
+memory requirements, _per driver?_
+
+The first offends my sense of taste; the second, my sense of parsimony.
+
+At the same time, `async fn` was heading toward stabilization in Rust, and it
+seemed to offer an alternative path.
+
+And so, I hacked up a bare-metal async executor, targeting the STM32H7 but
+starting out on the more familiar STM32F4. At the time, this involved a horrid
+hack to replace `core` with a customized version; this would have been September
+2019. Things have gotten better since then.
+
+I invested most of my time building applications _on top_ of the `lilos` core --
+the executor itself has stayed pretty simple so far.
+
+== Status
+
+I've used this in some experimental fairly-high-throughput Ethernet-attached
+video art projects, as well as for basic board bringup and driver testing. (It's
+trivial to port to a new Cortex-M, so I keep doing it.)
+
+To my knowledge, nobody else is using this, or is even interested in using it,
+so I'm acting like I can make arbitrary breaking API changes at any time. If you
+would like me to quit doing that, drop me a line.
+
+As of this writing, `lilos` requires a nightly toolchain because the never type,
+`!`, is not stable. I need the never type to be able to de-sugar the noreturn
+async fn when needed; on stable, you can only create a `Future<Output = !>` by
+writing an `async fn`, but then you cannot reference that type name! I need to
+be able to both create them and name their type, or I could not express the
+signature of `lilos::exec::run_tasks`.
+
+The `examples` directory in the repo has some example applications for the
+STM32F4DISCOVERY board, which is a low-cost, widely-available eval board.
+Their resource requirements (on rustc nightly-2020-05-01) are as follows.
+
+.Current example resource requirements
+|===
+|Program |Flash size (Oz) |Flash size (O3) |RAM size
+
+| `minimal`
+| 2452
+| 3004
+| <1kiB
+
+| `blinky`
+| 4088
+| 4652
+| <1kiB
+
+|===
+
+`blinky` is running 4 tasks; `minimal` is running 1. A _lot_ of the base 2kiB
+overhead is the interrupt vector table and bits of the Rust standard library.
+
+== Basic Design
+
+While you could call `lilos` an operating system -- and I do -- `lilos` is
+fundamentally a library that runs Rust ``Future``s (which I'll just call
+"futures") in a single-threaded environment without using a heap. A bare CPU
+core, without any kind of task-switcher, is one such single-threaded
+environment, if you're careful about interrupts.
+
+=== The Executor
+
+The application points `lilos` at an array of futures, and `lilos` proceeds to
+poll them in a loop, forever. These top-level futures are called _tasks._
+Because embedded software cannot "exit," these tasks must never return; in Rust,
+this means the futures produce `!`, the _never-type_, the result of an infinite
+loop or an abort.
+
+TIP: I said "top-level" futures because the tasks are not the only futures in
+the system. Indeed, it is futures all the way down: common operations like
+`sleep_until` are futures, and applications compose them together with new code
+to produce more futures, until enough code snowballs that a task is born.
+Anything that needs to block is a future. For the purposes of this section, I'll
+ignore all that fractal structure and focus on the outermost futures, the tasks.
+
+Implementing that description _literally_ would mostly work:
+
+[source,rust,linenums]
+----
+fn not_the_actual_run_tasks(tasks: &mut [&mut dyn Future<Output = !>]) {
+    loop {
+        for task in tasks {
+            task.poll();
+        }
+    }
+}
+----
+
+And in fact something similar to this _did_ work, for the first few days of
+``lilos``'s existence. But there are two problems.
+
+1. It never idles the CPU, even if everything is blocked. This means we're
+burning power for no good reason.
+
+2. It significantly impacts _response time._ If an event occurs that unblocks
+only one task, there's no reason to check in with _every other task_ on our way
+toward processing it -- at least, not if we can avoid it!
+
+And so `lilos` does the _next simplest_ thing. For each task
+footnote:[Technically, for the first 32 tasks; after that, tasks start sharing
+bits. This means spurious wakeups are possible, but Rust futures need to
+tolerate spurious polling anyway.] we keep a single bit flag, called the _notify
+bit._ Each time through the loop, we poll only those tasks whose notify bits are
+set -- and we clear those bits at the same time. So, setting a task's notify bit
+causes it to get polled exactly once. This gives us more granular task polling,
+improving power consumption and response time.
+
+But we can't write complex applications in terms of one global event per thread.
+We need abstractions. And to discuss those abstractions, I need to start with a
+brief aside into the design of Rust futures.
+
+=== Rust futures, `Waker`, and tasks
+
+TIP: A `Waker` is a magical thing that can be used to wake another task in Rust.
+If you're comfortable with that level of understanding, you can skip this
+section.
+
+The most important (and unusual) aspect of Rust futures is that they are
+_polled_ -- like in the pseudocode above. If you poll a future that is not
+ready, it won't block like in many other languages. Instead, it will return a
+"not ready yet" value, and you'll have to poll again later. But what does
+"later" mean? The answer is a little subtle.
+
+On the one hand, "later" might mean "immediately." It's not _your_
+responsibility to know whether the future you're holding is ready yet -- it is
+the _future's_ responsibility to tell you. So, there's no need to wait for some
+event before polling it again; you can poll it _whenevs._ This implies that a
+future waiting for some event needs to tolerate "spurious polling" before that
+event has occurred.
+
+On the other hand, "later" might mean "very much later," and we don't want to
+spin in a loop polling indiscriminately (as I keep insisting). To deal with
+this, Rust provides two concepts: `task` and `Waker`. I found them rather
+difficult to understand from the abstract API documentation, so I'm going to
+attempt to make them concrete here.
+
+When a future wants to "block" on an external event, what it's really doing is
+refusing to make forward progress until that event occurs. Because of spurious
+polling, it needs to be able to _check_ whether the event has happened. But for
+optimization purposes -- to allow a context switch, to idle the CPU, etc. -- it
+can also record its interest in the event and request to be woken when it
+occurs. It does this using a `Waker`. A `Waker` is a one-trick pony: it can be
+used to wake something up, and that's it. A future can obtain a `Waker` at any
+time, and store it somewhere for use when an event occurs. For instance, if it's
+waiting for a network packet, it might stash its `Waker` into a global variable
+where the network stack can find it.
+
+Okay, but _what does a `Waker` wake?_ A `Waker` wakes a `task`. A `task` is
+_deliberately_ very abstract in Rust, because Rust is trying to support an
+infinite number of different concurrency models -- from threads on the desktop,
+to `lilos`.
+
+This is going to sound circular, but: a Rust `task` is a thing that contains
+some futures and can get woken up by a `Waker`. On the desktop or server, a
+`task` corresponds roughly to a thread -- though the correspondance is not
+perfect, because runtimes like Tokio stuff multiple tasks into each OS thread,
+and can even move tasks between threads.
+
+This circular definition makes sense because a Rust `task` isn't really a
+_thing_ -- there's no `Task` type you can create and move around. It's a concept
+that was made up to be able to explain what a `Waker` does; the implementation
+is specific to the runtime being used. Tokio has one kind of task; `lilos` has
+another.
+
+So, now, we can explain the rest:
+
+- Whenever a future gets polled, it is given access to a `Context`. The
+  `Context` can be used to create a `Waker` if needed.
+
+- The `Waker` returned by that `Context` will, if used, wake up the task _where
+  the future was running during that poll._ 
+
+- In practice, a future obtains a `Waker` immediately before returning
+  `Poll::NotReady`, which signals that it can't complete yet.
+
+- Waking up the task means polling the outermost future, which will poll the
+  future that _it_ needs to complete, which will poll another, which will
+  eventually poll the future that obtained the `Waker` and returned
+  `NotReady`.
+
+- That future will then check the event status. If the event has not yet
+  occurred, the future will obtain a _new_ `Waker`, register it with whatever
+  it's waiting for, and return `NotReady` again.
+
+A `Waker` in `lilos` captures the ID of the task that was being polled when it
+was created. When used, it sets the task's notify bit, causing it to be polled
+on the next pass through the executor loop.
+
+WARNING: There's an important point that is implicit in the Rust futures design
+and hard to infer from the docs: a Rust future is typically fixed to a *single
+task* -- though that task might move between threads in a server runtime, for
+example.  Futures are simply values, though, and you _can_ send one through a
+queue, etc.  to another task -- but if the future is blocked when you do this,
+the recipient *must poll the future* to renew its `Waker`, or it may never
+receive the wakeup event that causes the future to make progress. This detail is
+not specific to `lilos`.
+
+=== Waiting for events with intrusive doubly-linked lists
+
+So, we've learned that a future that wants to block needs to obtain a `Waker`
+and stash it somewhere. But where? I mentioned a global variable as an off-hand
+example in the previous section, but -- besides being a bad design habit -- that
+would render our code non-reentrant. That way lies bugs.
+
+No, we need a way to associate the `Waker` with the event that should wake it,
+and we need a way for many futures to be waiting on the same event. Unlike most
+RTOSes, the number of waiters on an event in `lilos` isn't bounded by the number
+of tasks: each task could branch into hundreds of futures, each waiting on the
+same event. Since I'm unwilling to use dynamic memory management, how can we
+possibly keep track of an unlimited number of ``Waker``s?
+
+It turns out there's a fairly elegant solution to this problem:
+
+1. Each event, which code might wish to block on, owns the root of a linked
+list.
+
+2. Each future that wishes to block allocates a list node and links it into the
+list.
+
+3. The list node has a field for the `Waker`.
+
+Okay, but there's the A-word -- "allocate." Where can we allocate the list node
+when we need it, without wasting space when we don't?
+
+Easy -- we put it _in the future._ Or, in the common case of a future written as
+an `async fn`, we put it in a local variable as though it lived on the stack.
+
+==== Example: `Queue::push`
+
+Let's look at an example. `Queue` is a `lilos` type that provides a queue for
+passing data between concurrent processes. Callers can `push` data into the
+queue. If the queue has room for the data, this succeeds immediately -- but if
+the queue doesn't have enough room, the caller must wait.
+
+The caller waits by creating a list node and adding it to a list, associated
+with the queue, which tracks callers who are trying to `push`. The caller then
+waits for the node to be kicked back out of the list.
+
+1. Whenever a node gets removed from a list, its `Waker` gets called.
+
+2. Whenever code *pops*, freeing room in the queue, the caller checks the push
+wait list and (if any are present) removes the node that has been waiting the
+longest.
+
+Here's the actual implementation of `push` with some commentary.
+
+[source,rust,linenums]
+----
+pub async fn push(self: Pin<&Self>, mut value: T) {  // <1>
+    loop {  // <2>
+        match self.try_push(value) {  // <3>
+            Ok(_) => return,
+            Err(revalue) => {
+                value = revalue;
+                create_node!(node, (), noop_waker());  // <4>
+                self.push_waiters().insert_and_wait(node.as_mut()).await;  // <5>
+            }
+        }
+    }
+}
+----
+<1> `push` is a method on a pinned queue. I'll discuss the need for `Pin` later.
+
+<2> `push` will try to insert data into the queue repeatedly, forever.
+
+<3> `try_push` is a non-blocking version of `push`. If `try_push` finds the
+queue full, it returns an `Err` (containing the data you tried to push).
+
+<4> `create_node!` is a macro that creates a local variable containing a list
+`Node`. I'll discuss why we need a macro in a moment, but for now, think of it
+as `let node = ...`. (`noop_waker()` produces a `Waker` that does nothing; the
+node will capture its real `Waker` in the next step.)
+
+<5> `List::insert_and_wait` puts `node` on the list and returns a future that
+resolves only when `node` is kicked back out of the list by the timer. Which we
+then `await`.
+
+TIP: You might be surprised to see that `Queue::push` has no `timeout` argument.
+This is because timeouts in `lilos` are handled orthogonally. I'll discuss
+this later in this document.
+
+==== Why is this safe?
+
+How in the world can it be safe to link a node _held in a local variable_ into a
+global linked list owned by someone else? Aren't we on the highway to dangling
+pointer town? Shouldn't this require `unsafe`, at least?
+
+It turns out you just need to be very careful and use `Pin`.
+
+A full explanation would take a document _at least_ as long as this one, but the
+summary is:
+
+- A pinned reference like `Pin<&T>` is a reference to a `T` that won't be moved
+  before it's destroyed.
+- That "before it's destroyed" part is important: that means if `T` is a member
+  of a linked list (say), it will get a chance to _remove itself from the list_
+  when dropped.
+- As a result, it's safe to store a pinned reference (or a pointer derived from
+  it) to some data _you don't own,_ as long as you give the data some way of
+  finding the pointer to invalidate it on `Drop`.
+- Doubly-linked lists give every node (and the list itself) the ability to find
+  its neighbors -- that's what the links are for.
+
+And this brings me to the role of the `create` macros. All `lilos` event-related
+entities -- `List`, `Node`, `Mutex`, and `Queue`, at the moment -- provide
+creation macros. You don't _have_ to use the macros, but they're awfully
+convenient. What the macros are doing is this:
+
+[source,rust,linenums]
+----
+create_node!(node, (), noop_waker());
+
+// is equivalent to...
+
+let node = unsafe {
+    ManuallyDrop::into_inner(Node::new((), noop_waker())) // <1>
+};
+let node = unsafe { Pin::new_unchecked(&mut node) }; // <2>
+unsafe { Node::finish_init(node.as_mut()); } // <3>
+----
+<1> `Node::new` creates a _partially initialized_ node with bogus link pointers.
+Such a partially initialized node is not safe to `Drop`, and so it gets returned
+in a `ManuallyDrop` wrapper (to discourage accidental dropping). We unwrap this,
+meaning we're now obligated to finish initializing it before dropping it.
+Importantly, `node` is now at the place in memory where it will live for the
+rest of its life -- we're not going to move or return it again.
+
+<2> We pin `node` by taking an exclusive reference to it and wrapping it in
+`Pin`. Critically, note that we have just _shadowed_ the `node` binding with a
+new one. This makes it impossible for any code to access the original, un-pinned
+`node` except through our `Pin<&mut Node>` we've just made. (In reality, `lilos`
+uses the `pin_utils` crate for this, but I've expanded it here so you don't have
+to go read about `pin_utils`.)
+
+<3> Now that we can't move the original `node`, we can finish initializing,
+filling in link pointers and such. `node` is now safe to use from safe code.
+
+WARNING: I know already that somebody is going to read this, see the `unsafe`
+keyword, and go "Ah-HA! The jig is up! This is actually unsafe!" Look. Basically
+every useful Rust abstraction comes down to `unsafe` code under the hood. The
+important part is to provide an abstraction that assembles `unsafe` pieces into
+a whole that _cannot be used unsafely by safe code._ This macro achieves that so
+you don't have to.
+
+See the `lilos::list` module for details and more explanation.
+
+=== Waiting for interrupts with `Notify`
+
+Hardware interrupts on Cortex-M (our only supported platform at the moment) call
+a function to do stuff. We would like to be able to write driver code that, say,
+provides a future that will complete when the next character arrives from the
+UART. The efficient way to do this is to have the driver code configure the UART
+to generate an interrupt on character reception, and then return, allowing the
+processor to idle; when the interrupt occurs, the driver task should be woken
+up, and the driver should continue.
+
+For this to work, we need a way to tell the interrupt handler _which_ task to
+wake. And because interrupt handlers are global, that information basically has
+to be stored in a global variable.
+
+The list mechanism described in the previous section lets an event-originator,
+like a mutex, maintain a list of an arbitrary number of waiting callers without
+dynamic allocation. We could use this with interrupt handlers, but there are a
+couple of problems:
+
+1. The list might contain several futures from the same task. Calling all of
+their wakers is wasted effort; we only need to wake the task once. Wasting time
+in an interrupt service routine is bad.
+
+2. Practically speaking, putting a `List` in a global variable in Rust is a lot
+of work. (Our `create` macro won't work, and even the _approach it used_ won't
+work.)
+
+`lilos` provides an alternative method that addresses both these concerns,
+called `Notify`. `Notify` provides an event broadcast mechanism that wakes *all*
+interested tasks (not one at a time, as with a `Mutex`) and executes in constant
+time (not `O(n)` like popping all the nodes from a list). It is small,
+fixed-size, and can be stored in a `static` variable with a const initializer.
+This makes it particularly useful for interrupt handlers, though it can be used
+for more than that.
+
+The "fixed-size" part might have caused you to raise an eyebrow: yes, `Notify`
+is claiming to be able to store an _arbitrary_ number of ``Waker``s in a
+fixed-size data structure. How can it do this?
+
+The answer is simple: it cheats.
+
+`Waker` is an opaque type: it's fixed size (two words) but you can't get at its
+fields directly. All you can do is call its methods to `wake` or `clone` or
+`drop`. In the general case, a `Waker` could reference just about anything under
+the hood. You can't combine two ``Waker``s into one.
+
+That's the general case. Because `Notify` is ``lilos``-specific, it can use
+``lilos``-specific secrets. It's defined in the same module (`lilos::exec`) as
+the `lilos` `Waker` implementation, and the two are closely tied.
+
+Under the hood, the two words of a `Waker` in any Rust environment are a vtable
+pointer (specifying the functions that define this ``Waker``'s behavior) and an
+argument word, whose role is defined by the runtime. On Tokio this is a pointer
+to a data structure. On `lilos`, it's a *notify bitmask*. When a `Waker` is used
+on `lilos` it simply ORs its bitmask into the global set of task notify bits.
+
+This means that, given two ``Waker``s on `lilos`, we can combine them by ORing
+together their mask words. And that's exactly what `Notify` does. You can feed
+it an unlimited number of ``Waker``s and it will simply accumulate their mask
+bits. When you finally call `Notify::notify`, it will deposit its accumulated
+bits into the global notify bit set, and clear itself.
+
+TIP: How do we get the mask bits out of an opaque type? Why, with `unsafe`
+trickery, of course. Rust doesn't specify the memory layout for a `Waker` (which
+is why it's opaque), but does specify its size; `lilos::exec` contains logic for
+working out which word of two is the notify bitmask. It's remotely possible this
+will break in a future Rust version if they use something _really strange_ for
+the `Waker` representation.
+
+WARNING: You can also fabricate your own ``Waker``s. `Notify` will accept them
+-- `Waker` is type-erased, so we can't statically prevent you from handing in a
+strange custom `Waker`. If you do this, it will wake some tasks spuriously (or
+maybe even correctly, by accident). This doesn't violate safety, so the system
+doesn't spend instructions trying to stop you from doing this.
+
+=== Timeouts, interruption, and cancellation
+
+`lilos` is intended for real-time systems. In my video applications I have
+something between nanoseconds and milliseconds to finish operations (depending
+on the operation), or the output will glitch and degrade.
+
+If you've worked with RTOSes before, you are probably accustomed to operations
+taking extra arguments imposing a _timeout_. For example, here are the
+signatures of the queue push/pop operations from FreeRTOS (in C):
+
+[source,c,linenums]
+----
+BaseType_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void * pvItemToQueue,
+    TickType_t xTicksToWait
+);
+BaseType_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void * pvBuffer,
+    TickType_t xTicksToWait
+);
+----
+
+Both of those functions have `xTicksToWait` parameters, specifying -- wait for
+it -- the number of ticks to wait.
+
+Whereas in `lilos` we have:
+
+[source,rust,linenums]
+----
+impl Queue<T> {
+    async fn push(self: Pin<&Self>, value: T);
+    async fn pop(self: Pin<&Self>) -> T;
+}
+----
+
+We even looked at the source code for `push` earlier and saw that it contains
+_an infinite loop!_ How will we ensure timeliness?
+
+An apparently infinite loop that contains an `await` on a blocking operation is
+not truly infinite. We can do this:
+
+[source,rust,linenums]
+----
+let push = q.push(value);
+pin_mut!(push);
+let sleep = sleep_for(timeout);
+pin_mut!(sleep);
+
+match futures::future::select(push, sleep) {
+    Either::Left(_) => {
+        // The push succeeded first.
+    }
+    Either::Right(_) => {
+        // The sleep succeeded first, i.e. we timed out
+    }
+}
+----
+
+`select` takes two futures as arguments, and returns a _new_ future that will
+poll the two alternately, returning the result of whichever (left or right)
+finishes first.
+
+Or, if you're willing to accept some macro magic, the macro version of `select`
+provides much better syntax:
+
+[source,rust,linenums]
+----
+futures::select! {
+    _ = q.push(value) => {
+        // The push succeeded first
+    },
+    _ = sleep_for(timeout) => {
+        // The sleep succeeded first
+    }
+}
+----
+
+`select` is made possible by a principle that can be quite surprising,
+particularly if you're used to thinking of futures in terms of `async fn`.
+
+When you someone calls your `fn`, it will execute all the way through, until it
+panics or returns -- the caller cannot decide to stop running it halfway
+through.
+
+But an `async fn` or `async` block becomes a future that must be polled...
+which means that we also have the option to _stop polling it._
+
+In fact, we can `drop` it before it completes if we want. This is known as
+_canceling_ the future.
+
+This isn't clearly explained in the async training materials, and people who
+encounter this for the first time often see it as a design flaw -- but I don't
+agree. I think that, on the contrary, it's a key advantage of the design of Rust
+futures compared to some other approaches. But getting it right can take some
+care.
+
+The ability to cancel a future provides a tool that we can use to build versions
+of several common OS primitives:
+
+- Timeouts.
+- `select` over blocking I/O operations.
+- Interruption of blocking operations by events other than time (a la Java
+  thread interruption).
+- `kill` for async processes.
+
+Critically, compared to how these operations work in other systems, cancellation
+is _orthogonal_ and _synchronous_:
+
+- Orthogonal, in that blocking operations don't need to implement support for
+  timeouts or select -- they only need to consider cancellation (and usually
+  they don't need to consider it explicitly).
+
+- Synchronous, in that -- unlike Unix signals, for example -- you can predict
+  when reading an `async fn` exactly the points where it might be cancelled: the
+  `await` points. In between ``await``s, cancellation is impossible.
+
+It's important to understand this, because it is possible to get it wrong and
+produce bugs. Any future with external side effects must be _cancel-correct._
+
+Consider the implementation of `push` again.
+
+[source,rust,linenums]
+----
+pub async fn push(self: Pin<&Self>, mut value: T) {
+    loop {
+        match self.try_push(value) {
+            Ok(_) => return,
+            Err(revalue) => {
+                value = revalue;
+                create_node!(node, (), noop_waker());
+                self.push_waiters().insert_and_wait(node.as_mut()).await; // <1>
+            }
+        }
+    }
+}
+----
+
+This code is cancel-correct, in that it will not misbehave if canceled at any
+`await` point. Why? Read the code to the `await` (marked) and consider what side
+effects it has had. All it has done is created a node and linked it into the
+queue's `push_waiters` list. Clearly, we don't want the node to become invalid
+while it's in the list -- but that can't happen, because...
+
+- Any local variables in an `async fn` that are alive across an `await` -- even
+  temporaries -- are essentially converted into `struct` fields in the generated
+  future type.
+- When a struct gets dropped, its fields get dropped; and so, when an `async fn`
+  future gets dropped, _any locals that are alive also get dropped._
+- As we saw earlier, `Node` automatically removes itself from a `List` on drop,
+  to avoid dangling pointers.
+
+The easiest way to maintain cancel-correctness is the same technique used to
+maintain exception-safety in languages like {cpp}: design your types so that
+they clean up when dropped. This is harder with `async fn`, since the future
+type it produces is anonymous, and you can't simply `impl Drop` for it, so you
+have to combine two techniques:
+
+1. If your invariants are maintained by existing types with `Drop` impls, as
+with the `Node` example above, you're good.
+2. If you need to add new behavior on `Drop`, the easiest way is to use the
+https://docs.rs/scopeguard/[`scopeguard` crate].
+
+NOTE: Cancel-correctness is significantly simpler to achieve than exception
+safety, because cancellation points are clearly marked by `await` -- whereas you
+can't spot the sources of exceptions by reading the code, you also need to read
+_all dependencies._ I point this out because I know there are a lot of
+anti-exception folk in the Rust community, and I don't think that should equate
+to being anti-cancellation.
+
+=== Simplifying assumptions
+
+This design and implementation deliberately make a number of assumptions.
+
+First: *limited preemption.* The executor data structures are not protected by
+critical sections. This means it's not OK to manipulate them during interrupts
+that might preempt task code trying to do the same thing. By default, `lilos`
+interrupt policy is to keep interrupts disabled during task execution, and
+enable them briefly between polls, so they can wake up tasks. I've recently
+added an alternative that allows some interrupts -- particularly the timer
+maintenance interrupt -- to preempt task code. This is safe only if the ISR
+doesn't use _any_ OS API except for `Notify`. I needed this feature to maintain
+correct timekeeping during a particularly expensive computation that could take
+longer than one tick. See `lilos::exec::Interrupts` for options.
+
+Second: *static top-level task structure.* There are a fixed number of tasks,
+defined at boot. You cannot spawn a new task at runtime. This limitation is not
+inherent; it's me avoiding dynamic memory allocation. I could probably make the
+executor sufficiently generic that you could spawn tasks into a `Vec` instead of
+the current array, but I haven't needed it.
+
+Note that you can fake task spawning by e.g. having a top-level task poll
+futures from a `Vec` yourself. However, those futures cannot be individually
+awoken by `Notify`.
+
+Third: *"top-half" style interrupt handling.* ISRs are expected to poke the
+hardware enough to stop the interrupt from reoccurring, and then `Notify` a
+task, which will do the rest of the work. If response time requirements mean
+that you need to e.g. push data into a queue from an ISR, `lilos` in its current
+form will not work for you.
+
+== Thoughts and analysis: `lilos` itself
+
+I've been messing around with `lilos` for about a year now. What have I learned?
+
+Observations on Rust and `async` are in the _next_ section.
+
+=== This is surprisingly useful given its simplicity.
+
+NOTE: I have taken the "lines of code" measurements using
+https://github.com/AlDanial/cloc[cloc], which distinguishes comments from code.
+
+As of this writing, `lilos` is 819 lines of code -- and that's an honest line
+count, counting lines wrapped for readability as multiple lines. I could golf
+that number lower if I cared.
+
+If you removed the parts of the OS that aren't used by the OS and could be a
+separate crate -- that's `queue` and `mutex` -- you're left with 556 lines.
+
+This is unusually small for something claiming to be an operating system, and
+indeed, `lilos` is missing some things that other RTOSes provide, like
+prioritized preemption. And yet -- I haven't found that to matter in my
+applications. Yes, prioritized preemption is important for reasoning about worst
+case response time. Yes, mechanisms like priority inheritance can be important
+for reliability. No, I would not reach for `lilos` -- at least in its current
+form -- if I were writing the firmware for a Mars rover or a medical device.
+
+And yet... building applications with `async` on a tiny runtime feels a lot like
+building multi-threaded applications for a conventional RTOS, and allows for
+similar productivity, in my experience. I think this is an interesting alternate
+direction to consider. And it's small enough that a single person can read and
+understand it in a reasonable amount of time.
+
+By contrast: the "simple RTOS" I used to reach for is FreeRTOS. Its
+``timers.c``/``timers.h`` files _alone_ are 731 lines. I chose that file because
+comparing a preemptive OS to `lilos` isn't fair -- of course it's going to be
+longer -- but `lilos` and FreeRTOS have roughly equivalent timer functionality;
+there are far larger files I could have chosen. (`queue.{c,h}` is roughly 2.5x
+larger than all of `lilos`.)
+
+=== Safe code aids understanding.
+
+People talk about memory safety as a way to prevent certain classes of bugs,
+security holes, etc., and while that's important, it's not my favorite part.
+
+My favorite part: safe code is easier to read and understand, because more of
+its invariants are explicit in the code. This in turn makes the code easier to
+maintain, easier to evolve, and easier to debug.
+
+=== Being able to borrow stuff is nice.
+
+My larger applications are structured the same way as the `examples` in the
+repo: they set up some shared state in `main`, and then loan it out to all the
+tasks. Being able to do this safely is really pleasant; with a traditional RTOS
+you'd have no choice but to use statics or some kind of "startup argument",
+which is typically fixed size.
+
+== Thoughts and analysis: Rust `async`
+
+This section is a collection of notes on the Rust `async` situation in general.
+
+[[explicit-state-machines]]
+=== `async` is ridiculously, wonderfully well designed.
+
+I've been following the development of Rust futures and `async` since 2016, but
+hadn't been using them in anger until this project -- and, despite being
+familiar with the design, I was surprised at how powerful and consistent the
+scheme is.
+
+Yes, there are some surprises that could use better documentation (cancellation
+is at the top of my list), but the `async` syntax -- and particularly the way it
+interacts with borrowing across `await` points -- does exactly what I expect
+with little fuss. That's high praise for a bleeding-edge language feature.
+
+This is the same level of revelation as when I learned about
+https://en.wikipedia.org/wiki/Structured_programming[structured programming],
+and just as nobody honestly argues for all-GOTO programming in 2020, I expect
+that async transforms will be just as taken-for-granted within a decade or two.
+
+I've written a lot of hand-rolled state machines, including ones that do
+internal borrowing (stuff that would be terribly `unsafe` in Rust, but this was
+in C, where nobody thinks twice until someone exploits their code). I'm talking
+about stuff like this:
+
+[source,c,linenums]
+----
+switch (state) {
+    case STATE_START:
+        do_a_thing();
+        state = STATE_NEXT;
+        break;
+    case STATE_NEXT:
+        do_another_thing();
+        if (x) {
+            state = STATE_3;
+        } else {
+            state = STATE_4;
+        }
+        break;
+    // and so on
+}
+----
+
+Let's be honest. *Explicit state machines are GOTO.* They are dressed up in a
+structured programming costume, but they have almost all the problems that
+structured programming was trying to solve. (Table-based state machines using
+function pointers are, I would argue, slightly worse, as they allow actions and
+transition functions to wind up scattered all over the codebase instead of being
+contained within one dispatch function. Though they do avoid the C pitfall of
+using a local variable that isn't initialized in your particular `switch`
+`case`.)
+
+Having used `async`, it is now my goal to stop writing explicit state machines
+completely. We can express them as straight-line code and let the compiler do
+the work.
+
+Is `async` perfect? Oh hell no. That would make the rest of this section boring.
+
+=== Cancellation has some issues.
+
+I clearly like the cancellation model for futures. Do I think it's perfect,
+though? Of course not. The chief problem with cancellation is how it's taught --
+I keep having engineers who have read a bunch of `async` materials being
+surprised, sometimes horrified, by the idea that their code could just _stop
+running in the middle._ We could do a better job teaching this.
+
+But there are also technical issues with how cancellation works -- and the
+example I used above to argue _in favor of cancellation_ actually shows them
+quite well.
+
+To explain, let's contrast the signatures of two operations on `Queue`:
+
+[source,rust,linenums]
+----
+impl<T> Queue<T> {
+  pub async fn try_push(self: Pin<&Self>, value: T) -> Result<(), T>;
+
+  pub async fn push(self: Pin<&Self>, value: T);
+}
+----
+
+There's a very significant difference in their return types: `try_push` admits
+that it could fail (it returns `Result`) and, if it fails, it _hands the `value`
+back to you._
+
+That's important. `lilos` queues, like most Rust data structures, support moving
+arbitrarily complex types through them, including smart pointers. If you're
+holding a smart pointer (like a `Box`) and you want to push it into a queue,
+What would you like to happen on failure? Do you want your structure
+_deallocated?_ Probably not, and that's why `try_push` hands it back to you: so
+you can decide.
+
+Okay, so how about on timeout?
+
+The issue is that the only (generic) way to cancel a future is to `drop` it.
+Rust types that wrap something often have an `into_inner` function that says "I
+don't need this wrapper anymore, but I still want the thing I put in it;" we
+don't have an equivalent for futures in general, and specifically not for the
+futures generated by `async fn`.
+
+So, with the way `push` is currently written in `lilos`, you will simply lose
+your item on timeout.
+
+If it's a `Copy` type like a `u32`, this is probably fine -- you can just keep a
+copy. If it's a `Clone` type that is relatively cheap, like an `Rc`, you can
+make a defensive copy, but that's starting to cost cycles. If it's expensive to
+`Clone`, like a `Box`, a defensive copy is unreasonable.
+
+I'm likely to redesign how `push` works to fix this, though it's not immediately
+obvious how to do that.
+
+=== Higher-order async programming is currently a pain.
+
+This tends to trip people up within a month or two of using `async` in
+production -- it was a recurring question for new programmers on Fuchsia.
+
+Higher-order programming in Rust -- writing a function that manipulates
+functions -- is super easy. It's one of the things I really appreciate about the
+language. You can write something like this:
+
+[source,rust,linenums]
+----
+fn higher_order(a_function: impl Fn() -> bool);
+----
+
+...and you've now got a function that not only accepts other functions as an
+argument, but it will be _compile-time specialized_ for each argument, meaning
+the functions will typically be combined by the optimizer. This is how we get
+the "zero-cost" in zero-cost abstractions.
+
+If you add a couple of `async` keywords in there, the situation totally changes:
+
+[source,rust,linenums]
+----
+// uhhhh maybe this syntax?
+async fn higher_order(a_function: impl async Fn() -> bool); // no
+----
+
+There's currently no way to express this conveniently with the standard library
+-- there's no `async` equivalent to the `Fn` family of traits. This is bad,
+because the `Fn` family of traits get kind of a lot of convenient syntactic
+sugar applied -- for example, they're one of the only times you can throw in a
+reference type without needing a lifetime:
+
+[source,rust,linenums]
+----
+fn higher_order(a_function: impl Fn(&Whatever) -> bool);
+----
+
+That implicitly expands to something like `for<'a> impl Fn(&'a Whatever) ->
+bool`, which is what you want to happen.
+
+You can _kind of_ add `AsyncFn` as a trait outside the standard library, but
+it's subtle, awkward, and doesn't benefit from any syntactic sugar. In
+particular, it doesn't get to have a variable number of type parameters like
+`Fn` does, so you wind up needing a separate trait for _each argument count._
+The key is to consider what you want an `AsyncFn` trait to do.
+
+An `async fn` passed into another function is really a _future constructor._
+It's a function that, when called, will return a future, which the caller may
+poll. This is a useful pattern, and also guides the design of the `AsyncFn`
+trait.
+
+Here's mine, for the 1-argument case.
+
+[source,rust,linenums]
+----
+pub trait AsyncFn1<A> {
+    type Output;
+    type Future: Future<Output = Self::Output>;
+    fn call(&self, _: A) -> Self::Future;
+}
+
+impl<A, F, Fut> AsyncFn1<A> for F
+where
+    F: Fn(A) -> Fut,
+    Fut: Future,
+{
+    type Output = Fut::Output;
+    type Future = Fut;
+    fn call(
+        &self,
+        a: A,
+    ) -> Self::Future {
+        self(a)
+    }
+}
+----
+
+Now we need a version of that for `FnMut` and `FnOnce`, and then copies of all
+three for every number of arguments up to...what, say, 8? That's a lot of
+boilerplate, but it can work.
+
+Now that `async` is stabilized, ``Fn``-like traits should be added to the
+standard library. Presumably someone is already working on this.
+
+TIP: I'm well aware that the thing I'm complaining about -- "waaah, my automatic
+async transform becomes slightly boilerplatey when faced with compile-time
+higher-order programming" -- is _not even a problem you can have_ in most other
+languages, including C and {cpp}: C can't even return opaque types by value, and
+{cpp} is only starting to have an equivalent to traits. So, yes, I'm spoiled.
+Now I would like to be spoiled more, please.
+
+=== Do Rust people use debuggers?
+
+GDB can debug async code just fine -- the design of Rust futures actually makes
+it far easier to debug than equivalent systems in other languages, because you
+can get a precise stack trace at any time. It was designed to make stack traces
+effectively free, which is a breath of fresh air compared to Haskell thunks or
+JavaScript promises, where accurate stack traces imply _actual run-time
+overhead_ if they're available at all. I don't do run-time overhead, and I love
+me some stack traces.
+
+However, stack traces are only _one_ of the things I need from a debugger; for
+the past couple of years, `async fn` has produced essentially meaningless symbol
+names.
+
+In my all-async embedded programs, nearly every function in the binary is named
+`<core::future::from_generator::GenFuture<T> as
+core::future::future::Future>::poll`. Which isn't useful -- that's the name of
+the _generated function_, not the name I gave the function. Good luck setting a
+breakpoint on the right one!
+
+I'm really surprised that I appear to be the only person running into this, but
+my https://github.com/rust-lang/rust/issues/65978[bug report] has been pretty
+silent. Stack traces _generated by Rust_ have the correct names, so `panic!`
+output looks correct. I guess people don't use debuggers?
