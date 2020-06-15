@@ -8,36 +8,12 @@ support multithreaded message-passing programs on AVR.)
 
 # About
 
-`lilos` is somewhat unusual for an RTOS.
+`lilos` is unusual for an RTOS:
 
-This system supports
-
-- Bare metal execution on ARM Cortex-M microprocessors -- not even a `libc` is
-  required.
-
-- Arbitrary concurrent tasks, written as sequential programs or state machines.
-
-- Stackless tasks for lower memory consumption.
-
-- Medium-fast response to interrupts, with options for trading off simplicity
-  vs. response time.
-
-- Can support fairly complex applications without using dynamic memory *at all.*
-
-- Applications can be written entirely in safe Rust (though `unsafe` can also be
-  used, of course).
-
-What makes this system interesting, to me, is what it *doesn't* have:
-conventional threads or preemptive multitasking. Instead, the kernel provides a
-single thread that can be multiplexed between concurrent *futures*. This sort of
-architecture has, in the past, had serious ergonomic consequences: programs
-could not be expressed as straight-line sequential code. (See: FreeRTOS
-coroutines.)
-
-But that was before systems programming languages supported `async`. With
-`async` (sometimes called a "stackless transform" in other languages) we can
-express logic as straight-line code, and let the *compiler* turn it into a
-stackless state machine.
+- `async`-based cooperative multitasking
+- No dynamic memory allocation
+- Low memory consumption
+- Applications can be written entirely in safe code
 
 Concrete example: code to blink an LED on the STM32F407's pin D13.
 
@@ -57,51 +33,11 @@ async fn blinky_task(gpiod: &GPIOD) -> ! {
 }
 ```
 
-# Advantages
+See the `examples` directory for more.
 
-Compared to a conventional multitasking operating system, this has several
-advantages.
+If you'd like to hear me talk about this at length, see the [technical
+report](doc/tr.adoc).
 
-1. It's much easier to reason about, and allocate, stack space. There is only a
-   single stack, and the `async` transform means that each future's storage can
-   be allocated up-front. The only dynamic portion of the stack is that used to
-   evaluate each step in each process.
-
-2. You can easily express concurrency patterns that are somewhere between
-   error-prone and downright hard in conventional RTOSes (at least, outside of
-   Ada). Need to call two concurrent functions, loaning them each buffers from
-   your current stack frame, and then run them concurrently until they both
-   return results, before proceeding -- without allocating, using all safe code?
-   Easy.
-
-3. `async` opens up the use of normal-looking straight-line code, with loops and
-   local variables, in situations where a conventional thread isn't an option,
-   such as an interrupt service routine. (I'm not currently making use of this,
-   but it is an option.)
-
-4. A simple executor like `lilos` together with `async` takes cooperative
-   multitasking, which is already easier to reason about than preemption, and
-   adds additional ease. Where can your program yield control? At `await`. This
-   is true even if it calls library functions! They can't `await` on your behalf
-   unless you let them.
-
-# Disadvantages
-
-I'm still making up my mind about `async`. On the one hand, the stackless
-transform is really powerful, and it makes a lot of patterns feasible that
-weren't before.
-
-On the other hand,
-
-- The error messages are awful.
-- It's really difficult to use in a higher-order style (I've written an
-  `AsyncFnMut` trait but it was *not fun*).
-- Traits can't contain `async fn`.
-- Code size is larger than I'd like.
-
-On the third hand, the Rust features that cause trouble with async aren't even
-available in the last language I was using for this sort of thing (C), so ...
-still a step up.
 
 # Contact and License
 
