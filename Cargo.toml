@@ -9,7 +9,7 @@ license = "MPL-2.0"
 # We need inline-asm here to get at APSR.
 cortex-m = {version = "0.6.2", features = ["inline-asm"]}
 cortex-m-rt = "0.6.12"
-futures = { version = "0.3.5", default-features = false }
+futures = { version = "0.3.5", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
 as-slice = "0.1.3"
 

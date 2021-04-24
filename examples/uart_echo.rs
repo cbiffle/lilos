@@ -125,11 +125,11 @@ async fn usart_echo(
     // has no hardware FIFO of any kind, just to make our lives difficult.)
     lilos::create_queue!(q, [MaybeUninit::<u8>::uninit(); 16]);
 
-    // "Fork" into the rx and tx processes. The match is here because rustc only
-    // treats a ! value as unreachable, not (!, !), which is what join gives us.
-    match futures::join!(echo_rx(usart, q), echo_tx(usart, q)) {
-        (x, _) => match x {}
-    }
+    // "Fork" into the rx and tx processes. The trailing ".0" here is because
+    // we're joining two nonterminating futures, giving type (!, !), which Rust
+    // doesn't think is uninhabited -- by extracting one of the !s we prove that
+    // code past this point is unreachable.
+    futures::future::join(echo_rx(usart, q), echo_tx(usart, q)).await.0
 }
 
 /// Echo receive task. Moves bytes from `usart` to `q`.
