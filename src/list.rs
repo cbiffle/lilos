@@ -4,16 +4,25 @@
 //! each contain some value `T`. The list is kept in *sorted* order by comparing
 //! the `T`s:
 //!
-//! - [`List::insert`] traverses the list to insert the `Node` in its proper
-//!   place.
+//! - [`List::insert_and_wait`] traverses the list to insert the `Node` in its
+//!   proper place, and then waits for the node to be kicked back out.
 //! - [`List::wake_less_than`] starts at one end and removes every `Node` with a
 //!   value less than a threshold.
 //!
-//! The sort order is used to order things by timestamps.
+//! The sort order is used to order things by timestamps, but you may find other
+//! uses for it.
 //!
 //! If you just want to keep things in a list, and don't care about order or
-//! need to associate a timestamp, using `()` for `T` disables the sorting and
-//! causes the list and node to become smaller.
+//! need to associate a timestamp, simply use `List<()>`. This disables the
+//! sorting and removes the order-related fields from both the list and node.
+//!
+//! # How to use for sleep/wake
+//!
+//! The basics are straightforward: given a `List` tracking waiters on a
+//! particular event, create a `Node` and `insert_and_wait` it. At some future
+//! point in a concurrent process or interrupt handler, one of the `wake_*`
+//! methods on `List` gets called, and the `Node` will be removed and its
+//! associated `Waker` invoked, causing `insert_and_wait` to return.
 //!
 //! # Pinning
 //!
@@ -95,30 +104,17 @@
 //! # }
 //! ```
 //!
-//! # How to use for sleep/wake
+//! # How is this safe?
 //!
-//! The basics are straightforward: given a `List` tracking waiters on a
-//! particular event, create a `Node` and `insert` it. At some future point,
-//! when one of the `wake_*` methods on `List` gets called, the `Node` will be
-//! removed and its associated `Waker` invoked.
+//! The `List` API relies on *blocking* for safety. Because `insert_and_wait`
+//! takes control away from the caller until the node is kicked back out of the
+//! list, it is borrowing the `&mut Node` for the duration of its membership in
+//! the list. If the API were instead `insert`, we'd return to the caller, who
+//! is still holding a `&mut Node` -- a supposedly exclusive reference to a
+//! structure that is now also reachable through the `List`!
 //!
-//! But what does the waiting task do in the mean time? The answer is slightly
-//! subtle.
-//!
-//! As with any blocking future, the task must be prepared to tolerate spurious
-//! wakeups. Because many futures are bundled into a single task, but wakeups
-//! happen at *task* level, the fact that your *task* has awoken does *not*
-//! imply that your event has happened. You must check.
-//!
-//! When using a `List`, the easiest way to check is to inspect the `Node` and
-//! see if it's still a member of `List` (using `is_detached`) -- because the
-//! `List` will wake the task associated with a `Node` when the `Node` is
-//! removed. At the moment, this check is sufficient; the other condition that
-//! could cause a `Node` to leave a `List` is if the `List` were dropped, but we
-//! don't currently allow full lists to be dropped.
-//!
-//! This insert-and-wait-for-detach pattern is common enough that it's wrapped
-//! up in the method `List::insert_and_wait`.
+//! This is why there is no `insert` operation, or a `take` operation that
+//! returns a node -- both operations would compromise memory safety.
 
 // Implementation safety notes:
 //
@@ -144,7 +140,8 @@ use crate::NotSendMarker;
 ///
 /// A node is either *detached* (not in a list) or *attached* (in a list). After
 /// creation it is initially detached; you can attach it to a list using
-/// `List::insert`. To detach it, either call `Node::detach` or drop the node.
+/// `List::insert_and_wait`. To detach it, either call `Node::detach` or drop
+/// the node.
 ///
 /// Because the list data structure uses pointer cycles extensively, nodes must
 /// always be pinned. Because we avoid the heap, creating a pinned node is a
@@ -312,66 +309,73 @@ impl<T> List<T> {
 }
 
 impl<T: PartialOrd> List<T> {
-    /// Inserts `node` into this list, maintaining ascending sort order.
+    /// Inserts `node` into this list, maintaining ascending sort order, and
+    /// then waits for it to be kicked back out.
     ///
     /// Specifically, `node` will be placed just *before* the first item in the
     /// list whose `contents` are greater than or equal to `node.contents`, if
     /// such an item exists, or at the end if not.
-    ///
-    /// # Panics
-    ///
-    /// If `node` is not detached (if it's in another list).
-    pub fn insert(self: Pin<&Self>, node: Pin<&mut Node<T>>) {
-        let nnn = NonNull::from(&*node);
-        // Node should not already belong to a list.
-        assert!(node.prev.get() == nnn);
-        debug_assert!(node.next.get() == nnn); // technically redundant
-
-        // Work through the nodes starting at the head, looking for the future
-        // `next` of `node`. Use the root as a sentinel to stop iteration.
-        let mut candidate = self.root.next.get();
-        while candidate != NonNull::from(&self.root) {
-            // Safety: Link Valid Invariant means we can deref this
-            let cref = unsafe { candidate.as_ref() };
-
-            if cref.contents >= node.contents {
-                break;
-            }
-            candidate = cref.next.get();
-        }
-
-        // `candidate` is either a neighbor node, or the root; in the latter
-        // case, `node` is becoming the new head of the list.
-        node.next.set(candidate);
-        // Safety: Link Valid Invariant
-        let cref = unsafe { candidate.as_ref() };
-        node.prev.set(cref.prev.get());
-        // Safety: Link Valid Invariant
-        unsafe {
-            cref.prev.get().as_ref().next.set(nnn);
-        }
-        cref.prev.set(nnn);
-    }
-
-    /// Variant of [`List::insert`] that can be used to wait for the `Node` to
-    /// be kicked back out of the list.
     ///
     /// When the returned future completes, `node` has been detached again.
     ///
     /// # Panics
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
+    /// This should be pretty difficult to achieve in practice.
     pub fn insert_and_wait<'a>(
         self: Pin<&Self>,
-        mut node: Pin<&'a mut Node<T>>,
+        node: Pin<&'a mut Node<T>>,
     ) -> impl Future<Output = ()> + 'a {
-        // TODO improve cancellation semantics?
-        self.insert(node.as_mut());
+        // We required `node` to be `mut` to prove exclusive ownership, but we
+        // don't actually need to mutate it -- and we're going to alias it. So,
+        // downgrade.
+        let node = node.into_ref();
+        // Do the insertion part. This used to be a separate `insert` function,
+        // but that function had soundness risks and so I've inlined it.
+        let nnn = NonNull::from(&*node);
+        {
+            // Node should not already belong to a list.
+            assert!(node.prev.get() == nnn);
+            debug_assert!(node.next.get() == nnn); // technically redundant
+
+            // Work through the nodes starting at the head, looking for the
+            // future `next` of `node`. Use the root as a sentinel to stop
+            // iteration.
+            let mut candidate = self.root.next.get();
+            while candidate != NonNull::from(&self.root) {
+                // Safety: Link Valid Invariant means we can deref this
+                let cref = unsafe { candidate.as_ref() };
+
+                if cref.contents >= node.contents {
+                    break;
+                }
+                candidate = cref.next.get();
+            }
+
+            // `candidate` is either a neighbor node, or the root; in the latter
+            // case, `node` is becoming the new head of the list.
+            node.next.set(candidate);
+            // Safety: Link Valid Invariant
+            let cref = unsafe { candidate.as_ref() };
+            node.prev.set(cref.prev.get());
+            // Safety: Link Valid Invariant
+            unsafe {
+                cref.prev.get().as_ref().next.set(nnn);
+            }
+            cref.prev.set(nnn);
+        }
+
         futures::future::poll_fn(move |ctx| {
             if node.is_detached() {
                 Poll::Ready(())
             } else {
-                node.as_mut().update_waker(ctx.waker().clone());
+                // Aliasing references to our node have been eliminated. We can
+                // now upgrade our reference back to exclusive.
+                let node = unsafe {
+                    Pin::new_unchecked(&mut *nnn.as_ptr())
+                };
+
+                node.update_waker(ctx.waker().clone());
                 Poll::Pending
             }
         })
