@@ -554,7 +554,7 @@ fn set_timer_list<R>(
     body: impl FnOnce() -> R,
 ) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(cortex_m::register::apsr::read().bits() & 0xFF == 0);
+    assert!(cortex_m::register::apsr::read().bits() & 0x1FF == 0);
 
     let old_list = TIMER_LIST.swap(
         // Safety: since we've gotten a &mut, we hold the only reference, so
@@ -583,7 +583,7 @@ fn set_timer_list<R>(
 /// This provides a safe way to access the timer thread local.
 fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(cortex_m::register::apsr::read().bits() & 0xFF == 0);
+    assert!(cortex_m::register::apsr::read().bits() & 0x1FF == 0);
 
     let list_ref = {
         let tlptr = TIMER_LIST.load(Ordering::Acquire);
