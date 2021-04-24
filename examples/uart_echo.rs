@@ -2,7 +2,49 @@
 //! STM32F4xx.
 //!
 //! This defaults to using USART2, which is the one easily accessible on my
-//! breakout board.
+//! breakout board. Bytes received at 115200 baud will be retransmitted at the
+//! same rate. 
+//!
+//! Wiring:
+//! - PA2 is USART2 TX
+//! - PA3 is USART2 RX
+//! - PD12 is the heartbeat LED.
+//!
+//! This demonstrates the same stuff included in `blinky`, plus:
+//!
+//! 1. How to fork a task into multiple child tasks and then re-join.
+//! 2. Use of queues to transfer data between concurrent processes (here, acting
+//!    as a UART FIFO).
+//! 3. Custom interrupt handlers and the use of `Notify`.
+//!
+//! # Theory of operation
+//!
+//! Here's what this does:
+//!
+//! - `main` sets up some hardware and then starts the `lilos` executor with two
+//!   root tasks, `heartbeat` and `echo`.
+//! - `heartbeat` periodically blinks an LED forever.
+//! - `echo` configures USART2, creates a shared queue, and then forks into two
+//!   concurrent processes `echo_tx` and `echo_rx`.
+//! - `echo_rx` responds to received-data interrupts by copying bytes into the
+//!   shared queue.
+//! - `echo_tx` wakes when the queue is empty (and the USART's transmit data
+//!   register is empty) and stuffs bytes into the USART.
+//!
+//! Because `lilos` uses `async` for concurrency, the implementation is
+//! different from what you might see in a traditional RTOS. Each concurrent
+//! process is still written as a straight-line function that loops when needed,
+//! but the way they interact is different:
+//!
+//! - Unrelated tasks (like `heartbeat` and `echo`) are split into state that
+//!   lives across `await` points, which is stored separately, and dynamic stack
+//!   usage *between* `await` points, which reuses the same stack space. This
+//!   means we need less overall stack allocation.
+//!
+//! - `echo` forking into `echo_tx` and `echo_rx` is quite literal: `echo` turns
+//!   itself into two concurrent processes, reusing its resources, including
+//!   loaning local variables into the two processes. This is very hard to
+//!   do on a conventional RTOS, particularly if you want to do it safely.
 
 #![no_std]
 #![no_main]
@@ -17,7 +59,11 @@ use core::pin::Pin;
 
 use stm32f4::stm32f407 as device;
 use device::interrupt;
-use lilos::exec::Notify;
+
+use lilos::exec::{Notify, PeriodicGate};
+
+///////////////////////////////////////////////////////////////////////////////
+// Entry point
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -56,8 +102,13 @@ fn main() -> ! {
     )
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Task implementations
+
 /// Pulses a GPIO pin connected to an LED, to show that the scheduler is still
 /// running, etc.
+///
+/// Note that this captures only one of the two references it receives.
 fn heartbeat<'gpio>(
     rcc: &device::RCC,
     gpiod: &'gpio device::GPIOD,
@@ -68,17 +119,18 @@ fn heartbeat<'gpio>(
     // and don't need to retain access to it. This distinction is hard (or
     // impossible?) to express with an `async fn`.
 
+    const PERIOD: Duration = Duration::from_millis(500);
+
     // Configure our output pin.
     rcc.ahb1enr.modify(|_, w| w.gpioden().enabled());
     gpiod.moder.modify(|_, w| w.moder12().output());
 
     // Set up our timekeeping to capture the current time (not whenever we first
     // get polled). This is usually not important but I'm being picky.
-    let mut gate = lilos::exec::PeriodicGate::new(
-        Duration::from_millis(500)
-    );
+    let mut gate = PeriodicGate::new(PERIOD);
 
-    // Return the task future.
+    // Return the task future. We use `move` so that the `gate` is transferred
+    // from our stack into the future.
     async move {
         loop {
             gpiod.bsrr.write(|w| w.bs12().set_bit());
@@ -97,23 +149,32 @@ async fn usart_echo(
     usart: &device::USART2,
     clock_hz: u32,
 ) -> ! {
-    // Turn on power to the USART.
+    const BAUD_RATE: u32 = 115_200;
+
+    // Turn on clock to the USART.
     rcc.apb1enr.modify(|_, w| w.usart2en().enabled());
-    // Calculate baud rate divisor for the given peripheral clock.
-    let cycles_per_bit = clock_hz / 115_200;
+    // Calculate baud rate divisor for the given peripheral clock. (Using the
+    // default 16x oversampling this calculation is pretty straightforward.)
+    let cycles_per_bit = clock_hz / BAUD_RATE;
     usart.brr.write(|w| w.div_mantissa().bits((cycles_per_bit >> 4) as u16)
         .div_fraction().bits(cycles_per_bit as u8 & 0xF));
     // Turn on the USART engine, transmitter, and receiver.
-    usart.cr1.write(|w| w.ue().enabled().te().enabled().re().enabled());
+    usart.cr1.write(|w| w.ue().enabled()
+        .te().enabled()
+        .re().enabled());
 
-    // Turn on power to GPIOA, where our signals emerge.
+    // Turn on clock to GPIOA, where our signals emerge.
     rcc.ahb1enr.modify(|_, w| w.gpioaen().enabled());
     // Configure our pins as AF7
-    gpio.afrl.modify(|_, w| w.afrl2().af7().afrl3().af7());
-    gpio.otyper.modify(|_, w| w.ot2().push_pull().ot3().push_pull());
-    gpio.moder.modify(|_, w| w.moder2().alternate().moder3().alternate());
+    gpio.afrl.modify(|_, w| w.afrl2().af7()
+        .afrl3().af7());
+    gpio.otyper.modify(|_, w| w.ot2().push_pull()
+        .ot3().push_pull());
+    gpio.moder.modify(|_, w| w.moder2().alternate()
+        .moder3().alternate());
 
     // Enable the UART interrupt that we'll use to wake tasks.
+    // Safety: our ISR (below) is safe to enable at any time.
     unsafe {
         cortex_m::peripheral::NVIC::unmask(device::Interrupt::USART2);
     }
@@ -122,7 +183,8 @@ async fn usart_echo(
     // operate at the same rate, we can definitely receive a new byte while
     // waiting for the old one to go out, so even doing single-byte echoes it's
     // important to run RX and TX concurrently. (Note that the STM32F4's USART
-    // has no hardware FIFO of any kind, just to make our lives difficult.)
+    // has no hardware FIFO of any kind, just to make our lives difficult. This
+    // queue is effectively replacing such a FIFO.)
     lilos::create_queue!(q, [MaybeUninit::<u8>::uninit(); 16]);
 
     // "Fork" into the rx and tx processes. The trailing ".0" here is because
@@ -156,6 +218,9 @@ where B: as_slice::AsMutSlice<Element = MaybeUninit<u8>>,
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Interaction between tasks and ISRs.
+
 /// Notification signal for waking a task from the USART TXE ISR.
 static TXE: Notify = Notify::new();
 
@@ -184,6 +249,9 @@ async fn recv(usart: &device::USART2) -> u8 {
     usart.dr.read().dr().bits() as u8
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Interrupt handlers.
+
 /// Interrupt service routine for poking our two `Notify` objects on hardware
 /// events.
 #[interrupt]
@@ -191,6 +259,10 @@ fn USART2() {
     let usart = unsafe { &*device::USART2::ptr() };
     let cr1 = usart.cr1.read();
     let sr = usart.sr.read();
+
+    // Note: we only honor the condition bits when the corresponding interrupt
+    // sources are enabled on the USART, because otherwise they didn't cause
+    // this interrupt.
 
     if cr1.txeie().bit() && sr.txe().bit() {
         TXE.notify();
