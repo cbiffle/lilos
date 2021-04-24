@@ -231,7 +231,7 @@ static TXE: Notify = Notify::new();
 /// This will only work correctly if USART2's interrupt is enabled at the NVIC.
 async fn send(usart: &device::USART2, c: u8) {
     usart.cr1.modify(|_, w| w.txeie().enabled());
-    TXE.wait_until(|| usart.sr.read().txe().bit()).await;
+    TXE.until(|| usart.sr.read().txe().bit()).await;
     usart.dr.write(|w| w.dr().bits(u16::from(c)));
 }
 
@@ -245,7 +245,7 @@ static RXE: Notify = Notify::new();
 /// This will only work correctly if USART2's interrupt is enabled at the NVIC.
 async fn recv(usart: &device::USART2) -> u8 {
     usart.cr1.modify(|_, w| w.rxneie().enabled());
-    RXE.wait_until(|| usart.sr.read().rxne().bit()).await;
+    RXE.until(|| usart.sr.read().rxne().bit()).await;
     usart.dr.read().dr().bits() as u8
 }
 

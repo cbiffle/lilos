@@ -93,7 +93,7 @@
 //!
 //!     // Wait for the interrupt we care about. Check the status register to
 //!     // distinguish interrupt conditions and to handle spurious wakeups.
-//!     ETH_NOTIFY.wait_until(|| dma.dmasr.read().nis());
+//!     ETH_NOTIFY.until(|| dma.dmasr.read().nis()).await;
 //!
 //!     // ... continue ...
 //! }
@@ -450,16 +450,37 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
 /// "all tasks."
 pub const ALL_TASKS: usize = !0;
 
-/// A lightweight task notification scheme that can safely be used from
-/// interrupt handlers.
+/// A lightweight task notification scheme that can be used to safely route
+/// events from interrupt handlers to task code.
+///
+/// Any number of tasks can [`subscribe`] to a `Notify`. When [`notify`] is
+/// called on it, all those tasks will be awoken (i.e. their `Waker` will be
+/// triggered so that they become eligible for polling), and their subscription
+/// is atomically ended.
+///
+/// A `Notify` is very small (the size of a pointer), so feel free to create as
+/// many as you like.
+///
+/// It is safe to call `notify` from an ISR, so this is the usual method by
+/// which interrupt handlers inform task code of events. Normally a `Notify`
+/// used in this way is stored in a `static`:
+///
+/// ```ignore
+/// static EVENT: Notify = Notify::new();
+/// ```
+///
+/// # Waker coalescing
 ///
 /// A `Notify` collects any number of task `Waker`s into a fixed-size structure
 /// without heap allocation. It does this by coalescing the `Waker`s such that
 /// they may become *imprecise*: firing the waker for task N may also spuriously
-/// wake task M.
+/// wake task M. (Implementation-wise, this is a matter of collecting a wake
+/// bits mask from the wakers using secret knowledge.)
 ///
 /// While this is often not the *ideal* strategy, it has the advantage that it
-/// can be done safely from an ISR.
+/// can be built up cheaply and torn down atomically from interrupt context.
+/// (Contrast with e.g. a list of waiting tasks, which is more precise but
+/// harder to get right and more expensive at runtime.)
 pub struct Notify {
     mask: AtomicUsize,
 }
@@ -489,7 +510,7 @@ impl Notify {
     ///
     /// This is appropriate if you know that any change to `cond`'s result will
     /// be preceded by some task calling `notify()`.
-    pub fn wait_until<'a, 'b>(
+    pub fn until<'a, 'b>(
         &'a self,
         mut cond: impl (FnMut() -> bool) + 'b,
     ) -> impl Future<Output = ()> + 'a
@@ -501,23 +522,6 @@ impl Notify {
                 Poll::Ready(())
             } else {
                 self.subscribe(cx.waker());
-                Poll::Pending
-            }
-        })
-    }
-
-    pub fn wait_until2<'a, 'b>(
-        &'a self,
-        mut cond: impl (FnMut() -> bool) + 'b,
-    ) -> impl Future<Output = ()> + 'a
-    where
-        'b: 'a,
-    {
-        futures::future::poll_fn(move |cx| {
-            self.subscribe(cx.waker());
-            if cond() {
-                Poll::Ready(())
-            } else {
                 Poll::Pending
             }
         })
