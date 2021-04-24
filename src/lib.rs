@@ -25,8 +25,8 @@
 //!
 //! Rust's `async` keyword provides a convenient way to have the compiler
 //! rewrite a normal function into a co-routine-style `Future`. This means that
-//! writing co-routines to run on the OS looks *very much* like programming with
-//! threads.
+//! writing co-routines to run on this OS looks *very much* like programming
+//! with threads.
 //!
 //! Here is the "hello world" of embedded programming, written as a task for
 //! this OS. This task blinks an LED attached to port D12 of an STM32F4.
@@ -44,14 +44,17 @@
 //! }
 //! ```
 //!
+//! Because `Future`s can be _composed_, the fixed set of OS tasks can drive a
+//! _dynamic_ set of program `Future`s.
+//!
 //! # Concurrency and interrupts
 //!
 //! The OS supports the use of interrupt handlers to wake tasks through the
 //! [`Notify`][exec::Notify] mechanism, but most OS facilities are not available
 //! in interrupt context.
 //!
-//! When task code is running, interrupts are masked, so tasks can be confident
-//! that they will not be preempted unless they `await`.
+//! By default, interrupts are masked when task code is running, so tasks can be
+//! confident that they will preempted if, and only if, they `await`.
 //!
 //! Each time through the task polling loop, the OS unmasks interrupts to let
 //! any pending interrupts run. Because the Cortex-M collects pending interrupts
@@ -60,20 +63,30 @@
 //! Interrupts are also unmasked whenever the idle processor is woken from
 //! sleep, in order to handle the event that woke it up.
 //!
+//! See the [`exec`][crate::exec] module for more details and some customization
+//! options.
+//!
 //! # Cancellation
 //!
 //! Co-routine tasks in this OS are just `Future`s, which means they can be
 //! dropped. `Future`s are typically dropped just after they resolve (often just
-//! after an `await` keyword), but it's also possible to drop a `Future` while
-//! it is pending. This can happen explicitly (by calling [`drop`]), or as a
-//! side effect of other operations; for example, the future returned by
+//! after an `await` keyword in the calling code), but it's also possible to
+//! drop a `Future` while it is pending. This can happen explicitly (by calling
+//! [`drop`]), or as a side effect of other operations; for example, the future
+//! returned by
 //! [`select!`](https://docs.rs/futures/0.3/futures/macro.select.html) will drop
-//! any incompleted futures if you `await` it.
+//! any uncompleted futures if you `await` it.
 //!
 //! This means it's useful to consider what cancellation *means* for any
 //! particular task, and to ensure that its results are what you intend.
+//!
+//! OS-provided futures attempt to provide useful cancellation behavior.
 
 #![no_std]
+
+// We need `never_type` to be able to write `Future<Output = !>`, the type of
+// `async fn foo() -> !`. This feature has been near stabilization for years,
+// but as of spring 2021 it is still unstable.
 #![feature(never_type)]
 
 #[macro_use]

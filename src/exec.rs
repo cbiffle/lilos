@@ -1,6 +1,14 @@
 //! A system for polling an array of tasks forever, plus `Notify` and other
 //! scheduling tools.
 //!
+//! **Note:** for our purposes, a _task_ is an independent top-level future
+//! managed by the scheduler polling loop. There are a fixed set of tasks,
+//! provided to the scheduler at startup. This is distinct from the casual use
+//! of "task" to mean a piece of code that runs concurrently with other code;
+//! we'll use the term "concurrent process" for this. The fixed set of tasks
+//! managed by the scheduler can execute an _arbitrary number_ of concurrent
+//! processes.
+//!
 //! # Scheduler entry point
 //!
 //! The mechanism for "starting the OS" is [`run_tasks`].
@@ -17,7 +25,7 @@
 //! using [`select!`](https://docs.rs/futures/0.3/futures/macro.select.html).
 //!
 //! For the common case of needing to do an operation periodically, consider
-//! [`every_until`], which tries to minimize jitter and drift.
+//! [`every_until`] or [`PeriodicGate`], which try to minimize jitter and drift.
 //!
 //! # Interrupts, wait, and notify
 //!
@@ -49,14 +57,15 @@
 //! will determine which tasks have their wake bits set, *clear the wake bits*,
 //! and then poll the tasks.
 //!
-//! (Tasks might be polled even when their bit isn't set -- that's technically a
-//! waste of energy, but not incorrect for a Rust `Future`. Giving the OS some
-//! slack on this dramatically simplifies the implementation. However, the OS
-//! tries to poll the smallest feasible set of tasks each time it polls.)
+//! (Tasks might be polled even when their bit isn't set -- this is a waste of
+//! energy, but is also something that Rust `Future`s are expected to tolerate.
+//! Giving the OS some slack on this dramatically simplifies the implementation.
+//! However, the OS tries to poll the smallest feasible set of tasks each time
+//! it polls.)
 //!
-//! This is embodied by the [`Notify`] type, which provides a kind of event
-//! broadcast. Tasks can subscribe to a `Notify`, and when it is signaled, all
-//! subscribed tasks get their wake bits set.
+//! The need to set and check wake bits is embodied by the [`Notify`] type,
+//! which provides a kind of event broadcast. Tasks can subscribe to a `Notify`,
+//! and when it is signaled, all subscribed tasks get their wake bits set.
 //!
 //! `Notify` is very low level -- the more pleasant abstractions of
 //! [`queue`][crate::queue], [`mutex`][crate::mutex], and
@@ -64,7 +73,7 @@
 //! the only OS facility that's safe to use from interrupt service routines,
 //! making it an ideal way to wake tasks when hardware events occur.
 //!
-//! Here is a basic example of using `Notify`; see the `queueq and `mutex`
+//! Here is a basic example of using `Notify`; see the `queue` and `mutex`
 //! modules for details on the higher-level options.
 //!
 //! ```ignore
@@ -94,6 +103,37 @@
 //!
 //! If `Notify` doesn't meet your needs, you can use the [`wake_task_by_index`]
 //! and [`wake_tasks_by_mask`] functions to explicitly wake one or more tasks.
+//! Because tasks are required to tolerate spurious wakeups, both of these
+//! functions are safe: spamming tasks with wakeup requests merely wastes
+//! energy and time.
+//!
+//! Both of these functions expose the fact that the scheduler tracks wake bits
+//! in a single `usize`. When waking a task with index 0 (mask `1 << 0`), we're
+//! actually waking any task where `index % 32 == 0`. Very complex systems with
+//! greater than 32 top-level tasks will thus experience more spurious wakeups.
+//! The advantage of this "lossy" technique is that wake bit manipulation is
+//! very, very cheap.
+//!
+//! # Idle behavior
+//!
+//! When no tasks have their wake bits set, the default behavior is to idle the
+//! processor using the `WFI` instruction. You can override this behavior by
+//! starting the scheduler with [`run_tasks_with_idle`] or
+//! [`run_tasks_with_preemption_and_idle`], which let you substitute a custom
+//! "idle hook" to execute when no tasks are ready.
+//!
+//! # Adding preemption
+//!
+//! By default, the scheduler does not preempt task code: task poll routines are
+//! run cooperatively, and ISRs are allowed only in between polls. This
+//! increases interrupt response latency, because if an event occurs while
+//! polling tasks, all polling must complete before the ISR is run.
+//!
+//! Applications can override this by starting the scheduler with
+//! [`run_tasks_with_preemption`] or [`run_tasks_with_preemption_and_idle`].
+//! These entry points let you set a _preemption policy_, which allows ISRs
+//! above some priority level to preempt task code. (Tasks still cannot preempt
+//! one another.)
 
 use core::future::Future;
 use core::mem;
@@ -606,14 +646,14 @@ pub struct Yield {
 impl Future for Yield {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        // TODO: to make uncontested yields cheaper, it would be nice to check the
-        // wake mask to see if anything else can run before pending. There are
-        // two subtleties to doing this correctly:
+        // TODO: to make uncontested yields cheaper, it would be nice to check
+        // the wake mask to see if anything else can run before pending. There
+        // are two subtleties to doing this correctly:
         //
-        // 1. Not just the upcoming wake mask, but the *current* wake mask, should
-        //    be checked. The current one (which is a copy of the old upcoming
-        //    value) is currently only held in a local in the executor; it would
-        //    need to be published to a static.
+        // 1. Not just the upcoming wake mask, but the *current* wake mask,
+        //    should be checked. The current one (which is a copy of the old
+        //    upcoming value) is currently only held in a local in the executor;
+        //    it would need to be published to a static.
         // 2. To avoid starving interrupts, this routine should briefly enable
         //    interrupts and allow them to write the wake mask.
 

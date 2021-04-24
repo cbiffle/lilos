@@ -52,23 +52,37 @@ impl Ticks {
         }
     }
 
+    /// Subtracts this time from an earlier time, giving the `Duration` between
+    /// them.
+    ///
+    /// # Panics
+    ///
+    /// If this time is not actually `>= earlier`.
     pub fn duration_since(self, earlier: Ticks) -> Duration {
         Duration::from_millis(self.0.checked_sub(earlier.0).unwrap())
     }
 
+    /// Checks the clock to determine how much time has elapsed since the
+    /// instant recorded by `self`.
     pub fn elapsed(self) -> Duration {
         Self::now().duration_since(self)
     }
 
+    /// Adds a duration to `self`, checking for overflow. Note that since we use
+    /// 64 bit ticks, overflow is unlikely in practice.
     pub fn checked_add(self, duration: Duration) -> Option<Self> {
         self.0.checked_add(duration.as_millis() as u64).map(Ticks)
     }
 
+    /// Subtracts a duration from `self`, checking for overflow. Overflow can
+    /// occur if `duration` is longer than the time from boot to `self`.
     pub fn checked_sub(self, duration: Duration) -> Option<Self> {
         self.0.checked_sub(duration.as_millis() as u64).map(Ticks)
     }
 }
 
+/// Add a `Duration` to a `Ticks` with normal `+` overflow behavior (i.e.
+/// checked in debug builds, optionally not checked in release builds).
 impl core::ops::Add<Duration> for Ticks {
     type Output = Self;
     fn add(self, other: Duration) -> Self::Output {
