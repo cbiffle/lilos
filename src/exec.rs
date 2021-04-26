@@ -657,39 +657,20 @@ pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
     sleep_until(Ticks::now() + d)
 }
 
-/// Returns a future that will be pending exactly once before resolving. This
-/// has the effect of causing the calling future to yield by pending, before
-/// resuming its work.
-pub async fn yield_cpu() -> Yield {
-    Yield { pending: true }
-}
-
-/// Type of future returned by `yield_cpu`.
-pub struct Yield {
-    pending: bool,
-}
-
-impl Future for Yield {
-    type Output = ();
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        // TODO: to make uncontested yields cheaper, it would be nice to check
-        // the wake mask to see if anything else can run before pending. There
-        // are two subtleties to doing this correctly:
-        //
-        // 1. Not just the upcoming wake mask, but the *current* wake mask,
-        //    should be checked. The current one (which is a copy of the old
-        //    upcoming value) is currently only held in a local in the executor;
-        //    it would need to be published to a static.
-        // 2. To avoid starving interrupts, this routine should briefly enable
-        //    interrupts and allow them to write the wake mask.
-
-        if core::mem::replace(&mut self.pending, false) {
+/// Returns a future that will be pending exactly once before resolving.
+///
+/// This can be used to give up CPU to any other tasks that are currently ready
+/// to run, and then take it back without waiting for an event.
+pub fn yield_cpu() -> impl Future<Output = ()> {
+    let mut pending = true;
+    futures::future::poll_fn(move |cx| {
+        if core::mem::replace(&mut pending, false) {
             cx.waker().wake_by_ref();
             Poll::Pending
         } else {
             Poll::Ready(())
         }
-    }
+    })
 }
 
 /// Makes a future periodic, with a termination condition.
