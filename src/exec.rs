@@ -526,6 +526,28 @@ impl Notify {
             }
         })
     }
+
+    /// Subscribes to `notify` and then calls `cond`, completing if it returns
+    /// `true`. Otherwise, waits and tries again. This is very similar to
+    /// `until`, and is slightly more expensive, but in exchange it is correct
+    /// if the condition may be set asynchronously (i.e. you are running the OS
+    /// with preemption enabled).
+    pub fn until_racy<'a, 'b>(
+        &'a self,
+        mut cond: impl (FnMut() -> bool) + 'b,
+    ) -> impl Future<Output = ()> + 'a
+    where
+        'b: 'a,
+    {
+        futures::future::poll_fn(move |cx| {
+            self.subscribe(cx.waker());
+            if cond() {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+    }
 }
 
 /// Notifies the executor that any tasks whose wake bits are set in `mask`
