@@ -20,17 +20,16 @@
 //! provide macros for the two common cases: [`create_queue!`] for queues that
 //! live on the stack, and [`create_static_queue!`] for queues at static scope.
 //!
-//! # Blocking push and pop
+//! # Blocking push/pop and the wait list
 //!
 //! `Queue::push` and `Queue::pop` are blocking operations. This means they
 //! return a future that you must `await` for anything to happen to the queue.
 //! If the queue can't satisfy the operation immediately, your task will be
-//! placed in a wait list and processed in order of appearance.
+//! placed in a *wait list* and processed in order of arrival.
 //!
-//! This means that the queue's *capacity* reflects only the number of elements
-//! that can be waiting in the queue while all tasks are doing other work -- the
-//! queue wait list effectively extends the queue's depth while tasks are
-//! blocked on it.
+//! The wait list means that a queue can have more pending elements than its
+//! storage capacity suggests: one element for each slot in the backing array,
+//! _plus_ one pending element for every task that is blocked trying to insert.
 
 use core::cell::Cell;
 
@@ -271,23 +270,17 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
 /// because they borrow the queue.
 impl<T, S: AsMutSlice<Element = MaybeUninit<T>>> Drop for Queue<T, S> {
     fn drop(&mut self) {
-        inner_drop(unsafe { Pin::new_unchecked(self) });
-
-        fn inner_drop<T, S: AsMutSlice<Element = MaybeUninit<T>>>(
-            this: Pin<&mut Queue<T, S>>,
-        ) {
-            let mut t = this.tail.get();
-            let n = this.pending.get();
-            let s = this.storage_mut();
-            for _ in 0..n {
-                // Safety: the head/tail invariants on queue ensure that we've
-                // written `pending` elements. starting at `s[t]`; we're
-                // dropping them to keep from leaking them.
-                unsafe {
-                    core::ptr::drop_in_place(s[t].as_mut_ptr());
-                }
-                t = (t + 1) % s.len();
+        let mut t = self.tail.get();
+        let n = self.pending.get();
+        let s = self.storage.as_mut_slice();
+        for _ in 0..n {
+            // Safety: the head/tail invariants on queue ensure that we've
+            // written `pending` elements. starting at `s[t]`; we're
+            // dropping them to keep from leaking them.
+            unsafe {
+                core::ptr::drop_in_place(s[t].as_mut_ptr());
             }
+            t = (t + 1) % s.len();
         }
     }
 }

@@ -433,20 +433,15 @@ impl List<()> {
 /// and so it will `panic!`.
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
-        // We assume we are pinned.
-        inner_drop(unsafe { Pin::new_unchecked(self) });
-
-        fn inner_drop<T>(this: Pin<&mut List<T>>) {
-            // It's not immediately clear to me what the Drop behavior should
-            // be. In particular, if the list is dropped while non-empty, should
-            // its nodes be awoken? On the one hand, whatever condition they're
-            // waiting for hasn't happened, so waking them seems misleading; on
-            // the other hand, the condition *will never happen,* so if we don't
-            // wake them now, they'll sleep, possibly forever.
-            //
-            // When in doubt: panic and set the behavior later.
-            assert!(this.root.is_detached());
-        }
+        // It's not immediately clear to me what the Drop behavior should
+        // be. In particular, if the list is dropped while non-empty, should
+        // its nodes be awoken? On the one hand, whatever condition they're
+        // waiting for hasn't happened, so waking them seems misleading; on
+        // the other hand, the condition *will never happen,* so if we don't
+        // wake them now, they'll sleep, possibly forever.
+        //
+        // When in doubt: panic and set the behavior later.
+        assert!(self.root.is_detached());
     }
 }
 
