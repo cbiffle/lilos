@@ -126,7 +126,7 @@
 // pinned structures, and ensuring that the `Drop` impl of those pinned
 // structures will remove their addresses from any link.
 
-use core::cell::Cell;
+use core::cell::{Cell, UnsafeCell};
 
 use core::future::Future;
 use core::mem::ManuallyDrop;
@@ -158,7 +158,7 @@ use crate::NotSendMarker;
 pub struct Node<T> {
     prev: Cell<NonNull<Self>>,
     next: Cell<NonNull<Self>>,
-    waker: Waker,
+    waker: UnsafeCell<Waker>,
     contents: T,
     _marker: NotSendMarker,
 }
@@ -174,7 +174,7 @@ impl<T> Node<T> {
         ManuallyDrop::new(Node {
             prev: Cell::new(NonNull::dangling()),
             next: Cell::new(NonNull::dangling()),
-            waker,
+            waker: UnsafeCell::new(waker),
             contents,
             _marker: NotSendMarker::default(),
         })
@@ -222,7 +222,7 @@ impl<T> Node<T> {
     /// Replaces the node's waker in case its context has changed.
     pub fn update_waker(self: Pin<&mut Self>, waker: Waker) {
         unsafe {
-            Pin::get_unchecked_mut(self).waker = waker;
+            *self.waker.get() = waker;
         }
     }
 }
@@ -234,6 +234,9 @@ impl<T> Drop for Node<T> {
         inner_drop(unsafe { Pin::new_unchecked(self) });
 
         fn inner_drop<T>(this: Pin<&mut Node<T>>) {
+            unsafe {
+                core::ptr::drop_in_place(this.waker.get());
+            }
             this.as_ref().detach();
         }
     }
@@ -318,6 +321,15 @@ impl<T: PartialOrd> List<T> {
     ///
     /// When the returned future completes, `node` has been detached again.
     ///
+    /// # Cancellation
+    ///
+    /// Dropping the future returned by `insert_and_wait` will forceably detach
+    /// `node` from `self`. This is important for safety: the future borrows
+    /// `node`, preventing concurrent modification while there are outstanding
+    /// pointers in the list. If the future did not detach on drop, the caller
+    /// would regain access to their `&mut Node` while the list also has
+    /// pointers, violating aliasing.
+    ///
     /// # Panics
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
@@ -365,20 +377,10 @@ impl<T: PartialOrd> List<T> {
             cref.prev.set(nnn);
         }
 
-        futures::future::poll_fn(move |ctx| {
-            if node.is_detached() {
-                Poll::Ready(())
-            } else {
-                // Aliasing references to our node have been eliminated. We can
-                // now upgrade our reference back to exclusive.
-                let node = unsafe {
-                    Pin::new_unchecked(&mut *nnn.as_ptr())
-                };
-
-                node.update_waker(ctx.waker().clone());
-                Poll::Pending
-            }
-        })
+        WaitForDetach {
+            node,
+            detach_on_drop: Cell::new(true),
+        }
     }
 
     /// Beginning at the head of the list, removes nodes whose `contents` are
@@ -403,7 +405,9 @@ impl<T: PartialOrd> List<T> {
             // Copy the next pointer before detaching.
             let next = cref.next.get();
             cref.detach();
-            cref.waker.wake_by_ref();
+            unsafe {
+                (&*cref.waker.get()).wake_by_ref();
+            }
 
             candidate = next;
         }
@@ -424,7 +428,9 @@ impl List<()> {
             // Safety: Link Valid Invariant
             let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
             cref.detach();
-            cref.waker.wake_by_ref();
+            unsafe {
+                (&*cref.waker.get()).wake_by_ref();
+            }
         }
     }
 }
@@ -442,6 +448,44 @@ impl<T> Drop for List<T> {
         //
         // When in doubt: panic and set the behavior later.
         assert!(self.root.is_detached());
+    }
+}
+
+/// Internal future type used for `insert_and_wait`. Gotta express this as a
+/// named type because it needs a custom `Drop` impl.
+struct WaitForDetach<'a, T> {
+    node: Pin<&'a Node<T>>,
+    detach_on_drop: Cell<bool>,
+}
+
+impl<T> Future for WaitForDetach<'_, T> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context)
+        -> Poll<Self::Output>
+    {
+        if self.node.is_detached() {
+            // The node is not attached to any list, but we're still borrowing
+            // it until we're dropped, so we don't need to replace the node
+            // field contents -- just set a flag to skip work in the Drop impl.
+            self.detach_on_drop.set(false);
+            Poll::Ready(())
+        } else {
+            // The node remains attached to the list. While unlikely, it's
+            // possible that the waker has changed. Update it.
+            unsafe {
+                *self.node.waker.get() = cx.waker().clone();
+            }
+            Poll::Pending
+        }
+    }
+}
+
+impl<T> Drop for WaitForDetach<'_, T> {
+    fn drop(&mut self) {
+        if self.detach_on_drop.get() {
+            self.node.detach();
+        }
     }
 }
 
