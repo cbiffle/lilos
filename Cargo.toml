@@ -8,6 +8,7 @@ description = "A tiny embedded OS based around Futures and async."
 repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
+readme = "README.mkdn"
 
 [dependencies]
 # We need inline-asm here to get at APSR.

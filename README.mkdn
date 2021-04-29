@@ -1,10 +1,11 @@
-# `lilos` 2: A minimal RTOS
+# `lilos`: A minimal async RTOS
 
 This is a wee RTOS written to support the `async` style of programming in Rust.
 It's a research project, a playground, and a proof of concept.
 
 ([`lilos` 1](https://github.com/cbiffle/lilos1) was a wee RTOS written to
-support multithreaded message-passing programs on AVR.)
+support multithreaded message-passing programs on AVR; this is technically
+`lilos` 2 but who's counting.)
 
 # About
 
@@ -36,13 +37,15 @@ async fn blinky_task(gpiod: &GPIOD) -> ! {
 
 For complete worked examples, see the `examples` directory, particularly:
 
-- [`examples/minimal.rs`](examples/minimal.rs) is the simplest LED blinky program.
-- [`examples/blinky.rs`](examples/blinky.rs) is a fancier blinky program.
-- [`examples/uart_echo.rs`](examples/uart_echo.rs) does UART I/O across tasks
-  with a queue.
+- [`examples/minimal.rs`](https://github.com/cbiffle/lilos/blob/main/examples/minimal.rs)
+  is the simplest LED blinky program.
+- [`examples/blinky.rs`](https://github.com/cbiffle/lilos/blob/main/examples/blinky.rs)
+  is a fancier blinky program.
+- [`examples/uart_echo.rs`](https://github.com/cbiffle/lilos/blob/main/examples/uart_echo.rs)
+  does UART I/O across tasks with a queue.
 
 If you'd like to read about this at length, see the [technical
-report](doc/tr.adoc).
+report](https://github.com/cbiffle/lilos/blob/main/doc/tr.adoc).
 
 
 # Contact and License
