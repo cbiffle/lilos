@@ -510,6 +510,10 @@ impl Notify {
     ///
     /// This is appropriate if you know that any change to `cond`'s result will
     /// be preceded by some task calling `notify()`.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future will drop `cond`.
     pub fn until<'a, 'b>(
         &'a self,
         mut cond: impl (FnMut() -> bool) + 'b,
@@ -532,6 +536,10 @@ impl Notify {
     /// `until`, and is slightly more expensive, but in exchange it is correct
     /// if the condition may be set asynchronously (i.e. you are running the OS
     /// with preemption enabled).
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future will drop `cond`.
     pub fn until_racy<'a, 'b>(
         &'a self,
         mut cond: impl (FnMut() -> bool) + 'b,
@@ -632,6 +640,10 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
 /// `Pending` until `Ticks::now() >= deadline`; then it will poll `Ready`.
 ///
 /// If `deadline` is already in the past, this will instantly become `Ready`.
+///
+/// # Cancellation
+///
+/// Dropping this future does nothing in particular.
 pub async fn sleep_until(deadline: Ticks) {
     // TODO: this early return means we can't simply return the insert_and_wait
     // future below, which is costing us some bytes of text.
@@ -653,6 +665,10 @@ pub async fn sleep_until(deadline: Ticks) {
 /// will poll `Ready`.
 ///
 /// If `d` is 0, this will instantly become `Ready`.
+///
+/// # Cancellation
+///
+/// Dropping this future does nothing in particular.
 pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
     sleep_until(Ticks::now() + d)
 }
@@ -661,6 +677,10 @@ pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
 ///
 /// This can be used to give up CPU to any other tasks that are currently ready
 /// to run, and then take it back without waiting for an event.
+///
+/// # Cancellation
+///
+/// Dropping this future does nothing in particular.
 pub fn yield_cpu() -> impl Future<Output = ()> {
     let mut pending = true;
     futures::future::poll_fn(move |cx| {
@@ -687,6 +707,11 @@ pub fn yield_cpu() -> impl Future<Output = ()> {
 /// This means that, if your requirement is to ensure that some amount of time
 /// elapses *between* operations, this is *not* the right function -- you should
 /// just `loop` and call `sleep_for` instead.
+///
+/// # Cancellation
+///
+/// Dropping this future will cancel any in-progress future previously returned
+/// from `action`, as well as dropping `action` itself.
 pub async fn every_until<F>(period: Duration, mut action: impl FnMut() -> F)
 where
     F: Future<Output = bool>,
@@ -731,6 +756,10 @@ impl PeriodicGate {
     }
 
     /// Returns a future that will resolve when it's time to execute again.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future does nothing in particular.
     pub async fn next_time(&mut self) {
         sleep_until(self.next).await;
         self.next += self.interval;
