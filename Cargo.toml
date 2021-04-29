@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -9,6 +9,9 @@ repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eaibhf"
 
 [dependencies]
 # We need inline-asm here to get at APSR.
