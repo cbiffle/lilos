@@ -68,6 +68,18 @@ impl<T> Mutex<T> {
         List::finish_init(this.waiters_mut());
     }
 
+    /// Locks this mutex immediately if it is free, and returns a guard for
+    /// holding it locked.
+    ///
+    /// If the mutex is _not_ free, returns `None`.
+    pub fn try_lock(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
+        if self.state.fetch_or(1, Ordering::Acquire) == 0 {
+            Some(MutexGuard { mutex: self })
+        } else {
+            None
+        }
+    }
+
     /// Returns a future that will attempt to obtain the mutex each time it gets
     /// polled, completing only when it succeeds.
     ///
@@ -86,8 +98,11 @@ impl<T> Mutex<T> {
     ///   waiter on the mutex wait list.
     pub async fn lock(self: Pin<&Self>) -> MutexGuard<'_, T> {
         // Complete synchronously if the mutex is uncontended.
-        if self.state.fetch_or(1, Ordering::Acquire) == 0 {
-            return MutexGuard { mutex: self };
+        // TODO this is repeated above the loop to avoid the cost of re-setting
+        // up the wait node in every loop iteration, and to avoid setting it up
+        // in the uncontended case. Is this premature optimization?
+        if let Some(guard) = self.try_lock() {
+            return guard;
         }
 
         // We'd like to put our name on the wait list, please.
@@ -98,8 +113,8 @@ impl<T> Mutex<T> {
                 wait_node.as_mut(),
                 || self.waiters().wake_one(),
             ).await;
-            if self.state.fetch_or(1, Ordering::Acquire) == 0 {
-                break MutexGuard { mutex: self };
+            if let Some(guard) = self.try_lock() {
+                break guard;
             }
         }
     }
