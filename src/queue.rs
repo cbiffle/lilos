@@ -398,14 +398,13 @@ macro_rules! create_static_queue {
         assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
 
         // Initialize the queue enough that we can start using references.
-        // Safety: this is unsafe due to the raw pointer write (which we could
-        // probably avoid, TODO) and use of Queue::new. new is unsafe because it
-        // leaves us with obligations we must fulfill before dropping the queue;
-        // loading it in a static is a pretty good way to prevent it from being
-        // dropped.
+        // Safety: there are two things going on here.
+        // - Queue::new requires us to discharge its obligations, which we do
+        //   below by pinning and finishing it.
+        // - We're writing a mutable static, but because of our INIT check we
+        //   can ensure that we have exclusive access to it.
         unsafe {
-            core::ptr::write(
-                Q.as_mut_ptr(),
+            Q = MaybeUninit::new(
                 ManuallyDrop::into_inner(Queue::new(&mut Q_STOR)),
             );
         }
