@@ -80,6 +80,26 @@ impl<T> Mutex<T> {
         }
     }
 
+    /// Unlocks the mutex.
+    ///
+    /// Normally, you unlock a mutex by dropping the `MutexGuard` that you got
+    /// from `try_lock` or `lock`. That proves that you locked it in the first
+    /// place.
+    ///
+    /// `unlock` allows you to unlock a mutex you didn't lock. This can wreak
+    /// all sorts of havoc if used incorrectly.
+    ///
+    /// # Safety
+    ///
+    /// You can use this safely _only_ if you know that no other code thinks it
+    /// still has the mutex locked, including the code calling `unlock`. You
+    /// might do this if you have, for instance, used `forget` on the
+    /// `MutexGuard` for some reason.
+    pub unsafe fn unlock(self: Pin<&Self>) {
+        self.waiters().wake_one();
+        self.state.store(0, Ordering::Release);
+    }
+
     /// Returns a future that will attempt to obtain the mutex each time it gets
     /// polled, completing only when it succeeds.
     ///
@@ -232,8 +252,11 @@ pub struct MutexGuard<'a, T> {
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
-        self.mutex.state.store(0, Ordering::Release);
-        self.mutex.waiters().wake_one();
+        // Safety: we are by definition the holder of the mutex, so we can use
+        // the normally unsafe `unlock` operation to avoid repeating code.
+        unsafe {
+            self.mutex.unlock();
+        }
     }
 }
 
