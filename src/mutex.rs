@@ -135,6 +135,14 @@ impl<T> Mutex<T> {
 /// This declares a local variable `ident` of type `Pin<&mut Mutex<T>>`, where
 /// `T` is the type of `expr`. The contents of the mutex are initialized to the
 /// value of `expr`.
+///
+/// For instance,
+///
+/// ```ignore
+/// create_mutex!(my_mutex, 42usize);
+/// // ...
+/// *my_mutex.lock().await += 4; // now contains 46
+/// ```
 #[macro_export]
 macro_rules! create_mutex {
     ($var:ident, $contents:expr) => {
@@ -153,6 +161,68 @@ macro_rules! create_mutex {
         // Drop mutability.
         let $var = $var.as_ref();
     };
+}
+
+/// Convenience macro for creating a pinned mutex in static memory.
+///
+/// This declares a local variable `ident` of type `Pin<&mut Mutex<T>>`, but
+/// which _points to_ a `Mutex<T>` in static memory. This helps to keep your
+/// application's memory usage transparent at build time, but it's slightly
+/// trickier to use than `create_mutex`, because it will only succeed _once_ in
+/// the life of your program: you cannot use a function containing
+/// `create_static_mutex` from several tasks to create several mutexes, because
+/// they would alias. If you need that, use `create_mutex`.
+///
+/// Unlike `create_mutex`, `create_static_mutex` returns its `Pin<&mut
+/// Mutex<T>>` and can just be assigned to a variable. However, it does require
+/// that you tell it the type explicitly:
+///
+/// ```ignore
+/// let my_mutex = create_static_mutex!(usize, 42);
+/// // ...
+/// *my_mutex.lock().await += 4;
+/// ```
+///
+#[macro_export]
+macro_rules! create_static_mutex {
+    ($t:ty, $contents:expr) => {{
+        use core::sync::atomic::{AtomicBool, Ordering};
+        use core::mem::{ManuallyDrop, MaybeUninit};
+
+        // Flag for detecting multiple executions.
+        static INIT: AtomicBool = AtomicBool::new(false);
+
+        assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
+
+        // Static mutex storage.
+        static mut M: MaybeUninit<Mutex<$t>> = MaybeUninit::uninit();
+
+        // Safety: there are two things going on here:
+        // - Discharging the obligations of Mutex::new (which we'll do in a sec)
+        // - Write to a static mut, which is safe because of our INIT check
+        //   above.
+        unsafe {
+            M = MaybeUninit::new(
+                ManuallyDrop::into_inner(Mutex::new($contents))
+            );
+        }
+
+        // Safety: this is the only mutable reference to M that will ever exist
+        // in the program, so we can pin it as long as we don't touch M again
+        // below (which we do not).
+        let mut m: Pin<&'static mut _> = unsafe {
+            Pin::new_unchecked(&mut *M.as_mut_ptr())
+        };
+
+        // Safety: the value has not been operated on since `new` except for
+        // being pinned, so this operation causes it to become valid and safe.
+        unsafe {
+            $crate::mutex::Mutex::finish_init(m.as_mut());
+        }
+
+        // Drop mutability and return value.
+        m.into_ref()
+    }};
 }
 
 /// Smart pointer representing successful locking of a mutex.
@@ -190,4 +260,24 @@ impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
         // or its contents exist.
         unsafe { &mut *v.get() }
     }
+}
+
+#[allow(dead_code)]
+async fn static_mutex_compile_test() {
+    // Check that the convenient syntax works:
+    let m = create_static_mutex!(usize, 42);
+    // Check that the type is what we expect.
+    let m: Pin<&'static Mutex<usize>> = m;
+
+    *m.lock().await += 4;
+}
+
+#[allow(dead_code)]
+async fn mutex_compile_test() {
+    // Check that the convenient syntax works:
+    create_mutex!(m, 42usize);
+    // Check that the type is what we expect.
+    let m: Pin<&Mutex<usize>> = m;
+
+    *m.lock().await += 4;
 }
