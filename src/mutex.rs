@@ -96,8 +96,14 @@ impl<T> Mutex<T> {
     /// might do this if you have, for instance, used `forget` on the
     /// `MutexGuard` for some reason.
     pub unsafe fn unlock(self: Pin<&Self>) {
-        self.waiters().wake_one();
-        self.state.store(0, Ordering::Release);
+        if self.waiters().wake_one() {
+            // Someone was waiting. We will leave the state as taken to ensure
+            // that no interloper can steal the mutex from the new rightful
+            // owner before that owner is polled next.
+        } else {
+            // Nobody was waiting. Allow whoever tries next to get the mutex.
+            self.state.store(0, Ordering::Release);
+        }
     }
 
     /// Returns a future that will attempt to obtain the mutex each time it gets
@@ -131,11 +137,24 @@ impl<T> Mutex<T> {
         loop {
             self.waiters().insert_and_wait_with_cleanup(
                 wait_node.as_mut(),
-                || self.waiters().wake_one(),
+                || {
+                    // Safety: if we are evicted from the wait list, which is
+                    // the only time this cleanup routine is called, then we own
+                    // the mutex and are responsible for unlocking it, though we
+                    // have not yet created the MutexGuard.
+                    unsafe {
+                        self.unlock();
+                    }
+                },
             ).await;
-            if let Some(guard) = self.try_lock() {
-                break guard;
-            }
+            // We've been booted out of the waiter list, which (by construction)
+            // only happens in `unlock`. Meaning, someone just released the
+            // mutex and it's our turn. However, they should _not_ have cleared
+            // the mutex flag to prevent races -- and so we cannot use
+            // `try_lock` which expects to find the flag clear.
+            debug_assert_eq!(self.state.load(Ordering::Acquire), 1);
+
+            break MutexGuard { mutex: self };
         }
     }
 

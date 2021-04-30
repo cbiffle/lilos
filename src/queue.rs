@@ -161,7 +161,7 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
                     // but we're leaving, we must wake the next.
                     self.push_waiters().insert_and_wait_with_cleanup(
                         node.as_mut(),
-                        || self.push_waiters().wake_one(),
+                        || { self.push_waiters().wake_one(); },
                     ).await;
                 }
             }
@@ -231,7 +231,7 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
             while self.is_empty() {
                 self.pop_waiters().insert_and_wait_with_cleanup(
                     node.as_mut(),
-                    || self.pop_waiters().wake_one(),
+                    || { self.pop_waiters().wake_one(); },
                 ).await;
             }
         }

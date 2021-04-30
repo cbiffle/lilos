@@ -479,7 +479,10 @@ impl List<()> {
     }
 
     /// Wakes the oldest waiter on an unsorted list.
-    pub fn wake_one(self: Pin<&Self>) {
+    ///
+    /// Returns a flag indicating whether anything was done (i.e. whether the
+    /// list was found empty).
+    pub fn wake_one(self: Pin<&Self>) -> bool {
         let candidate = self.root.prev.get();
         if candidate != NonNull::from(&self.root) {
             // Safety: Link Valid Invariant
@@ -488,6 +491,9 @@ impl List<()> {
             unsafe {
                 (&*cref.waker.get()).wake_by_ref();
             }
+            true
+        } else {
+            false
         }
     }
 }
