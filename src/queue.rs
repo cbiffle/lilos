@@ -136,14 +136,33 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
     /// resolves, cancelling/dropping the future will also drop `value`.
     ///
     /// When the future resolves, `value` is owned by the queue.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the future gives up the caller's access to `value`. If it has
+    /// made it into the queue, great; otherwise, it is simply dropped.
+    ///
+    /// The remaining semantics are subtle: if the future has been selected as
+    /// having the next opportunity to push into the queue, but has not yet been
+    /// polled, it wakes a different waiting task on drop so that the wake event
+    /// is not lost.
     pub async fn push(self: Pin<&Self>, mut value: T) {
         loop {
+            // Attempt to insert the value without blocking.
             match self.try_push(value) {
-                Ok(_) => return,
+                Ok(_) => return, // yay
                 Err(revalue) => {
+                    // The value came back out. There is no space; we must
+                    // block.
                     value = revalue;
                     create_node!(node, (), noop_waker());
-                    self.push_waiters().insert_and_wait(node.as_mut()).await;
+                    // We need a cleanup action on the insert_and_wait here,
+                    // because we only wake_one on pop -- and if that one is us,
+                    // but we're leaving, we must wake the next.
+                    self.push_waiters().insert_and_wait_with_cleanup(
+                        node.as_mut(),
+                        || self.push_waiters().wake_one(),
+                    ).await;
                 }
             }
         }
@@ -197,11 +216,23 @@ impl<S: AsMutSlice<Element = MaybeUninit<T>>, T> Queue<T, S> {
     ///
     /// When the future resolves, it has the side effect of moving one `T` out
     /// of the queue to return it.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the future before it resolves will stop attempting to pop.
+    ///
+    /// This will _never_ lose data. If the future has been selected as getting
+    /// the next element pushed into the queue, but has not been polled since
+    /// then, the element stays in the queue and this future wakes another
+    /// waiter on drop.
     pub async fn pop(self: Pin<&Self>) -> T {
         if self.is_empty() {
             create_node!(node, (), noop_waker());
             while self.is_empty() {
-                self.pop_waiters().insert_and_wait(node.as_mut()).await;
+                self.pop_waiters().insert_and_wait_with_cleanup(
+                    node.as_mut(),
+                    || self.pop_waiters().wake_one(),
+                ).await;
             }
         }
 

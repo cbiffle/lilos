@@ -330,6 +330,16 @@ impl<T: PartialOrd> List<T> {
     /// would regain access to their `&mut Node` while the list also has
     /// pointers, violating aliasing.
     ///
+    /// If the node is detached on drop, but this future has not yet been
+    /// polled, then you, the user, have a decision to make. If the node
+    /// is likely to have been detached with `wake_one`, then the event that
+    /// caused the wake may be lost if this future is dropped now without being
+    /// polled. To handle this race condition, use
+    /// `insert_and_wait_with_cleanup` instead.
+    ///
+    /// If, however, you don't use `wake_one` on this list, don't worry about
+    /// it.
+    ///
     /// # Panics
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
@@ -338,6 +348,52 @@ impl<T: PartialOrd> List<T> {
         self: Pin<&Self>,
         node: Pin<&'a mut Node<T>>,
     ) -> impl Future<Output = ()> + 'a {
+        self.insert_and_wait_with_cleanup(
+            node,
+            || (),
+        )
+    }
+
+    /// Inserts `node` into this list, maintaining ascending sort order, and
+    /// then waits for it to be kicked back out.
+    ///
+    /// Specifically, `node` will be placed just *before* the first item in the
+    /// list whose `contents` are greater than or equal to `node.contents`, if
+    /// such an item exists, or at the end if not.
+    ///
+    /// When the returned future completes, `node` has been detached again.
+    ///
+    /// The `cleanup` action is performed in only one circumstance:
+    ///
+    /// 1. `node` has been detached by some other code,
+    /// 2. The returned `Future` has not yet been polled, and
+    /// 3. It is being dropped.
+    ///
+    /// This gives you an opportunity to e.g. wake another node.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the future returned by `insert_and_wait_with_cleanup` will
+    /// forceably detach `node` from `self`. This is important for safety: the
+    /// future borrows `node`, preventing concurrent modification while there
+    /// are outstanding pointers in the list. If the future did not detach on
+    /// drop, the caller would regain access to their `&mut Node` while the list
+    /// also has pointers, violating aliasing.
+    ///
+    /// If the node is detached on drop, but this future has not yet been
+    /// polled, `cleanup` will be run. If you find yourself passing a no-op
+    /// closure for `cleanup`, have a look at `insert_and_wait` for your
+    /// convenience.
+    ///
+    /// # Panics
+    ///
+    /// If `node` is not detached (if it's in another list) when this is called.
+    /// This should be pretty difficult to achieve in practice.
+    pub fn insert_and_wait_with_cleanup<'node, F: 'node + FnOnce()>(
+        self: Pin<&Self>,
+        node: Pin<&'node mut Node<T>>,
+        cleanup: F,
+    ) -> impl Future<Output = ()> + 'node {
         // We required `node` to be `mut` to prove exclusive ownership, but we
         // don't actually need to mutate it -- and we're going to alias it. So,
         // downgrade.
@@ -379,7 +435,8 @@ impl<T: PartialOrd> List<T> {
 
         WaitForDetach {
             node,
-            detach_on_drop: Cell::new(true),
+            polled_since_detach: Cell::new(false),
+            cleanup: Some(cleanup),
         }
     }
 
@@ -453,12 +510,13 @@ impl<T> Drop for List<T> {
 
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
-struct WaitForDetach<'a, T> {
+struct WaitForDetach<'a, T, F: FnOnce()> {
     node: Pin<&'a Node<T>>,
-    detach_on_drop: Cell<bool>,
+    polled_since_detach: Cell<bool>,
+    cleanup: Option<F>,
 }
 
-impl<T> Future for WaitForDetach<'_, T> {
+impl<T, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context)
@@ -468,7 +526,7 @@ impl<T> Future for WaitForDetach<'_, T> {
             // The node is not attached to any list, but we're still borrowing
             // it until we're dropped, so we don't need to replace the node
             // field contents -- just set a flag to skip work in the Drop impl.
-            self.detach_on_drop.set(false);
+            self.polled_since_detach.set(true);
             Poll::Ready(())
         } else {
             // The node remains attached to the list. While unlikely, it's
@@ -481,9 +539,16 @@ impl<T> Future for WaitForDetach<'_, T> {
     }
 }
 
-impl<T> Drop for WaitForDetach<'_, T> {
+impl<T, F: FnOnce()> Drop for WaitForDetach<'_, T, F> {
     fn drop(&mut self) {
-        if self.detach_on_drop.get() {
+        if self.node.is_detached() {
+            if self.polled_since_detach.get() {
+                // No action necessary.
+            } else {
+                // Uh oh, we have not had a chance to handle the detach.
+                (self.cleanup.take().unwrap())();
+            }
+        } else {
             self.node.detach();
         }
     }

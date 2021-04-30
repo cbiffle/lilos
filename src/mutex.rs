@@ -70,6 +70,20 @@ impl<T> Mutex<T> {
 
     /// Returns a future that will attempt to obtain the mutex each time it gets
     /// polled, completing only when it succeeds.
+    ///
+    /// If the mutex is free at the time of the first `poll`, the future will
+    /// resolve cheaply without blocking.
+    ///
+    /// # Cancellation
+    ///
+    /// Cancellation behavior for the returned future is slightly subtle.
+    ///
+    /// - If dropped before it's polled _at all_ it does essentially nothing.
+    /// - If dropped once it's added itself to the wait list for the mutex, but
+    ///   before it has been given the mutex, it will detach from the wait list.
+    /// - If dropped after it has been given the mutex, but before it's been
+    ///   polled (and thus given a chance to notice that), it will wake the next
+    ///   waiter on the mutex wait list.
     pub async fn lock(self: Pin<&Self>) -> MutexGuard<'_, T> {
         // Complete synchronously if the mutex is uncontended.
         if self.state.fetch_or(1, Ordering::Acquire) == 0 {
@@ -79,9 +93,15 @@ impl<T> Mutex<T> {
         // We'd like to put our name on the wait list, please.
         create_node!(wait_node, (), noop_waker());
 
-        self.waiters().insert_and_wait(wait_node.as_mut()).await;
-
-        MutexGuard { mutex: self }
+        loop {
+            self.waiters().insert_and_wait_with_cleanup(
+                wait_node.as_mut(),
+                || self.waiters().wake_one(),
+            ).await;
+            if self.state.fetch_or(1, Ordering::Acquire) == 0 {
+                break MutexGuard { mutex: self };
+            }
+        }
     }
 
     fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
