@@ -30,6 +30,18 @@
 //! The wait list means that a queue can have more pending elements than its
 //! storage capacity suggests: one element for each slot in the backing array,
 //! _plus_ one pending element for every task that is blocked trying to insert.
+//!
+//! # Known issues
+//!
+//! The queue implementation is not perfectly fair. If several poppers are
+//! waiting, and a corresponding number of pushes occurs before any of the
+//! poppers are polled, the poppers will get elements from the queue in random
+//! order, _not_ in the order they arrived.
+//!
+//! If you're cool with this, great!
+//!
+//! I hope to fix this, but the solution is somewhat involved and not required
+//! for my current applications.
 
 use core::cell::Cell;
 
