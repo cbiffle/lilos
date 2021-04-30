@@ -627,7 +627,7 @@ macro_rules! create_list {
 /// node's contents are set to `val`, and its waker is `waker`.
 ///
 /// (Note: `waker` should almost always be
-/// [`exec::noop_waker()`][exec::noop_waker].)
+/// [`exec::noop_waker()`][crate::exec::noop_waker].)
 #[macro_export]
 macro_rules! create_node {
     ($var:ident, $dl:expr, $w: expr) => {

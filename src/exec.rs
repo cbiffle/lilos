@@ -453,10 +453,10 @@ pub const ALL_TASKS: usize = !0;
 /// A lightweight task notification scheme that can be used to safely route
 /// events from interrupt handlers to task code.
 ///
-/// Any number of tasks can [`subscribe`] to a `Notify`. When [`notify`] is
-/// called on it, all those tasks will be awoken (i.e. their `Waker` will be
-/// triggered so that they become eligible for polling), and their subscription
-/// is atomically ended.
+/// Any number of tasks can [`subscribe`][Notify::subscribe] to a `Notify`. When
+/// [`notify`][Notify::notify] is called on it, all those tasks will be awoken
+/// (i.e. their `Waker` will be triggered so that they become eligible for
+/// polling), and their subscription is atomically ended.
 ///
 /// A `Notify` is very small (the size of a pointer), so feel free to create as
 /// many as you like.
