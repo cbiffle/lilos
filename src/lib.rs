@@ -92,9 +92,12 @@
 #[macro_use]
 pub mod list;
 pub mod exec;
-pub mod mutex;
-pub mod queue;
 pub mod time;
+
+#[cfg(feature = "mutex")]
+pub mod mutex;
+#[cfg(feature = "queue")]
+pub mod queue;
 
 use core::marker::PhantomData;
 

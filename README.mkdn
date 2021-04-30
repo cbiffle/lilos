@@ -47,6 +47,14 @@ For complete worked examples, see the `examples` directory, particularly:
 If you'd like to read about this at length, see the [technical
 report](https://github.com/cbiffle/lilos/blob/main/doc/tr.adoc).
 
+# Features
+
+By default, `lilos` includes the core OS and some useful data structures for
+inter-task communication. You can turn those off with `--no-default-features`
+and go a la carte:
+
+- `mutex` enables the `lilos::mutex` module.
+- `queue` enables the `lilos::queue` module.
 
 # Contact and License
 
