@@ -98,6 +98,8 @@ pub mod time;
 pub mod mutex;
 #[cfg(feature = "queue")]
 pub mod queue;
+#[cfg(feature = "spsc")]
+pub mod spsc;
 
 use core::marker::PhantomData;
 

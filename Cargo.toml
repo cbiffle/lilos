@@ -14,9 +14,10 @@ readme = "README.mkdn"
 default-target = "thumbv7em-none-eabihf"
 
 [features]
-default = ["mutex", "queue"] # may not be on by default in a later version
+default = ["mutex", "spsc"] # may not be on by default in a later version
 mutex = []
 queue = ["as-slice"]
+spsc = []
 
 [dependencies]
 # We need inline-asm here to get at APSR.

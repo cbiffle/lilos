@@ -504,6 +504,35 @@ impl Notify {
         wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
     }
 
+    /// Repeatedly calls `cond`, completing when it returns `Some(x)`. In
+    /// between calls, subscribes to `notify`, so that the task will wake less
+    /// often and leave CPU available for other things.
+    ///
+    /// This is appropriate if you know that any change to `cond`'s result will
+    /// be preceded by some task calling `notify()`.
+    ///
+    /// This is similar to `until` but can produce a value.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future will drop `cond`.
+    pub fn until_some<'a, 'b, T>(
+        &'a self,
+        mut cond: impl (FnMut() -> Option<T>) + 'b,
+    ) -> impl Future<Output = T> + 'a
+    where
+        'b: 'a,
+    {
+        futures::future::poll_fn(move |cx| {
+            if let Some(x) = cond() {
+                Poll::Ready(x)
+            } else {
+                self.subscribe(cx.waker());
+                Poll::Pending
+            }
+        })
+    }
+
     /// Repeatedly calls `cond`, completing when it returns `true`. In between
     /// calls, subscribes to `notify`, so that the task will wake less often and
     /// leave CPU available for other things.

@@ -55,12 +55,12 @@ extern crate panic_halt;
 use core::mem::MaybeUninit;
 use core::time::Duration;
 use core::future::Future;
-use core::pin::Pin;
 
 use stm32f4::stm32f407 as device;
 use device::interrupt;
 
 use lilos::exec::{Notify, PeriodicGate};
+use lilos::spsc;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Entry point
@@ -174,7 +174,8 @@ async fn usart_echo(
         .moder3().alternate());
 
     // Enable the UART interrupt that we'll use to wake tasks.
-    // Safety: our ISR (below) is safe to enable at any time.
+    // Safety: our ISR (below) is safe to enable at any time -- plus, we're in a
+    // future at this point, so interrupts are globally masked.
     unsafe {
         cortex_m::peripheral::NVIC::unmask(device::Interrupt::USART2);
     }
@@ -185,34 +186,43 @@ async fn usart_echo(
     // important to run RX and TX concurrently. (Note that the STM32F4's USART
     // has no hardware FIFO of any kind, just to make our lives difficult. This
     // queue is effectively replacing such a FIFO.)
-    lilos::create_queue!(q, [MaybeUninit::<u8>::uninit(); 16]);
 
-    // "Fork" into the rx and tx processes. The trailing ".0" here is because
-    // we're joining two nonterminating futures, giving type (!, !), which Rust
-    // doesn't think is uninhabited -- by extracting one of the !s we prove that
-    // code past this point is unreachable.
-    futures::future::join(echo_rx(usart, q), echo_tx(usart, q)).await.0
+    // First, storage. We'll put this on the stack as part of our async fn;
+    // could also be static.
+    let mut q_storage: [MaybeUninit<u8>; 16] = [MaybeUninit::uninit(); 16];
+    // Now, the queue structure,
+    let mut q = spsc::Queue::new(&mut q_storage);
+    // ...and the two handles to it.
+    let (q_push, q_pop) = q.split();
+
+    // "Fork" into the rx and tx processes. This is a very convenient way to
+    // manage the two sides of the link, but has the caveat that this task will
+    // be woken and _both_ will be polled on either tx or rx interrupts (because
+    // Notify designates a task, not a future within it). This may not matter
+    // for your application.
+    //
+    // The trailing ".0" here is because we're joining two nonterminating
+    // futures, giving type (!, !), which Rust doesn't think is uninhabited --
+    // by extracting either one of the !s we prove that code past this point is
+    // unreachable.
+    futures::future::join(echo_rx(usart, q_push), echo_tx(usart, q_pop)).await.0
 }
 
 /// Echo receive task. Moves bytes from `usart` to `q`.
-async fn echo_rx<B>(
+async fn echo_rx(
     usart: &device::USART2,
-    q: Pin<&lilos::queue::Queue<u8, B>>,
-) -> !
-where B: as_slice::AsMutSlice<Element = MaybeUninit<u8>>,
-{
+    mut q: spsc::Push<'_, u8>,
+) -> ! {
     loop {
         q.push(recv(usart).await).await;
     }
 }
 
 /// Echo transmit task. Moves bytes from `q` to `usart`.
-async fn echo_tx<B>(
+async fn echo_tx(
     usart: &device::USART2,
-    q: Pin<&lilos::queue::Queue<u8, B>>,
-) -> !
-where B: as_slice::AsMutSlice<Element = MaybeUninit<u8>>,
-{
+    mut q: spsc::Pop<'_, u8>,
+) -> !  {
     loop {
         send(usart, q.pop().await).await;
     }
