@@ -3,8 +3,7 @@
 //! This is a "single-producer, single-consumer" queue that splits into separate
 //! `Push` and `Pop` endpoints -- at any given time, there is at most one of
 //! each alive in your program, ensuring that pushes and pops are not coming
-//! from multiple directions. This simplifies things, by eliminating a bunch of
-//! race conditions.
+//! from multiple directions.
 //!
 //! You create a queue by calling `Queue::new` and passing it a reference to its
 //! backing storage. To actually use the queue, however, you must call
@@ -15,6 +14,11 @@
 //! The `Push` and `Pop` can then be handed off to separate code paths, so long
 //! as they don't outlive the `Queue` and its storage.
 //!
+//! This queue uses the Rust type system to ensure that only one code path is
+//! attempting to push or pop the queue at any given time, because both `Push`
+//! and `Pop` endpoints borrow the central `Queue`, and an `async` operation to
+//! push or pop through an endpoint borrows that endpoint in turn.
+//!
 //! # Implementation
 //!
 //! This is implemented as a concurrent lock-free Lamport queue. This has two
@@ -24,6 +28,10 @@
 //!    it is actually safe to operate either Push or Pop from an ISR.
 //! 2. It fills up at N-1 elements because one empty slot is used as a sentinel
 //!    to distinguish full from empty.
+//!
+//! The adaptations to modern memory ordering semantics are taken from Nhat Minh
+//! Lê et al's paper "Correct and Efficient Bounded FIFO Queues," though this
+//! implementation does not use _all_ of the optimizations they identified.
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
@@ -33,6 +41,8 @@ use crate::exec::Notify;
 
 /// A single-producer, single-consumer queue. The `Queue` struct contains the
 /// controlling information for the queue overall, and _borrows_ the storage.
+///
+/// See the module docs for details.
 pub struct Queue<'s, T> {
     storage: &'s mut [UnsafeCell<MaybeUninit<T>>],
 
@@ -49,6 +59,8 @@ pub struct Queue<'s, T> {
     pushed: Notify,
 }
 
+/// This type is easily sharable across threads, because there are no useful
+/// operations that can be performed using only a shared reference.
 unsafe impl<'s, T> Sync for Queue<'s, T> where T: Send {}
 
 impl<'s, T> Queue<'s, T> {
@@ -81,16 +93,27 @@ impl<'s, T> Queue<'s, T> {
     /// Creates a push and pop endpoint for this queue. Note that an exclusive
     /// borrow of the queue exists as long as either endpoint exists, ensuring
     /// that at most one of each endpoint exists at any point in the program.
+    ///
+    /// You can, however, drop the first pair of endpoints and make a new pair
+    /// later -- that's fine.
     pub fn split(&mut self) -> (Push<'_, T>, Pop<'_, T>) {
         (
             Push { q: self, _marker: crate::NotSyncMarker::default() },
             Pop { q: self, _marker: crate::NotSyncMarker::default() },
         )
     }
+
+    fn next_index(&self, i: usize) -> usize {
+        // This produced better code than using remainder on ARMv7-M last
+        // I checked.
+        if i + 1 == self.storage.len() { 0 } else { i + 1 }
+    }
+
 }
 
-/// It's entirely possible to drop a non-empty Queue in correct code, so we
-/// provide a Drop impl that goes through and cleans up queued elements.
+/// It's entirely possible to drop a non-empty Queue in correct code, unlike
+/// (say) a `lilos::list`, so we provide a Drop impl that goes through and
+/// cleans up queued elements.
 impl<'s, T> Drop for Queue<'s, T> {
     fn drop(&mut self) {
         let h = self.head.load(Ordering::SeqCst);
@@ -105,13 +128,15 @@ impl<'s, T> Drop for Queue<'s, T> {
                 let cell_contents = &mut *self.storage[t].get();
                 core::ptr::drop_in_place(cell_contents.as_mut_ptr());
             }
-            t = if t + 1 == self.storage.len() { 0 } else { t + 1 };
+            t = self.next_index(t);
         }
     }
 }
 
 /// Queue endpoint for pushing data. Access to a `Push` _only_ gives you the
 /// right to push data and enquire about push-related properties.
+///
+/// See the module docs for more details.
 pub struct Push<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: crate::NotSyncMarker,
@@ -125,21 +150,15 @@ impl<'q, T> Push<'q, T> {
     /// Checks if there is room to push at least one item. Because the `Push`
     /// endpoint has exclusive control over data movement into the queue, if
     /// this returns `true`, the condition will remain true until a `push` or
-    /// `try_push` happens through `self`.
+    /// `try_push` happens through `self`, or `self` is dropped.
     ///
     /// If this returns `false`, of course, room may appear at any time if the
     /// other end of the queue is popped.
     pub fn can_push(&self) -> bool {
         let h = self.q.head.load(Ordering::Relaxed);
         let t = self.q.tail.load(Ordering::Acquire);
-        let h_next = if h + 1 == self.q.storage.len() { 0 } else { h + 1 };
 
-        if h_next == t {
-            // We're full.
-            false
-        } else {
-            true
-        }
+        self.q.next_index(h) != t
     }
 
     /// Attempts to stuff `value` into the queue.
@@ -152,7 +171,7 @@ impl<'q, T> Push<'q, T> {
     pub fn try_push(&mut self, value: T) -> Result<(), T> {
         let h = self.q.head.load(Ordering::Relaxed);
         let t = self.q.tail.load(Ordering::Acquire);
-        let h_next = if h + 1 == self.q.storage.len() { 0 } else { h + 1 };
+        let h_next = self.q.next_index(h);
 
         if h_next == t {
             // We're full.
@@ -176,21 +195,22 @@ impl<'q, T> Push<'q, T> {
         Ok(())
     }
 
-    /// Stuffs `value` into the queue, waiting if necessary for space to become
-    /// available.
-    ///
-    /// The returned future will resolve once space for at least one element has
-    /// opened in the queue, and `value` has been transferred into the queue.
+    /// Produces a future that resolves when `value` has been pushed into the
+    /// queue, and not before. This implies that at least one free slot must
+    /// open in the queue -- either by never having been filled, or by being
+    /// freed up by a pop -- for the future to resolve.
     ///
     /// Note that the future maintains an exclusive borrow over `self` until
-    /// that happens -- so there can only be one outstanding `push` operation
-    /// against a queue at any given time. This means we don't have to define
-    /// the order of completion of competing pushes.
+    /// that happens -- so just as there can only be one `Push` endpoint for a
+    /// queue at any given time, there can only be one outstanding `push` future
+    /// for that endpoint. This means we don't have to define the order of
+    /// competing pushes, moving concerns about fairness to compile time.
     ///
     /// # Cancellation
     ///
-    /// If this future is dropped before `value` enters the queue, `value` is
-    /// dropped.
+    /// The future returned by `push` takes ownership of `value` immediately. If
+    /// the future is dropped before `value` makes it into the queue, `value` is
+    /// dropped along with it.
     pub async fn push(&mut self, value: T) {
         let mut value = Some(value);
         self.q.popped.until(move || {
@@ -207,6 +227,8 @@ impl<'q, T> Push<'q, T> {
 
 /// Queue endpoint for popping data. Access to a `Pop` _only_ gives you the
 /// right to pop data and enquire about pop-related properties.
+///
+/// See the module docs for more details.
 pub struct Pop<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: crate::NotSyncMarker,
@@ -221,7 +243,7 @@ impl<'q, T> Pop<'q, T> {
     ///
     /// Because the `Pop` endpoint has exclusive control over data movement out
     /// of the queue, if this returns `true`, the condition will remain true
-    /// until a `pop` or `try_pop` happens through `self`.
+    /// until a `pop` or `try_pop` happens through `self`, or `self` is dropped.
     ///
     /// If this returns `false`, of course, new items may appear at any time if
     /// the other end of the queue is pushed.
@@ -242,7 +264,7 @@ impl<'q, T> Pop<'q, T> {
             return None;
         }
 
-        let t_next = if t + 1 == self.q.storage.len() { 0 } else { t + 1 };
+        let t_next = self.q.next_index(t);
 
         // Safety: this is unsafe due to the read through the UnsafeCell's raw
         // pointer, and the move out of the MaybeUninit.
@@ -259,14 +281,22 @@ impl<'q, T> Pop<'q, T> {
         result
     }
 
-    /// Blocks until the queue is not empty and then pops and returns the first
-    /// element.
+    /// Produces a future that resolves to the next element that can be popped
+    /// from the queue. If the queue is not empty, this will happen immediately
+    /// on the first poll of the future; otherwise, it will happen when the
+    /// future is polled after data has been pushed into the queue.
+    ///
+    /// Note that the future maintains an exclusive borrow over `self` until
+    /// that happens -- so just as there can only be one `Pop` endpoint for a
+    /// queue at any given time, there can only be one outstanding `pop` future
+    /// for that endpoint. This means we don't have to define the order of
+    /// competing pops, moving concerns about fairness to compile time.
     ///
     /// # Cancellation
     ///
     /// The future returned by this function has no side effects until it
     /// resolves to a popped element. If you drop it before it has resolved,
-    /// it's a no-op.
+    /// no data is lost.
     pub async fn pop(&mut self) -> T {
         self.q.pushed.until_some(move || self.try_pop()).await
     }

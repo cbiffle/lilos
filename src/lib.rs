@@ -96,8 +96,6 @@ pub mod time;
 
 #[cfg(feature = "mutex")]
 pub mod mutex;
-#[cfg(feature = "queue")]
-pub mod queue;
 #[cfg(feature = "spsc")]
 pub mod spsc;
 
