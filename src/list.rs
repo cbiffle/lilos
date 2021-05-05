@@ -202,10 +202,12 @@ impl<T> Node<T> {
         // are our own neighbor. This turns into an expensive no-op in that
         // case, since self.prev == self.prev.prev, etc.
         //
-        // Safety: Link Valid Invariant allows deref of prev/next
+        // Safety: Link Valid Invariant allows deref of prev/next, and as_ref
+        // ensures that the temporary reference produced to get at next/prev can
+        // safely alias &self
         unsafe {
-            self.prev.get().as_mut().next.set(self.next.get());
-            self.next.get().as_mut().prev.set(self.prev.get());
+            self.prev.get().as_ref().next.set(self.next.get());
+            self.next.get().as_ref().prev.set(self.prev.get());
         }
         // Link to ourselves.
         self.prev.set(NonNull::from(&*self));
