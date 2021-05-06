@@ -54,7 +54,7 @@ inter-task communication. You can turn those off with `--no-default-features`
 and go a la carte:
 
 - `mutex` enables the `lilos::mutex` module.
-- `queue` enables the `lilos::queue` module.
+- `spsc` enables the `lilos::spsc` module.
 
 # Contact and License
 
