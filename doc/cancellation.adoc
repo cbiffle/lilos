@@ -1,0 +1,148 @@
+:showtitle:
+:toc: left
+:numbered:
+:icons: font
+:source-language: rust
+:source-highlighter: rouge
+
+= Cancellation
+
+Dropping a `Future` before it resolves to a value is called _cancelling_ the
+`Future`. This is a very useful and powerful idea, but it's subtle and contains
+some gotchas.
+
+Normally, when you do something that produces a `Future`, you will `poll` that
+`Future` until it resolves -- usually with `await`. However, this isn't the
+_only_ thing you can do; you have two more options:
+
+1. Don't poll it, leaving it sitting around, or
+2. `drop` it.
+
+This doc is concerned with the second one.
+
+== Times when cancellation happens
+
+Or, "why would my callers drop me?"
+
+Cancellation can happen if you call an `async fn` without using the result, as
+in
+
+[source,rust,linenums]
+----
+async fn do_stuff() { ... }
+
+do_stuff(); // note that we did not await
+----
+
+But that's kind of a silly example, because you probably wouldn't do that in
+practice -- particularly since it will get you a compiler warning!
+
+Most _realistic_ examples of cancelling a `Future` involve situations where you
+_could have_ polled it, and in fact may have polled it a few times already, but
+then circumstances changed and you decided to do something else. This happens
+when, for example, using `select` to implement timeouts:
+
+[source,rust,linenums]
+----
+futures::select! {
+    data = queue.pop() => process(data);
+    _ = sleep_for(TIMEOUT) => {
+        // No data arrived in time! Let's move on and do something else.
+    };
+}
+----
+
+This uses https://docs.rs/futures/0.3.14/futures/macro.select.html[the `select`
+macro from the `futures` crate] to `await` on _two_ futures: one that is
+attempting to pop data from a queue, and one that resolves automatically after a
+delay. `select` will poll all the given futures until _one_ resolves, and then
+`drop` them all. In other words, all the futures that didn't resolve get
+cancelled.
+
+TIP: Cancellation relies on the fact that dropping stuff in Rust happens
+_synchronously,_ i.e. by the time execution gets to the next statement, the drop
+is complete. Other languages that make heavy use of futures or promises, such as
+JavaScript and Java, typically can't guarantee that, which makes cancellation
+much less useful.
+
+== Cancel-correctness and cancel points
+
+We'll refer to the property of code that doesn't break when its futures get
+cancelled as "cancel-correctness," by analogy to "const-correctness."
+
+To be cancel-correct, a future should behave reasonably if it's dropped any time
+before it resolves -- before it's polled, or after it's been polled _some_ but
+hasn't resolved.
+
+Fortunately, a future can't be dropped _while_ it's being polled. This is a key
+difference between cancellation, which always happens while a future is
+"dormant," and similar mechanisms in other languages such as thread interruption
+or signals -- those other mechanisms can happen at any time, even in the middle
+of straight-line code. Points in the code where cancellation is possible are
+called _cancel points_, and you can spot them when reading the code.
+
+In an `async fn`, every `await` is a potential cancel point. Any macro that
+expands to _contain_ an `await` is also a cancel point; these might be macros
+you write yourself, or common examples like `futures::select!`.
+
+Other than macros, you don't have to read any _other_ code to identify cancel
+points in a function. In particular, calling a function -- _any_ function --
+can't create a cancel point in the caller's code. Only `await` can do that.
+
+NOTE: This is a key difference between cancel-correctness in Rust and
+exception-correctness in languages like {cpp}, where any function could
+potentially throw, and you may need to read and understand the other functions'
+APIs to identify throw-points. (I am ignoring `panic!` because `lilos` primarily
+targets systems that don't unwind on `panic!`.)
+
+TIP: If you're writing a `Future` by hand, the `poll` function won't contain
+_any_ cancel points -- the `Future` can only be dropped after `poll` returns.
+
+=== Writing cancel-correct code
+
+The short version is to assume that every `await` might be your last -- but how?
+
+First, if your code has invariants to maintain, make sure they hold at any
+cancel point. It's okay to temporarily break invariants _between_ cancel points,
+because nobody will be able to see it. (This is a nice thing about cancel points
+being explicit and visible.)
+
+Second, if your code is managing a resource, think about what your callers would
+expect might happen to that resource if they cancel you. For instance, if you've
+allocated memory, you probably want to free it; if you've locked a mutex, it
+would be very polite to unlock it.
+
+You might have noticed something in common between the two examples above --
+memory and mutexes -- which is that both normally use ownership-based resource
+management in Rust (aka RAII). In cases like this, you will most likely get
+cancel-correctness _for free,_ because the `drop` impls of any local variables
+in your `async fn` (or any fields in your `Future` type) will get called when
+it's dropped.
+
+This includes the other futures that you `await` inside yours. If your future
+composes a bunch of other futures, as long as _they_ are all cancel-correct,
+your future is _probably_ cancel-correct by default.
+
+The main exception to this rule is when you're updating a data structure that
+outlives your future, and ``await``-ing during the process. For instance, if you
+set a "being updated" flag at the start, you will want to ensure that flag gets
+cleared on cancellation. This means you need to add custom code at `drop`. There
+are three ways to do this in practice:
+
+1. Instead of an `async fn` you can write a `Future` type by hand and give it a
+`Drop` impl. This is a huge change, and is probably your last resort.
+2. You can write a custom resource type used _inside_ your future, whose _only_
+role is to have a custom `Drop` impl. This is nearly as flexible as a custom
+`Future` type, but lets you continue using `async fn` for most of your code.
+3. You can use the `scope_guard` crate, which is basically a generalized version
+of the previous option.
+
+== Cancellation in the `lilos` API
+
+All the futures in the core `lilos` API, and in the optional utility packages
+like `mutex` and `spsc`, have been written to have well-defined cancellation
+behavior. Generally they're designed to do "what you'd expect;" for specifics,
+look for the _Cancellation_ sub-headings in the docs for each function.
+
+This means that, in most cases, if you write an `async fn` using the `lilos`
+async APIs, you'll be cancel-correct by default.
