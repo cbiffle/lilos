@@ -56,6 +56,30 @@ and go a la carte:
 - `mutex` enables the `lilos::mutex` module.
 - `spsc` enables the `lilos::spsc` module.
 
+# Nightly
+
+`lilos` currently relies on two language features that are not considered stable
+by the Rust team:
+
+- The [never type](https://doc.rust-lang.org/reference/types/never.html), which
+  is necessary to write the type of a future that loops forever, `Future<Output
+  = !>`. (I thought this was going to stabilize imminently when I published
+  `lilos`, but it keeps running into problems.)
+- [Inline
+  assembly](https://doc.rust-lang.org/unstable-book/library-features/asm.html).
+  Lilos itself contains no assembly, but currently relies on a feature of the
+  `cortex-m` crate that in turn relies on inline assembly.
+
+As a result, `lilos` itself and applications built on `lilos` need to be built
+with a nightly toolchain. `lilos` is tested against the nightly version named in
+the [`rust-toolchain` file in its
+repo](https://github.com/cbiffle/lilos/blob/main/rust-toolchain); for best
+results, use that version or later.
+
+We will drop the nightly requirement as soon as these features stabilize -- both
+are currently on track for stabilization. To give users the most flexiblity, we
+hope not to introduce any more unstable features.
+
 # Contact and License
 
 If you have questions, or you use it for something, I'd love to find out! Send
