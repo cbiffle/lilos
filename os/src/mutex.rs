@@ -232,7 +232,7 @@ macro_rules! create_static_mutex {
         assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
 
         // Static mutex storage.
-        static mut M: MaybeUninit<Mutex<$t>> = MaybeUninit::uninit();
+        static mut M: MaybeUninit<$crate::mutex::Mutex<$t>> = MaybeUninit::uninit();
 
         // Safety: there are two things going on here:
         // - Discharging the obligations of Mutex::new (which we'll do in a sec)
@@ -240,7 +240,7 @@ macro_rules! create_static_mutex {
         //   above.
         unsafe {
             M = MaybeUninit::new(
-                ManuallyDrop::into_inner(Mutex::new($contents))
+                ManuallyDrop::into_inner($crate::mutex::Mutex::new($contents))
             );
         }
 
@@ -300,24 +300,4 @@ impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
         // or its contents exist.
         unsafe { &mut *v.get() }
     }
-}
-
-#[allow(dead_code)]
-async fn static_mutex_compile_test() {
-    // Check that the convenient syntax works:
-    let m = create_static_mutex!(usize, 42);
-    // Check that the type is what we expect.
-    let m: Pin<&'static Mutex<usize>> = m;
-
-    *m.lock().await += 4;
-}
-
-#[allow(dead_code)]
-async fn mutex_compile_test() {
-    // Check that the convenient syntax works:
-    create_mutex!(m, 42usize);
-    // Check that the type is what we expect.
-    let m: Pin<&Mutex<usize>> = m;
-
-    *m.lock().await += 4;
 }
