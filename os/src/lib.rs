@@ -114,20 +114,3 @@ struct NotSyncMarker(PhantomData<core::cell::Cell<()>>);
 /// This also blocks `Sync`.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct NotSendMarker(PhantomData<*const ()>);
-
-trait FromNever {
-    type Output;
-
-    fn from_never(self) -> Self::Output;
-}
-
-impl FromNever for core::task::Poll<!> {
-    type Output = ();
-
-    fn from_never(self) -> Self::Output {
-        match self {
-            core::task::Poll::Pending => (),
-            core::task::Poll::Ready(never) => match never {},
-        }
-    }
-}

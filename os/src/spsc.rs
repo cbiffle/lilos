@@ -316,7 +316,7 @@ async fn queue_compile_test() {
 async fn queue_static_storage_compile_test() {
     use core::sync::atomic::AtomicBool;
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(ONCE.swap(true, Ordering::SeqCst) == false);
+    assert!(!ONCE.swap(true, Ordering::SeqCst));
 
     // This is mostly to make sure I got the relative lifetime bounds right
     static mut STORAGE: [MaybeUninit<usize>; 64] = [MaybeUninit::uninit(); 64];
@@ -331,7 +331,7 @@ async fn queue_static_storage_compile_test() {
 async fn queue_static_everything_compile_test() {
     use core::sync::atomic::AtomicBool;
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(ONCE.swap(true, Ordering::SeqCst) == false);
+    assert!(!ONCE.swap(true, Ordering::SeqCst));
 
     static mut STORAGE: [MaybeUninit<usize>; 64] = [MaybeUninit::uninit(); 64];
     static mut Q: MaybeUninit<Queue<usize>> = MaybeUninit::uninit();

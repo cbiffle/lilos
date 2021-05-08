@@ -134,28 +134,26 @@ impl<T> Mutex<T> {
         // We'd like to put our name on the wait list, please.
         create_node!(wait_node, (), noop_waker());
 
-        loop {
-            self.waiters().insert_and_wait_with_cleanup(
-                wait_node.as_mut(),
-                || {
-                    // Safety: if we are evicted from the wait list, which is
-                    // the only time this cleanup routine is called, then we own
-                    // the mutex and are responsible for unlocking it, though we
-                    // have not yet created the MutexGuard.
-                    unsafe {
-                        self.unlock();
-                    }
-                },
-            ).await;
-            // We've been booted out of the waiter list, which (by construction)
-            // only happens in `unlock`. Meaning, someone just released the
-            // mutex and it's our turn. However, they should _not_ have cleared
-            // the mutex flag to prevent races -- and so we cannot use
-            // `try_lock` which expects to find the flag clear.
-            debug_assert_eq!(self.state.load(Ordering::Acquire), 1);
+        self.waiters().insert_and_wait_with_cleanup(
+            wait_node.as_mut(),
+            || {
+                // Safety: if we are evicted from the wait list, which is
+                // the only time this cleanup routine is called, then we own
+                // the mutex and are responsible for unlocking it, though we
+                // have not yet created the MutexGuard.
+                unsafe {
+                    self.unlock();
+                }
+            },
+        ).await;
+        // We've been booted out of the waiter list, which (by construction)
+        // only happens in `unlock`. Meaning, someone just released the
+        // mutex and it's our turn. However, they should _not_ have cleared
+        // the mutex flag to prevent races -- and so we cannot use
+        // `try_lock` which expects to find the flag clear.
+        debug_assert_eq!(self.state.load(Ordering::Acquire), 1);
 
-            break MutexGuard { mutex: self };
-        }
+        MutexGuard { mutex: self }
     }
 
     fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {

@@ -144,7 +144,6 @@ use core::time::Duration;
 
 use crate::list::List;
 use crate::time::Ticks;
-use crate::FromNever;
 
 /// How many bits in a `usize`, and thus in a pointer?
 const USIZE_BITS: usize = mem::size_of::<usize>() * 8;
@@ -246,11 +245,14 @@ pub fn noop_waker() -> Waker {
 
 /// Polls `future` in a context where the `Waker` will signal the task with
 /// index `index`.
-fn poll_task<T>(
+fn poll_task(
     index: usize,
-    future: Pin<&mut dyn Future<Output = T>>,
-) -> Poll<T> {
-    future.poll(&mut Context::from_waker(&waker_for_task(index)))
+    future: Pin<&mut dyn Future<Output = !>>,
+) {
+    match future.poll(&mut Context::from_waker(&waker_for_task(index))) {
+        Poll::Pending => (),
+        Poll::Ready(never) => never,
+    }
 }
 
 /// Selects an interrupt control strategy for the scheduler.
@@ -428,7 +430,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
             for (i, f) in futures.iter_mut().enumerate() {
                 if mask & (1 << (i % USIZE_BITS)) != 0 {
-                    poll_task(i, f.as_mut()).from_never();
+                    poll_task(i, f.as_mut());
                 }
             }
 
