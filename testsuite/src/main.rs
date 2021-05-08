@@ -12,10 +12,12 @@ extern crate panic_semihosting;
 // explicitly extern this to get the vector table
 extern crate stm32f4;
 
+mod list;
 mod spsc;
 mod mutex;
 
 use core::sync::atomic::{AtomicBool, Ordering};
+use futures::FutureExt;
 
 use cortex_m_semihosting::hprintln;
 
@@ -82,8 +84,13 @@ async fn task_coordinator() -> ! {
     async_tests! {
         test_other_tasks_started,
         test_clock_advancing,
-        test_sleep_until,
+        test_sleep_until_basic,
+        test_sleep_until_multi,
         test_notify,
+        list::test_node_basics,
+        list::test_list_basics,
+        list::test_insert_and_wait,
+        list::test_insert_and_wait_with_cleanup,
         mutex::test_stack,
         mutex::test_static,
         spsc::test_stack,
@@ -92,6 +99,7 @@ async fn task_coordinator() -> ! {
     }
 
     hprintln!("tests complete.").ok();
+    cortex_m_semihosting::debug::exit(Ok(()));
     block_forever().await
 }
 
@@ -117,12 +125,21 @@ async fn test_clock_advancing() {
     assert!(t2 > t1);
 }
 
-async fn test_sleep_until() {
+async fn test_sleep_until_basic() {
     let t1 = lilos::time::Ticks::now();
     let target = t1 + core::time::Duration::from_millis(10);
     lilos::exec::sleep_until(target).await;
     let t2 = lilos::time::Ticks::now();
     assert!(t2 == target);
+}
+
+async fn test_sleep_until_multi() {
+    futures::select_biased! {
+        _ = lilos::exec::sleep_for(A_BIT).fuse() => (),
+        _ = lilos::exec::sleep_for(A_BIT + A_BIT).fuse() => {
+            panic!("longer sleep should not wake first")
+        }
+    }
 }
 
 async fn test_notify() {
