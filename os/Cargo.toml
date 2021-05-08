@@ -19,8 +19,7 @@ mutex = []
 spsc = []
 
 [dependencies]
-# We need inline-asm here to get at APSR.
-cortex-m = { version = "0.7.2", features = ["inline-asm"] }
+cortex-m = { version = "0.7.2" }
 cortex-m-rt = "0.6.13"
 futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"

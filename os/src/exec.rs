@@ -609,6 +609,14 @@ pub fn wake_task_by_index(index: usize) {
 static TIMER_LIST: AtomicPtr<List<Ticks>> =
     AtomicPtr::new(core::ptr::null_mut());
 
+fn not_in_isr() -> bool {
+    // Safety: we're dereferencing a raw pointer in order to read a read-only
+    // portion of a single global register in the SCB, so this is fine.
+    let scb = unsafe { &*cortex_m::peripheral::SCB::ptr() };
+    // Bottom 9 bits are VECTACTIVE, which are 0 in Thread mode.
+    scb.icsr.read() & 0x1FF == 0
+}
+
 /// Sets the timer list for the duration of `body`.
 ///
 /// This doesn't nest, and will assert if you try.
@@ -617,7 +625,7 @@ fn set_timer_list<R>(
     body: impl FnOnce() -> R,
 ) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(cortex_m::register::apsr::read().bits() & 0x1FF == 0);
+    assert!(not_in_isr());
 
     let old_list = TIMER_LIST.swap(
         // Safety: since we've gotten a &mut, we hold the only reference, so
@@ -646,7 +654,7 @@ fn set_timer_list<R>(
 /// This provides a safe way to access the timer thread local.
 fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(cortex_m::register::apsr::read().bits() & 0x1FF == 0);
+    assert!(not_in_isr());
 
     let list_ref = {
         let tlptr = TIMER_LIST.load(Ordering::Acquire);
