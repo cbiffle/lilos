@@ -81,26 +81,54 @@ macro_rules! async_tests {
 }
 
 async fn task_coordinator() -> ! {
-    async_tests! {
-        test_other_tasks_started,
-        test_clock_advancing,
-        test_sleep_until_basic,
-        test_sleep_until_multi,
-        test_notify,
-        list::test_node_basics,
-        list::test_list_basics,
-        list::test_insert_and_wait,
-        list::test_insert_and_wait_with_cleanup,
-        mutex::test_stack,
-        mutex::test_static,
-        spsc::test_stack,
-        spsc::test_static_storage,
-        spsc::test_static_everything,
+    let tests = async {
+        async_tests! {
+            test_yield_cpu,
+            test_other_tasks_started,
+            test_clock_advancing,
+            test_sleep_until_basic,
+            test_sleep_until_multi,
+            test_notify,
+            list::test_node_basics,
+            list::test_list_basics,
+            list::test_insert_and_wait,
+            list::test_insert_and_wait_with_cleanup,
+            mutex::test_stack,
+            mutex::test_static,
+            spsc::test_stack,
+            spsc::test_static_storage,
+            spsc::test_static_everything,
+        }
+    };
+
+    // We're going to impose a timeout, just in case something fails to wake
+    // properly. Yes, `sleep_for` needs to be working for the timeout to work --
+    // this is best-effort in an attempt to improve user experience.
+
+    // This timeout may seem awfully short -- the test suite tends to take
+    // several seconds to run using openocd+gdb. However, this is in lilos time,
+    // and lilos time halts during any semihosting operation. Think of it as the
+    // "user" timing on Unix, while the time spent playing around in openocd is
+    // "sys".
+    const TEST_TIMEOUT: core::time::Duration = core::time::Duration::from_millis(1000);
+
+    futures::select_biased! {
+        _ = tests.fuse() => {
+            hprintln!("tests complete.").ok();
+            cortex_m_semihosting::debug::exit(Ok(()));
+        },
+        _ = lilos::exec::sleep_for(TEST_TIMEOUT).fuse() => {
+            panic!("tests timed out.");
+        }
     }
 
-    hprintln!("tests complete.").ok();
-    cortex_m_semihosting::debug::exit(Ok(()));
     block_forever().await
+}
+
+/// Make sure that yield CPU handles waking correctly -- otherwise the tests
+/// will just halt here.
+async fn test_yield_cpu() {
+    lilos::exec::yield_cpu().await;
 }
 
 async fn test_other_tasks_started() {
