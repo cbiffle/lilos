@@ -98,6 +98,8 @@ pub mod time;
 pub mod mutex;
 #[cfg(feature = "spsc")]
 pub mod spsc;
+#[cfg(feature = "handoff")]
+pub mod handoff;
 
 use core::marker::PhantomData;
 

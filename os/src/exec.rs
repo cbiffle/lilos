@@ -587,6 +587,30 @@ impl Notify {
             }
         })
     }
+
+    /// Subscribes to `notify` and blocks until the task is awoken. This may
+    /// produces spurious wakeups, and is appropriate only when you're checking
+    /// some condition separately. Otherwise, use `until`.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping this future does nothing in particular.
+    pub fn until_next(
+        &self,
+    ) -> impl Future<Output = ()> + '_
+    {
+        let mut setup = false;
+        futures::future::poll_fn(move |cx| {
+            if setup {
+                Poll::Ready(())
+            } else {
+                setup = true;
+                self.subscribe(cx.waker());
+                Poll::Pending
+            }
+        })
+    }
+
 }
 
 /// Notifies the executor that any tasks whose wake bits are set in `mask`
