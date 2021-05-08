@@ -1,0 +1,34 @@
+[package]
+name = "lilos-testsuite"
+authors = ["Cliff L. Biffle <code@cliffle.com>"]
+version = "0.1.0"
+edition = "2018"
+license = "MPL-2.0"
+description = "Operating system tests."
+repository = "https://github.com/cbiffle/lilos/"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+publish = false
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eabihf"
+
+[dependencies]
+cortex-m = "0.7.2"
+cortex-m-rt = "0.6.13"
+cortex-m-semihosting = "0.3.7"
+futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
+pin-utils = "0.1.0"
+lilos = { version = "0.2.0", path = "../os" }
+panic-semihosting = "0.5.6"
+
+[dependencies.stm32f4]
+default-features = false
+features = ["rt", "stm32f407"]
+version = "0.13.0"
+
+[[bin]]
+name = "lilos-testsuite"
+test = false
+bench = false

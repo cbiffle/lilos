@@ -1,10 +1,9 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-runner = "arm-none-eabi-gdb -q -x testsuite/openocd.gdb"
+runner = "arm-none-eabi-gdb -q -x openocd.gdb"
 
 rustflags = [
   "-C", "link-arg=-Tlink.x",
-  "-L", "./testsuite",
-  "-L", ".",
+  "-L", "${CARGO_MANIFEST_DIR}",
 ]
 
 [build]

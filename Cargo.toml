@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "os",
+    "testsuite",
 
     "examples/stm32f4/minimal",
     "examples/stm32f4/blinky",

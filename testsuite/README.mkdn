@@ -1,0 +1,5 @@
+# Test suite
+
+This is designed to run on a Cortex-M processor, exercise various OS features,
+and report status via semihosting. By default, this builds images for the
+STM32F407, but should work on any Cortex-M with some light changes.
