@@ -1,0 +1,66 @@
+# `lilos`: A minimal async RTOS
+
+This is a wee RTOS written to support the `async` style of programming in Rust.
+It's a research project, a playground, and a proof of concept.
+
+([`lilos` 1](https://github.com/cbiffle/lilos1) was a wee RTOS written to
+support multithreaded message-passing programs on AVR; this is technically
+`lilos` 2 but who's counting.)
+
+# About
+
+`lilos` is unusual for an RTOS:
+
+- `async`-based cooperative multitasking
+- No dynamic memory allocation
+- Low memory consumption
+- Applications can be written entirely in safe code
+
+Concrete example: code to blink an LED on the STM32F407's pin D13. (Note that a
+real application also needs a `main`, this just shows the one task.)
+
+```rust
+use core::time::Duration;
+use os::exec::sleep_for;
+use stm32f4xx::stm32f407::GPIOD;
+
+async fn blinky_task(gpiod: &GPIOD) -> ! {
+    let period = Duration::from_millis(500);
+    loop {
+        gpiod.bsrr.write(|w| w.bs13().set_bit()); 
+        sleep_for(period).await;
+        gpiod.bsrr.write(|w| w.br13().set_bit()); 
+        sleep_for(period).await;
+    }
+}
+```
+
+For complete worked examples, see the `examples` directory, particularly:
+
+- [`examples/stm32f4/minimal`](https://github.com/cbiffle/lilos/blob/main/examples/stm32f4/minimal/src/main.rs)
+  is the simplest LED blinky program.
+- [`examples/stm32f4/blinky`](https://github.com/cbiffle/lilos/blob/main/examples/stm32f4/blinky/src/main.rs)
+  is a fancier blinky program.
+- [`examples/stm32f4/uart_echo`](https://github.com/cbiffle/lilos/blob/main/examples/stm32f4/uart-echo/src/main.rs)
+  does UART I/O across tasks with a queue.
+
+If you'd like to read about this at length, see the [technical
+report](https://github.com/cbiffle/lilos/blob/main/doc/tr.adoc).
+
+# Features
+
+By default, `lilos` includes the core OS and some useful data structures for
+inter-task communication. You can turn those off with `--no-default-features`
+and go a la carte:
+
+- `mutex` enables the `lilos::mutex` module.
+- `spsc` enables the `lilos::spsc` module.
+
+# Contact and License
+
+If you have questions, or you use it for something, I'd love to find out! Send
+me an email.
+
+I'm experimenting with using the MPL-2 for subversive reasons. I'm open to
+relicensing this code if MPL-2 doesn't work for your organization, we'll just
+need to discuss your labor practices. ;-)

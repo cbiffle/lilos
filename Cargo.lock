@@ -149,6 +149,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "lilos-example-stm32f4-blinky"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "futures",
+ "lilos",
+ "panic-halt",
+ "pin-utils",
+ "stm32f4",
+]
+
+[[package]]
+name = "lilos-example-stm32f4-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "futures",
+ "lilos",
+ "panic-halt",
+ "pin-utils",
+ "stm32f4",
+]
+
+[[package]]
+name = "lilos-example-stm32f4-uart-echo"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "futures",
+ "lilos",
+ "panic-halt",
+ "pin-utils",
+ "stm32f4",
+]
+
+[[package]]
 name = "nb"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,28 @@
+[package]
+name = "lilos-example-stm32f4-uart-echo"
+authors = ["Cliff L. Biffle <code@cliffle.com>"]
+version = "0.1.0"
+edition = "2018"
+license = "MPL-2.0"
+description = "UART data exchange example for lilos on stm32f4."
+repository = "https://github.com/cbiffle/lilos/"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+publish = false
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eabihf"
+
+[dependencies]
+cortex-m = { version = "0.7.2" }
+cortex-m-rt = "0.6.13"
+futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
+pin-utils = "0.1.0"
+lilos = { version = "0.2.0", path = "../../../os" }
+panic-halt = "0.2.0"
+
+[dependencies.stm32f4]
+default-features = false
+features = ["rt", "stm32f407"]
+version = "0.13.0"
