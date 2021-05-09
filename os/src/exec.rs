@@ -374,8 +374,9 @@ pub fn run_tasks_with_idle(
 /// This can be used safely as long as ISRs and task code that share data
 /// structures use appropriate critical sections.
 ///
-/// In particular, the *only* OS operation ISRs can perform in this case is
-/// `Notify::notify`.
+/// In particular, none of the top-level functions in this module are safe to
+/// use from an ISR. Only operations on types that are specifically described as
+/// being ISR safe, such as `Notify::notify`, can be used from ISRs.
 pub unsafe fn run_tasks_with_preemption(
     futures: &mut [Pin<&mut dyn Future<Output = !>>],
     initial_mask: usize,
@@ -408,8 +409,9 @@ pub unsafe fn run_tasks_with_preemption(
 /// This can be used safely as long as ISRs and task code that share data
 /// structures use appropriate critical sections.
 ///
-/// In particular, the *only* OS operation ISRs can perform in this case is
-/// `Notify::notify`.
+/// In particular, none of the top-level functions in this module are safe to
+/// use from an ISR. Only operations on types that are specifically described as
+/// being ISR safe, such as `Notify::notify`, can be used from ISRs.
 pub unsafe fn run_tasks_with_preemption_and_idle(
     futures: &mut [Pin<&mut dyn Future<Output = !>>],
     initial_mask: usize,
