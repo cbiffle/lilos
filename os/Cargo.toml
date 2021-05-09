@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -20,20 +20,11 @@ spsc = []
 handoff = ["scopeguard"]
 
 [dependencies]
-cortex-m = { version = "0.7.2" }
+cortex-m = "0.7.2"
 cortex-m-rt = "0.6.13"
 futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
-scopeguard = { version = "1.1", default-features = false, optional = true }
-
-# Mostly for examples
-[dev-dependencies]
-panic-halt = "0.2.0"
-
-[dev-dependencies.stm32f4]
-default-features = false
-features = ["rt", "stm32f407"]
-version = "0.13.0"
+scopeguard = { version = "1.1.0", default-features = false, optional = true }
 
 [lib]
 test = false
