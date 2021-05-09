@@ -32,6 +32,7 @@ use crate::list::List;
 ///
 /// When the mutex is unlocked, the task doing the unlocking will check the
 /// mutex's wait list and release the oldest task on it.
+#[derive(Debug)]
 pub struct Mutex<T: ?Sized> {
     /// Stores 0 when unlocked, 1 when locked.
     state: AtomicUsize,
@@ -271,6 +272,7 @@ macro_rules! create_static_mutex {
 }
 
 /// Smart pointer representing successful locking of a mutex.
+#[derive(Debug)]
 pub struct MutexGuard<'a, T> {
     mutex: Pin<&'a Mutex<T>>,
 }

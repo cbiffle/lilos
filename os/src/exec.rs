@@ -487,6 +487,7 @@ pub const ALL_TASKS: usize = !0;
 /// can be built up cheaply and torn down atomically from interrupt context.
 /// (Contrast with e.g. a list of waiting tasks, which is more precise but
 /// harder to get right and more expensive at runtime.)
+#[derive(Debug)]
 pub struct Notify {
     mask: AtomicUsize,
 }
@@ -831,6 +832,7 @@ where
 ///     gate.next_time().await;
 /// }
 /// ```
+#[derive(Debug)]
 pub struct PeriodicGate {
     interval: Duration,
     next: Ticks,

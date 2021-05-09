@@ -43,6 +43,7 @@ use crate::exec::Notify;
 /// controlling information for the queue overall, and _borrows_ the storage.
 ///
 /// See the module docs for details.
+#[derive(Debug)]
 pub struct Queue<'s, T> {
     storage: &'s mut [UnsafeCell<MaybeUninit<T>>],
 
@@ -139,6 +140,7 @@ impl<T> Drop for Queue<'_, T> {
 /// right to push data and enquire about push-related properties.
 ///
 /// See the module docs for more details.
+#[derive(Debug)]
 pub struct Push<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: crate::NotSyncMarker,
@@ -231,6 +233,7 @@ impl<'q, T> Push<'q, T> {
 /// right to pop data and enquire about pop-related properties.
 ///
 /// See the module docs for more details.
+#[derive(Debug)]
 pub struct Pop<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: crate::NotSyncMarker,

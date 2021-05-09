@@ -244,6 +244,37 @@ impl<T> Drop for Node<T> {
     }
 }
 
+/// Returns a decent `Debug` impl for the contents of `cell`, correctly
+/// indicating both dangling/uninitialized and self-linked pointers.
+fn debug_link<'a, T>(parent: &T, cell: &'a Cell<NonNull<T>>) -> &'a dyn core::fmt::Debug {
+    #[derive(Debug)]
+    struct Uninitialized;
+
+    #[derive(Debug)]
+    struct SelfLinked;
+
+    let ptr = cell.get();
+    let rawptr: *const _ = ptr.as_ptr();
+    if ptr == NonNull::dangling() {
+        &Uninitialized
+    } else if rawptr == parent {
+        &SelfLinked
+    } else {
+        cell
+    }
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for Node<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Node")
+            .field("prev", debug_link(self, &self.prev))
+            .field("next", debug_link(self, &self.next))
+            .field("waker", &"...")
+            .field("contents", &self.contents)
+            .finish()
+    }
+}
+
 /// A list of `Node`s.
 ///
 /// The list *references*, but does not *own*, the nodes. The creator of each
@@ -525,6 +556,14 @@ impl<T> Drop for List<T> {
     }
 }
 
+impl<T: core::fmt::Debug> core::fmt::Debug for List<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("List")
+            .field("last", debug_link(&self.root, &self.root.prev))
+            .field("first", debug_link(&self.root, &self.root.next))
+            .finish()
+    }
+}
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
 struct WaitForDetach<'a, T, F: FnOnce()> {

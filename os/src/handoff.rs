@@ -86,6 +86,16 @@ impl<T> Drop for Handoff<T> {
     }
 }
 
+/// Implement Debug by hand so it doesn't require T: Debug.
+impl<T> core::fmt::Debug for Handoff<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Handoff")
+            .field("state", &self.state)
+            .field("ping", &self.ping)
+            .finish()
+    }
+}
+
 /// Internal representation of handoff state.
 ///
 /// Note that we store pointers to the inside of the futures. This is OK because
@@ -93,7 +103,6 @@ impl<T> Drop for Handoff<T> {
 /// pinned future. So we know the futures cannot move without being dropped, and
 /// thus the pointers will remain valid (the futures take care to reset these
 /// pointers on drop).
-#[derive(Debug)]
 enum State<T> {
     /// Nobody's waiting.
     Idle,
@@ -105,6 +114,17 @@ enum State<T> {
     /// shall be deposited. (The `Option` will be `None`, and to push you must
     /// set it to `Some(value)` and then write the state to `Idle`.)
     PopWait(NonNull<Option<T>>),
+}
+
+/// Implement Debug by hand so it doesn't require T: Debug.
+impl<T> core::fmt::Debug for State<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Idle => f.write_str("Idle"),
+            Self::PushWait(p) => f.debug_tuple("PushWait").field(p).finish(),
+            Self::PopWait(p) => f.debug_tuple("PopWait").field(p).finish(),
+        }
+    }
 }
 
 // Manually deriving Copy and Clone so they don't require T: Copy/Clone.
@@ -207,6 +227,13 @@ impl<T> Push<'_, T> {
     }
 }
 
+/// Implement Debug by hand so it doesn't require T: Debug.
+impl<T> core::fmt::Debug for Push<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("Push").field(&self.0).finish()
+    }
+}
+
 /// Pop endpoint for a `Handoff<T>`. Holding this allows you to take a single
 /// item at a time from whoever's holding the `Push` side.
 pub struct Pop<'a, T>(&'a Handoff<T>);
@@ -296,5 +323,12 @@ impl<T> Pop<'_, T> {
                 }
             }
         }
+    }
+}
+
+/// Implement Debug by hand so it doesn't require T: Debug.
+impl<T> core::fmt::Debug for Pop<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("Pop").field(&self.0).finish()
     }
 }
