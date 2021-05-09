@@ -298,6 +298,6 @@ impl<'q, T> Pop<'q, T> {
     /// resolves to a popped element. If you drop it before it has resolved,
     /// no data is lost.
     pub async fn pop(&mut self) -> T {
-        self.q.pushed.until_some(move || self.try_pop()).await
+        self.q.pushed.until(move || self.try_pop()).await
     }
 }

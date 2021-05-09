@@ -506,27 +506,27 @@ impl Notify {
         wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
     }
 
-    /// Repeatedly calls `cond`, completing when it returns `Some(x)`. In
-    /// between calls, subscribes to `notify`, so that the task will wake less
-    /// often and leave CPU available for other things.
+    /// Repeatedly calls `cond`, completing when it passes. In between calls,
+    /// subscribes to `self`, so that the task will wake less often and leave
+    /// CPU available for other things.
     ///
     /// This is appropriate if you know that any change to `cond`'s result will
-    /// be preceded by some task calling `notify()`.
-    ///
-    /// This is similar to `until` but can produce a value.
+    /// be preceded by some task calling `self.notify()`.
     ///
     /// # Cancellation
     ///
-    /// Dropping this future will drop `cond`.
-    pub fn until_some<'a, 'b, T>(
+    /// Dropping this future will drop `cond`, and may leave the current task
+    /// subscribed to `self` (meaning one potential spurious wakeup in the
+    /// future is possible).
+    pub fn until<'a, 'b, T: TestResult>(
         &'a self,
-        mut cond: impl (FnMut() -> Option<T>) + 'b,
-    ) -> impl Future<Output = T> + 'a
+        mut cond: impl (FnMut() -> T) + 'b,
+    ) -> impl Future<Output = T::Output> + 'a
     where
         'b: 'a,
     {
         futures::future::poll_fn(move |cx| {
-            if let Some(x) = cond() {
+            if let Some(x) = cond().into_test_result() {
                 Poll::Ready(x)
             } else {
                 self.subscribe(cx.waker());
@@ -535,31 +535,21 @@ impl Notify {
         })
     }
 
-    /// Repeatedly calls `cond`, completing when it returns `true`. In between
-    /// calls, subscribes to `notify`, so that the task will wake less often and
-    /// leave CPU available for other things.
+    /// Version of `until` that only works with `Option<T>`.
     ///
-    /// This is appropriate if you know that any change to `cond`'s result will
-    /// be preceded by some task calling `notify()`.
-    ///
-    /// # Cancellation
-    ///
-    /// Dropping this future will drop `cond`.
-    pub fn until<'a, 'b>(
+    /// This was used before `until` could work with any `TestResult` type,
+    /// which includes `bool`, `Option<T>`, and user-defined types. Use `until`
+    /// instead in new code.
+    #[deprecated(
+        since = "0.2.2",
+        note = "This will be removed in the next major version, \
+                please use Notify::until instead.",
+    )]
+    pub fn until_some<'a, 'b: 'a, T: 'a>(
         &'a self,
-        mut cond: impl (FnMut() -> bool) + 'b,
-    ) -> impl Future<Output = ()> + 'a
-    where
-        'b: 'a,
-    {
-        futures::future::poll_fn(move |cx| {
-            if cond() {
-                Poll::Ready(())
-            } else {
-                self.subscribe(cx.waker());
-                Poll::Pending
-            }
-        })
+        cond: impl (FnMut() -> Option<T>) + 'b,
+    ) -> impl Future<Output = T> + 'a {
+        self.until(cond)
     }
 
     /// Subscribes to `notify` and then calls `cond`, completing if it returns
@@ -570,18 +560,20 @@ impl Notify {
     ///
     /// # Cancellation
     ///
-    /// Dropping this future will drop `cond`.
-    pub fn until_racy<'a, 'b>(
+    /// Dropping this future will drop `cond`, and will leave the current task
+    /// subscribed to `self` (meaning one potential spurious wakeup in the
+    /// future is possible).
+    pub fn until_racy<'a, 'b, T: TestResult>(
         &'a self,
-        mut cond: impl (FnMut() -> bool) + 'b,
-    ) -> impl Future<Output = ()> + 'a
+        mut cond: impl (FnMut() -> T) + 'b,
+    ) -> impl Future<Output = T::Output> + 'a
     where
         'b: 'a,
     {
         futures::future::poll_fn(move |cx| {
             self.subscribe(cx.waker());
-            if cond() {
-                Poll::Ready(())
+            if let Some(result) = cond().into_test_result() {
+                Poll::Ready(result)
             } else {
                 Poll::Pending
             }
@@ -594,7 +586,8 @@ impl Notify {
     ///
     /// # Cancellation
     ///
-    /// Dropping this future does nothing in particular.
+    /// Dropping this future will leave the current task subscribed to `self`
+    /// (meaning one potential spurious wakeup in the future is possible).
     pub fn until_next(
         &self,
     ) -> impl Future<Output = ()> + '_
@@ -610,7 +603,35 @@ impl Notify {
             }
         })
     }
+}
 
+/// Trait implemented by things that indicate success or failure.
+///
+/// In practice this is `bool` (if there's no output associated with success) or
+/// `Option<T>` (if there is).
+///
+/// This is used by the various `poll` functions in this module.
+pub trait TestResult {
+    type Output;
+    fn into_test_result(self) -> Option<Self::Output>;
+}
+
+impl TestResult for bool {
+    type Output = ();
+    fn into_test_result(self) -> Option<Self::Output> {
+        if self {
+            Some(())
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> TestResult for Option<T> {
+    type Output = T;
+    fn into_test_result(self) -> Option<Self::Output> {
+        self
+    }
 }
 
 /// Notifies the executor that any tasks whose wake bits are set in `mask`
