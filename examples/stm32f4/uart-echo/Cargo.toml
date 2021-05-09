@@ -27,6 +27,11 @@ default-features = false
 features = ["rt", "stm32f407"]
 version = "0.13.0"
 
+[[bin]]
+name = "lilos-example-stm32f4-uart-echo"
+test = false
+bench = false
+
 [profile.release]
 codegen-units = 1 # better optimizations
 debug = true # symbols are nice and they don't increase the size on Flash
