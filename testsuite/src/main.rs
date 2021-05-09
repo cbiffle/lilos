@@ -15,6 +15,7 @@ extern crate stm32f4;
 mod list;
 mod spsc;
 mod mutex;
+mod handoff;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::FutureExt;
@@ -102,6 +103,15 @@ async fn task_coordinator() -> ! {
             spsc::test_stack,
             spsc::test_static_storage,
             spsc::test_static_everything,
+            handoff::test_create_drop,
+            handoff::test_split_drop,
+            handoff::test_push_pop,
+            handoff::test_push_cancel,
+            handoff::test_push_cancel_after_block,
+            handoff::test_push_cancel_after_success,
+            handoff::test_pop_cancel,
+            handoff::test_pop_cancel_after_block,
+            handoff::test_pop_cancel_after_success,
         }
     };
 

@@ -61,12 +61,27 @@ pub struct Handoff<T> {
 }
 
 impl<T> Handoff<T> {
+    pub const fn new() -> Self {
+        Self {
+            state: Cell::new(State::Idle),
+            ping: Notify::new(),
+        }
+    }
+
     /// Borrows `self` exclusively and produces `Push` and `Pop` endpoints. The
     /// endpoints are guaranteed to be unique, since they can't be cloned and
     /// you can't call `split` to make new ones until both are
     /// dropped/forgotten.
     pub fn split(&mut self) -> (Push<'_, T>, Pop<'_, T>) {
         (Push(self), Pop(self))
+    }
+}
+
+impl<T> Drop for Handoff<T> {
+    fn drop(&mut self) {
+        // It should be impossible to drop a Handoff while anyone is waiting on
+        // it, but let's check.
+        debug_assert!(matches!(self.state.get(), State::Idle));
     }
 }
 
