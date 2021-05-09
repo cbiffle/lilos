@@ -9,6 +9,8 @@ This is a Cargo workspace, so the interesting bits are mostly in subdirectories:
 - `os` contains the operating system crate. The [README in that
   crate](https://github.com/cbiffle/lilos/blob/main/os/README.mkdn) gives more
   background.
+- `testsuite` contains a test suite for the operating system, which can run on
+  an STM32F407.
 - `examples/ARCH/NAME` contains the example named NAME for ARCH.
 
 ## Building
