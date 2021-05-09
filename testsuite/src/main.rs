@@ -9,8 +9,6 @@
 
 // explicitly extern this to get the panic handler
 extern crate panic_semihosting;
-// explicitly extern this to get the vector table
-extern crate stm32f4;
 
 mod list;
 mod spsc;

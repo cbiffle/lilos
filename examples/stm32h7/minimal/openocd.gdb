@@ -5,8 +5,8 @@ set print asm-demangle on
 
 # detect unhandled exceptions, hard faults and panics
 break DefaultHandler
-# break UserHardFault
-# break rust_begin_unwind
+break UserHardFault
+break rust_begin_unwind
 
 monitor arm semihosting enable
 
@@ -14,7 +14,7 @@ monitor arm semihosting enable
 # (the microcontroller SWO pin must be connected to the programmer SWO pin)
 # final number must match the core clock frequency at the time you want to
 # record output
-# monitor tpiu config internal itm.txt uart off 160000000
+monitor tpiu config internal itm.txt uart off 64000000
 
 # # OR: make the microcontroller SWO pin output compatible with UART (8N1)
 # # 16000000 must match the core clock frequency
@@ -22,7 +22,6 @@ monitor arm semihosting enable
 # monitor tpiu config external uart off 16000000 2000000
 
 # enable ITM port 0
-# monitor itm port 0 on
+monitor itm port 0 on
 
 load
-continue

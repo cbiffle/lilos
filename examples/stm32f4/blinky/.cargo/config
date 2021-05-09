@@ -3,7 +3,6 @@ runner = "arm-none-eabi-gdb -q -x openocd.gdb"
 
 rustflags = [
   "-C", "link-arg=-Tlink.x",
-  "-L", "${CARGO_MANIFEST_DIR}",
 ]
 
 [build]

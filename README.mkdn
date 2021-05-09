@@ -4,14 +4,18 @@ This is a wee RTOS written to support the `async` style of programming in Rust.
 
 ## Repo layout
 
-This is a Cargo workspace, so the interesting bits are mostly in subdirectories:
+This repo contains crates in subdirectories, but it is _not_ a Cargo workspace.
+This means you will need to `cd` into subdirectories to build things. Here is a
+map:
 
 - `os` contains the operating system crate. The [README in that
   crate](https://github.com/cbiffle/lilos/blob/main/os/README.mkdn) gives more
   background.
-- `testsuite` contains a test suite for the operating system, which can run on
-  an STM32F407.
-- `examples/ARCH/NAME` contains the example named NAME for ARCH.
+- `testsuite` contains a test suite for the operating system, which can run on a
+  Cortex-M3 or better. See [its
+  README](https://github.com/cbiffle/lilos/blob/main/testsuite/README.mkdn) for
+  instructions.
+- `examples` contains example programs for various microcontrollers.
 
 ## Building
 
@@ -19,12 +23,17 @@ You will need a Rust toolchain installed through `rustup`, because we use a
 `rustup`-style `rust-toolchain` file to pin the toolchain version to ensure that
 you get the right results.
 
-1. Ensure that the embedded target is installed: `rustup target add
-   thumbv7em-non-eabihf`
-2. Build: `cargo build` (or to build just the OS, and not the examples, add `-p
-   lilos`)
-3. To try an example on a microcontroller eval board, see the README in the
-   individual example.
+1. Ensure that the correct embedded target is installed. For instance, for the
+   testsuite, `rustup target add thumbv7m-none-eabi`. For the Cortex-M4 and M7
+   examples you will also want `thumbv7em-none-eabihf`.
+2. Enter the directory you're interested in, for example, `cd os`.
+3. Build: `cargo build`.
+4. To try an example on a microcontroller eval board, see the README in the
+   individual example. (In most cases `cargo run` in the directory will
+   suffice.)
+
+To build everything in the repo, install the appropriate targets and then run
+`./build-all.sh`.
 
 ## Contact and License
 

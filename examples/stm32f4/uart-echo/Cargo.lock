@@ -51,15 +51,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortex-m-semihosting"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bffa6c1454368a6aa4811ae60964c38e6996d397ff8095a8b9211b1c1f749bc"
-dependencies = [
- "cortex-m",
-]
-
-[[package]]
 name = "embedded-hal"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -157,32 +148,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilos-example-stm32f4-blinky"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "futures",
- "lilos",
- "panic-halt",
- "pin-utils",
- "stm32f4",
-]
-
-[[package]]
-name = "lilos-example-stm32f4-minimal"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "futures",
- "lilos",
- "panic-halt",
- "pin-utils",
- "stm32f4",
-]
-
-[[package]]
 name = "lilos-example-stm32f4-uart-echo"
 version = "0.1.0"
 dependencies = [
@@ -191,20 +156,6 @@ dependencies = [
  "futures",
  "lilos",
  "panic-halt",
- "pin-utils",
- "stm32f4",
-]
-
-[[package]]
-name = "lilos-testsuite"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "cortex-m-semihosting",
- "futures",
- "lilos",
- "panic-semihosting",
  "pin-utils",
  "stm32f4",
 ]
@@ -229,16 +180,6 @@ name = "panic-halt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
-
-[[package]]
-name = "panic-semihosting"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d55dedd501dfd02514646e0af4d7016ce36bc12ae177ef52056989966a1eec"
-dependencies = [
- "cortex-m",
- "cortex-m-semihosting",
-]
 
 [[package]]
 name = "pin-project-lite"
