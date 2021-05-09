@@ -286,11 +286,17 @@ impl<T: Default> List<T> {
     /// steps! To make this process easier, consider using the [`create_list!`]
     /// macro where possible.
     pub unsafe fn new() -> ManuallyDrop<List<T>> {
-        ManuallyDrop::new(List {
-            root: ManuallyDrop::into_inner(Node::new(
+        // Safety: Node::new is unsafe because it produces a node that cannot be
+        // safely dropped. We punt its obligations down the road by re-wrapping
+        // it in our _own_ unsafe ManuallyDrop structure.
+        let node = unsafe {
+            Node::new(
                 T::default(),
                 exploding_waker(),
-            )),
+            )
+        };
+        ManuallyDrop::new(List {
+            root: ManuallyDrop::into_inner(node),
             _marker: NotSendMarker::default(),
         })
     }
@@ -305,7 +311,10 @@ impl<T> List<T> {
     /// For this to be safe, you must call it on the pinned result of a call to
     /// `new()` before doing *anything else* to the `List`.
     pub unsafe fn finish_init(list: Pin<&mut Self>) {
-        Node::finish_init(list.root_mut());
+        // Safety: this is safe if our own safety contract is upheld.
+        unsafe {
+            Node::finish_init(list.root_mut());
+        }
     }
 
     fn root_mut(self: Pin<&mut Self>) -> Pin<&mut Node<T>> {
@@ -527,7 +536,7 @@ struct WaitForDetach<'a, T, F: FnOnce()> {
 impl<T, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context)
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
         -> Poll<Self::Output>
     {
         if self.node.is_detached() {

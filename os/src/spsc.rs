@@ -61,7 +61,7 @@ pub struct Queue<'s, T> {
 
 /// This type is easily sharable across threads, because there are no useful
 /// operations that can be performed using only a shared reference.
-unsafe impl<'s, T> Sync for Queue<'s, T> where T: Send {}
+unsafe impl<T> Sync for Queue<'_, T> where T: Send {}
 
 impl<'s, T> Queue<'s, T> {
     /// Creates a queue, borrowing the uninitialized `storage` (which will be
@@ -78,8 +78,10 @@ impl<'s, T> Queue<'s, T> {
         // memory backing `storage`, and the caller thinks of it as
         // `MaybeUninit`, meaning they aren't making assumptions about its
         // contents or dropping it when we're done.
+        let storage: *mut [MaybeUninit<T>] = storage;
+        let storage: *mut [UnsafeCell<MaybeUninit<T>>] = storage as *mut _;
         let storage: &'s mut [UnsafeCell<MaybeUninit<T>>] = unsafe {
-            &mut *(storage as *mut [MaybeUninit<T>] as *mut _)
+            &mut *storage
         };
         Self {
             storage,
@@ -114,7 +116,7 @@ impl<'s, T> Queue<'s, T> {
 /// It's entirely possible to drop a non-empty Queue in correct code, unlike
 /// (say) a `lilos::list`, so we provide a Drop impl that goes through and
 /// cleans up queued elements.
-impl<'s, T> Drop for Queue<'s, T> {
+impl<T> Drop for Queue<'_, T> {
     fn drop(&mut self) {
         let h = self.head.load(Ordering::SeqCst);
         let mut t = self.head.load(Ordering::SeqCst);

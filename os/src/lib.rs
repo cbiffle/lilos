@@ -84,6 +84,20 @@
 
 #![no_std]
 
+#![warn(
+    elided_lifetimes_in_paths,
+    explicit_outlives_requirements,
+    missing_docs,
+    semicolon_in_expressions_from_macros,
+    single_use_lifetimes,
+    trivial_casts,
+    trivial_numeric_casts,
+    unaligned_references,
+    unreachable_pub,
+    unsafe_op_in_unsafe_fn,
+    unused_qualifications,
+)]
+
 // We need `never_type` to be able to write `Future<Output = !>`, the type of
 // `async fn foo() -> !`. This feature has been near stabilization for years,
 // but as of spring 2021 it is still unstable.

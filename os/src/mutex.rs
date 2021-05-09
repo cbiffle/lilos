@@ -51,9 +51,13 @@ impl<T> Mutex<T> {
     /// The result is not safe to use or drop yet. You must move it to its final
     /// resting place, pin it, and call `finish_init`.
     pub unsafe fn new(contents: T) -> ManuallyDrop<Self> {
+        // Safety: List::new is unsafe because it produces a value that cannot
+        // yet be dropped. We discharge this obligation by unwrapping it and
+        // moving it into a _new_ ManuallyDrop, kicking the can down the road.
+        let list = unsafe { List::new() };
         ManuallyDrop::new(Mutex {
             state: AtomicUsize::new(0),
-            waiters: ManuallyDrop::into_inner(List::new()),
+            waiters: ManuallyDrop::into_inner(list),
             value: UnsafeCell::new(contents),
         })
     }
@@ -65,7 +69,11 @@ impl<T> Mutex<T> {
     /// This is safe to call exactly once on the result of `new`, after it has
     /// been moved to its final position and pinned.
     pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        List::finish_init(this.waiters_mut());
+        // Safety: List::finish_init is safe if our _own_ safety contract is
+        // upheld.
+        unsafe {
+            List::finish_init(this.waiters_mut());
+        }
     }
 
     /// Locks this mutex immediately if it is free, and returns a guard for
@@ -267,7 +275,7 @@ pub struct MutexGuard<'a, T> {
     mutex: Pin<&'a Mutex<T>>,
 }
 
-impl<'a, T> Drop for MutexGuard<'a, T> {
+impl<T> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         // Safety: we are by definition the holder of the mutex, so we can use
         // the normally unsafe `unlock` operation to avoid repeating code.
@@ -277,7 +285,7 @@ impl<'a, T> Drop for MutexGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
+impl<T> core::ops::Deref for MutexGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         let v = &self.mutex.value;
@@ -290,7 +298,7 @@ impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
+impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let v = &self.mutex.value;
         // Safety: this is deriving an exclusive reference to the contents of

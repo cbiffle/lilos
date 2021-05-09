@@ -61,6 +61,7 @@ pub struct Handoff<T> {
 }
 
 impl<T> Handoff<T> {
+    /// Creates a new Handoff in idle state.
     pub const fn new() -> Self {
         Self {
             state: Cell::new(State::Idle),

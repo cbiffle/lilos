@@ -214,8 +214,9 @@ fn extract_mask(waker: &Waker) -> usize {
     // to change. We've already verified above that we can find the parameter
     // word, which is what we care about. Extracting it cannot violate memory
     // safety, since we're just reading initialized memory.
+    let waker: *const Waker = waker;
     unsafe {
-        let parts = &*(waker as *const _ as *const (usize, usize));
+        let parts = &*(waker as *const (usize, usize));
         if ptr_first {
             parts.0
         } else {
@@ -380,12 +381,15 @@ pub unsafe fn run_tasks_with_preemption(
     initial_mask: usize,
     interrupts: Interrupts,
 ) -> ! {
-    run_tasks_with_preemption_and_idle(
-        futures,
-        initial_mask,
-        interrupts,
-        cortex_m::asm::wfi,
-    )
+    // Safety: this is safe if our own contract is upheld.
+    unsafe {
+        run_tasks_with_preemption_and_idle(
+            futures,
+            initial_mask,
+            interrupts,
+            cortex_m::asm::wfi,
+        )
+    }
 }
 
 /// Extended version of `run_tasks` that configures the scheduler with a custom
@@ -612,7 +616,10 @@ impl Notify {
 ///
 /// This is used by the various `poll` functions in this module.
 pub trait TestResult {
+    /// Type of content produced on success.
     type Output;
+    /// Converts `self` into an `Option` that is `Some` on success, `None` on
+    /// failure.
     fn into_test_result(self) -> Option<Self::Output>;
 }
 
