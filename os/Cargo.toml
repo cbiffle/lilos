@@ -2,7 +2,7 @@
 name = "lilos"
 version = "0.3.0-rc1"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "A tiny embedded OS based around Futures and async."
 repository = "https://github.com/cbiffle/lilos/"

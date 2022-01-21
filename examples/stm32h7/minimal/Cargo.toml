@@ -2,7 +2,7 @@
 name = "lilos-example-stm32h7-minimal"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 license = "MPL-2.0"
 description = "Minimal example for lilos on stm32h7."
 repository = "https://github.com/cbiffle/lilos/"
