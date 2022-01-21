@@ -258,7 +258,7 @@ async fn send(usart: &device::USART3, c: u8) {
     // out spurious wakes.
     TXE.until(|| usart.isr.read().txe().bit()).await;
     // Now that TxE is set, stuff our byte into the holding register.
-    usart.tdr.write(|w| unsafe { w.tdr().bits(u16::from(c)) });
+    usart.tdr.write(|w| w.tdr().bits(u16::from(c)));
 }
 
 /// Notification signal for waking a task from the USART RXNE ISR.

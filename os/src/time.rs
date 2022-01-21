@@ -14,6 +14,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
 use cortex_m::peripheral::{syst::SystClkSource, SYST};
+use cortex_m_rt::exception;
 
 /// Bottom 32 bits of the tick counter. Updated by ISR.
 static TICK: AtomicU32 = AtomicU32::new(0);
@@ -99,7 +100,7 @@ impl core::ops::AddAssign<Duration> for Ticks {
 /// System tick ISR. Advances the tick counter. This doesn't wake any tasks; see
 /// code in `exec` for that.
 #[doc(hidden)]
-#[cortex_m_rt::exception]
+#[exception]
 fn SysTick() {
     if TICK.fetch_add(1, Ordering::Release) == core::u32::MAX {
         EPOCH.fetch_add(1, Ordering::Release);

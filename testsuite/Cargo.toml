@@ -15,12 +15,12 @@ publish = false
 default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
-cortex-m = "0.7.2"
-cortex-m-rt = { version = "0.6.13", default-features = false }
+cortex-m = "0.7.4"
+cortex-m-rt = { version = "0.7.1", default-features = false }
 cortex-m-semihosting = "0.3.7"
-futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
+futures = { version = "0.3.19", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
-lilos = { version = "0.2.0", path = "../os" }
+lilos = { version = "0.3.0-rc1", path = "../os" }
 panic-semihosting = "0.5.6"
 
 [[bin]]

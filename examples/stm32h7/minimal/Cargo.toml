@@ -15,17 +15,17 @@ publish = false
 default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
-cortex-m = "0.7.2"
-cortex-m-rt = "0.6.13"
-futures = { version = "0.3.14", default-features = false, features = ["async-await"] }
+cortex-m = "0.7.4"
+cortex-m-rt = "0.7.1"
+futures = { version = "0.3.19", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
-lilos = { version = "0.2.0", path = "../../../os" }
+lilos = { version = "0.3.0-rc1", path = "../../../os" }
 panic-halt = "0.2.0"
 
 [dependencies.stm32h7]
 default-features = false
 features = ["rt", "stm32h743"]
-version = "0.13.0"
+version = "0.14.0"
 
 [[bin]]
 name = "lilos-example-stm32h7-minimal"
