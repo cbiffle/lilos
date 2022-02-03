@@ -234,6 +234,7 @@ macro_rules! create_static_mutex {
     ($t:ty, $contents:expr) => {{
         use core::sync::atomic::{AtomicBool, Ordering};
         use core::mem::{ManuallyDrop, MaybeUninit};
+        use core::pin::Pin;
 
         // Flag for detecting multiple executions.
         static INIT: AtomicBool = AtomicBool::new(false);
