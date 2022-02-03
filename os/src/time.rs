@@ -97,6 +97,12 @@ impl core::ops::AddAssign<Duration> for Ticks {
     }
 }
 
+impl From<Ticks> for u64 {
+    fn from(t: Ticks) -> Self {
+        t.0
+    }
+}
+
 /// System tick ISR. Advances the tick counter. This doesn't wake any tasks; see
 /// code in `exec` for that.
 #[doc(hidden)]
