@@ -135,6 +135,7 @@
 //! above some priority level to preempt task code. (Tasks still cannot preempt
 //! one another.)
 
+use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
 use core::pin::Pin;
@@ -248,11 +249,11 @@ pub fn noop_waker() -> Waker {
 /// index `index`.
 fn poll_task(
     index: usize,
-    future: Pin<&mut dyn Future<Output = !>>,
+    future: Pin<&mut dyn Future<Output = Infallible>>,
 ) {
     match future.poll(&mut Context::from_waker(&waker_for_task(index))) {
         Poll::Pending => (),
-        Poll::Ready(never) => never,
+        Poll::Ready(never) => match never {}
     }
 }
 
@@ -322,7 +323,7 @@ impl Interrupts {
 /// until an interrupt arrives. This has the advantages of using less power and
 /// having more predictable response latency than spinning.
 pub fn run_tasks(
-    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
@@ -344,7 +345,7 @@ pub fn run_tasks(
 ///
 /// See [`run_tasks`] for more details.
 pub fn run_tasks_with_idle(
-    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     idle_hook: impl FnMut(),
 ) -> ! {
@@ -378,7 +379,7 @@ pub fn run_tasks_with_idle(
 /// use from an ISR. Only operations on types that are specifically described as
 /// being ISR safe, such as `Notify::notify`, can be used from ISRs.
 pub unsafe fn run_tasks_with_preemption(
-    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     interrupts: Interrupts,
 ) -> ! {
@@ -413,7 +414,7 @@ pub unsafe fn run_tasks_with_preemption(
 /// use from an ISR. Only operations on types that are specifically described as
 /// being ISR safe, such as `Notify::notify`, can be used from ISRs.
 pub unsafe fn run_tasks_with_preemption_and_idle(
-    futures: &mut [Pin<&mut dyn Future<Output = !>>],
+    futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     interrupts: Interrupts,
     mut idle_hook: impl FnMut(),

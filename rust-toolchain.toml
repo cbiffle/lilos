@@ -1,5 +1,5 @@
 [toolchain]
-channel = "nightly-2021-11-20"
+channel = "1.60"
 targets = [ "thumbv7em-none-eabihf", "thumbv7m-none-eabi" ]
 profile = "minimal"
 components = [ "rustfmt", "rls" ]

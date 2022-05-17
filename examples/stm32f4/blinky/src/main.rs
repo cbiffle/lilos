@@ -22,6 +22,7 @@
 // because it isn't otherwise referenced in code!
 extern crate panic_halt;
 
+use core::convert::Infallible;
 use core::time::Duration;
 
 use lilos::exec::sleep_for;
@@ -86,7 +87,9 @@ fn main() -> ! {
 /// Each call to `blinky` produces a `Future` that captures its parameters. The
 /// `Future` loops forever, as indicated by its "never resolves" return type,
 /// `!`.
-async fn blinky(pin_mask: u16, interval: Duration, gpiod: &device::GPIOD) -> ! {
+async fn blinky(pin_mask: u16, interval: Duration, gpiod: &device::GPIOD)
+    -> Infallible
+{
     // Zero-extend the mask to fit the BSRR register.
     let pin_mask = u32::from(pin_mask);
 

@@ -56,23 +56,24 @@ and go a la carte:
 - `mutex` enables the `lilos::mutex` module.
 - `spsc` enables the `lilos::spsc` module.
 
-# Nightly
+# Toolchain version
 
-`lilos` relies on a single unstable language feature: the [never
+As of 0.3.0, `lilos` builds on stable Rust. Previously, `lilos` required the
+nightly toolchain to get access to the [never
 type](https://doc.rust-lang.org/reference/types/never.html), which is necessary
-to write the type of a future that loops forever, `Future<Output = !>`. (I
-thought this was going to stabilize imminently when I published `lilos`, but it
-keeps running into problems.)
+to write the type of a future that loops forever, `Future<Output = !>`. When I
+initially published `lilos` in 2019 this looked like it would stabilize in the
+near future; however, true to its name, it's never made it.
 
-As a result, `lilos` itself and applications built on `lilos` need to be built
-with a nightly toolchain. `lilos` is tested against the nightly version named in
-the [`rust-toolchain` file in its
-repo](https://github.com/cbiffle/lilos/blob/main/rust-toolchain); for best
-results, use that version or later.
+And so in the interest of compatibility with stable, `lilos` uses
+`core::convert::Infallible` in place of `!`. So, your task functions need to be
+written as
 
-We will drop the nightly requirement as soon as the never type stabilizes. To
-give users the most flexiblity, we hope not to introduce any more unstable
-features.
+```rust
+async fn my_task(whatever: Args) -> Infallible
+```
+
+...instead of `-> !`.
 
 # Contact and License
 

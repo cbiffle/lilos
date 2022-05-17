@@ -48,10 +48,10 @@
 
 #![no_std]
 #![no_main]
-#![feature(never_type)]
 
 extern crate panic_halt;
 
+use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::time::Duration;
 use core::future::Future;
@@ -112,7 +112,7 @@ fn main() -> ! {
 fn heartbeat<'gpio>(
     rcc: &device::RCC,
     gpiod: &'gpio device::GPIOD,
-) -> impl Future<Output = !> + 'gpio {
+) -> impl Future<Output = Infallible> + 'gpio {
     // This is implemented using an explicit `async` block, instead of as an
     // `async fn`, to make it clear which actions occur during setup, and which
     // are ongoing. In particular, we only need to borrow the RCC for *setup*
@@ -148,7 +148,7 @@ async fn usart_echo(
     gpio: &device::GPIOA,
     usart: &device::USART2,
     clock_hz: u32,
-) -> ! {
+) -> Infallible {
     const BAUD_RATE: u32 = 115_200;
 
     // Turn on clock to the USART.
@@ -212,7 +212,7 @@ async fn usart_echo(
 async fn echo_rx(
     usart: &device::USART2,
     mut q: spsc::Push<'_, u8>,
-) -> ! {
+) -> Infallible {
     loop {
         q.push(recv(usart).await).await;
     }
@@ -222,7 +222,7 @@ async fn echo_rx(
 async fn echo_tx(
     usart: &device::USART2,
     mut q: spsc::Pop<'_, u8>,
-) -> !  {
+) -> Infallible  {
     loop {
         send(usart, q.pop().await).await;
     }

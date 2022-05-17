@@ -18,10 +18,9 @@
 //! This would be incredibly frustrating to program, were it not for `Future`
 //! and `async`.
 //!
-//! Each task co-routine has the type `Future<Output = !>`, meaning a `Future`
-//! that can be polled but will never complete (because, remember, tasks run
-//! forever). The OS provides an *executor* that manages polling of a set of
-//! `Future`s.
+//! Each task co-routine must be a `Future` that can be polled but will never
+//! complete (because, remember, tasks run forever). The OS provides an
+//! *executor* that manages polling of a set of `Future`s.
 //!
 //! Rust's `async` keyword provides a convenient way to have the compiler
 //! rewrite a normal function into a co-routine-style `Future`. This means that
@@ -32,7 +31,7 @@
 //! this OS. This task blinks an LED attached to port D12 of an STM32F4.
 //!
 //! ```ignore
-//! async fn blinky(gpio: &GPIOD) -> ! {
+//! async fn blinky(gpio: &GPIOD) -> Infallible {
 //!     const PERIOD: Duration = Duration::from_millis(500);
 //!
 //!     loop {
@@ -43,6 +42,10 @@
 //!     }
 //! }
 //! ```
+//!
+//! (Note: the natural way to write that function would be with a return type of
+//! `!`, but doing this requires unstable toolchain features inside the OS, so
+//! we rely on `core::convert::Infallible` instead in this version.)
 //!
 //! Because `Future`s can be _composed_, the fixed set of OS tasks can drive a
 //! _dynamic_ set of program `Future`s.
@@ -98,11 +101,6 @@
     unsafe_op_in_unsafe_fn,
     unused_qualifications,
 )]
-
-// We need `never_type` to be able to write `Future<Output = !>`, the type of
-// `async fn foo() -> !`. This feature has been near stabilization for years,
-// but as of spring 2021 it is still unstable.
-#![feature(never_type)]
 
 #[macro_use]
 pub mod list;

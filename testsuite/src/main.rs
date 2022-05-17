@@ -15,6 +15,7 @@ mod spsc;
 mod mutex;
 mod handoff;
 
+use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::FutureExt;
 
@@ -79,7 +80,7 @@ macro_rules! async_tests {
     };
 }
 
-async fn task_coordinator() -> ! {
+async fn task_coordinator() -> Infallible {
     let tests = async {
         async_tests! {
             test_yield_cpu,
@@ -200,12 +201,12 @@ async fn start_task_by_index(index: usize) {
     lilos::exec::yield_cpu().await // second pass lets new task run
 }
 
-async fn task_set_a_flag_then_halt(flag: &AtomicBool) -> ! {
+async fn task_set_a_flag_then_halt(flag: &AtomicBool) -> Infallible {
     flag.store(true, Ordering::SeqCst);
     block_forever().await
 }
 
-async fn block_forever() -> ! {
+async fn block_forever() -> Infallible {
     let notify = lilos::exec::Notify::new();
     loop {
         notify.until(|| false).await;
