@@ -16,6 +16,8 @@ use core::time::Duration;
 use cortex_m::peripheral::{syst::SystClkSource, SYST};
 use cortex_m_rt::exception;
 
+use crate::atomic::AtomicArithExt;
+
 /// Bottom 32 bits of the tick counter. Updated by ISR.
 static TICK: AtomicU32 = AtomicU32::new(0);
 /// Top 32 bits of the tick counter. Updated by ISR.
@@ -108,7 +110,7 @@ impl From<Ticks> for u64 {
 #[doc(hidden)]
 #[exception]
 fn SysTick() {
-    if TICK.fetch_add(1, Ordering::Release) == core::u32::MAX {
-        EPOCH.fetch_add(1, Ordering::Release);
+    if TICK.fetch_add_polyfill(1, Ordering::Release) == core::u32::MAX {
+        EPOCH.fetch_add_polyfill(1, Ordering::Release);
     }
 }

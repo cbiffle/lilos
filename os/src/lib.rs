@@ -114,6 +114,8 @@ pub mod spsc;
 #[cfg(feature = "handoff")]
 pub mod handoff;
 
+mod atomic;
+
 use core::marker::PhantomData;
 
 /// Zero-sized marker type that can be included to ensure that a data structure

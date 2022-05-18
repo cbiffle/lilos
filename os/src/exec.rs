@@ -143,6 +143,7 @@ use core::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use core::time::Duration;
 
+use crate::atomic::{AtomicExt, AtomicArithExt};
 use crate::list::List;
 use crate::time::Ticks;
 
@@ -262,7 +263,9 @@ fn poll_task(
 pub enum Interrupts {
     /// Use PRIMASK to completely disable interrupts while task code is running.
     Masked,
-    /// Use BASEPRI to mask interrupts of the given priority and lower.
+    /// Use BASEPRI to mask interrupts of the given priority and lower. This is
+    /// not available on ARMv6-M.
+    #[cfg(feature = "has-basepri")]
     Filtered(u8),
 }
 
@@ -285,6 +288,7 @@ impl Interrupts {
 
                 r
             }
+            #[cfg(feature = "has-basepri")]
             Interrupts::Filtered(priority) => {
                 let prev = cortex_m::register::basepri::read();
                 cortex_m::register::basepri_max::write(priority);
@@ -434,7 +438,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             // almost certainly be faster to visit the futures corresponding to
             // 1 bits instead. I have avoided this for now because of the
             // increased complexity.
-            let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
+            let mask = WAKE_BITS.swap_polyfill(0, Ordering::SeqCst);
             for (i, f) in futures.iter_mut().enumerate() {
                 if mask & (1 << (i % USIZE_BITS)) != 0 {
                     poll_task(i, f.as_mut());
@@ -505,13 +509,13 @@ impl Notify {
 
     /// Adds the `Waker` to the set of waiters.
     pub fn subscribe(&self, waker: &Waker) {
-        self.mask.fetch_or(extract_mask(waker), Ordering::SeqCst);
+        self.mask.fetch_or_polyfill(extract_mask(waker), Ordering::SeqCst);
     }
 
     /// Wakes tasks, at least all those whose waiters have been passed to
     /// `subscribe` since the last `notify`, possibly more.
     pub fn notify(&self) {
-        wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
+        wake_tasks_by_mask(self.mask.swap_polyfill(0, Ordering::SeqCst))
     }
 
     /// Repeatedly calls `cond`, completing when it passes. In between calls,
@@ -651,7 +655,7 @@ impl<T> TestResult for Option<T> {
 /// This is a very low-level operation and is rarely what you want to use. See
 /// `Notify`.
 pub fn wake_tasks_by_mask(mask: usize) {
-    WAKE_BITS.fetch_or(mask, Ordering::SeqCst);
+    WAKE_BITS.fetch_or_polyfill(mask, Ordering::SeqCst);
 }
 
 /// Notifies the executor that the task with the given `index` should be polled
@@ -685,7 +689,7 @@ fn set_timer_list<R>(
     // Prevent this from being used from interrupt context.
     assert!(not_in_isr());
 
-    let old_list = TIMER_LIST.swap(
+    let old_list = TIMER_LIST.swap_polyfill(
         // Safety: since we've gotten a &mut, we hold the only reference, so
         // it's safe for us to smuggle it through a pointer and reborrow it as
         // shared.
