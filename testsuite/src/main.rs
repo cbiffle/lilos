@@ -73,9 +73,9 @@ const A_BIT: core::time::Duration = core::time::Duration::from_millis(2);
 macro_rules! async_tests {
     ($($name:path,)*) => {
         $(
-            cortex_m_semihosting::hprint!(concat!(stringify!($name), "... ")).unwrap();
+            cortex_m_semihosting::hprint!(concat!(stringify!($name), "... "));
             $name().await;
-            cortex_m_semihosting::hprintln!("OK").unwrap();
+            cortex_m_semihosting::hprintln!("OK");
         )*
     };
 }
@@ -127,7 +127,7 @@ async fn task_coordinator() -> Infallible {
 
     futures::select_biased! {
         _ = tests.fuse() => {
-            hprintln!("tests complete.").ok();
+            hprintln!("tests complete.");
             cortex_m_semihosting::debug::exit(Ok(()));
         },
         _ = lilos::exec::sleep_for(TEST_TIMEOUT).fuse() => {

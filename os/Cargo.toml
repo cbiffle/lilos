@@ -22,7 +22,7 @@ handoff = ["scopeguard"]
 [dependencies]
 cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
-futures = { version = "0.3.19", default-features = false, features = ["async-await"] }
+futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
 scopeguard = { version = "1.1.0", default-features = false, optional = true }
 
