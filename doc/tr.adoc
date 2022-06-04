@@ -547,7 +547,7 @@ futures::select! {
 `select` is made possible by a principle that can be quite surprising,
 particularly if you're used to thinking of futures in terms of `async fn`.
 
-When you someone calls your `fn`, it will execute all the way through, until it
+When someone calls your `fn`, it will execute all the way through, until it
 panics or returns -- the caller cannot decide to stop running it halfway
 through.
 
