@@ -855,6 +855,15 @@ impl PeriodicGate {
         }
     }
 
+    /// Creates a periodic gate that can be used to release execution every
+    /// `interval`, starting `delay` ticks in the future.
+    pub fn new_shift(interval: Duration, delay: Duration) -> Self {
+        PeriodicGate {
+            interval,
+            next: Ticks::now() + delay,
+        }
+    }
+
     /// Returns a future that will resolve when it's time to execute again.
     ///
     /// # Cancellation
