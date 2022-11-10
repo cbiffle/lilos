@@ -105,6 +105,7 @@
 #[macro_use]
 pub mod list;
 pub mod exec;
+#[cfg(feature = "systick")]
 pub mod time;
 
 #[cfg(feature = "mutex")]

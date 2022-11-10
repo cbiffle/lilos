@@ -15,6 +15,10 @@
 //!
 //! # Time
 //!
+//! (Note: as of 3.0 the timekeeping features are only compiled in if the
+//! `systick` feature is present, which it is by default. It turns out the
+//! operating system can still be quite useful without it!)
+//!
 //! The executor uses the timekeeping provided by the [`time`][crate::time]
 //! module to enable tasks to be woken at particular times. [`sleep_until`]
 //! produces a future that resolves at a particular time, while [`sleep_for`]
@@ -145,6 +149,7 @@ use core::time::Duration;
 
 use crate::atomic::{AtomicExt, AtomicArithExt};
 use crate::list::List;
+#[cfg(feature = "systick")]
 use crate::time::Ticks;
 
 /// How many bits in a `usize`, and thus in a pointer?
@@ -426,12 +431,19 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
 
     // TODO make this list static for more predictable memory usage
+    #[cfg(feature = "systick")]
     create_list!(timer_list);
+
+    #[cfg(not(feature = "systick"))]
+    let timer_list = ();
 
     set_timer_list(timer_list, || loop {
         interrupts.scope(|| {
-            // Scan for any expired timers.
-            with_timer_list(|tl| tl.wake_less_than(Ticks::now()));
+            #[cfg(feature = "systick")]
+            {
+                // Scan for any expired timers.
+                with_timer_list(|tl| tl.wake_less_than(Ticks::now()));
+            }
 
             // Capture and reset wake bits, then process any 1s.
             // TODO: this loop visits every future testing for 1 bits; it would
@@ -668,6 +680,7 @@ pub fn wake_task_by_index(index: usize) {
 }
 
 /// Tracks the timer list currently in scope.
+#[cfg(feature = "systick")]
 static TIMER_LIST: AtomicPtr<List<Ticks>> =
     AtomicPtr::new(core::ptr::null_mut());
 
@@ -682,6 +695,7 @@ fn not_in_isr() -> bool {
 /// Sets the timer list for the duration of `body`.
 ///
 /// This doesn't nest, and will assert if you try.
+#[cfg(feature = "systick")]
 fn set_timer_list<R>(
     list: Pin<&mut List<Ticks>>,
     body: impl FnOnce() -> R,
@@ -711,9 +725,21 @@ fn set_timer_list<R>(
     r
 }
 
+#[cfg(not(feature = "systick"))]
+fn set_timer_list<X, R>(
+    list: X,
+    body: impl FnOnce() -> R,
+) -> R {
+    // Prevent this from being used from interrupt context.
+    assert!(not_in_isr());
+
+    body()
+}
+
 /// Nabs a reference to the current timer list and executes `body`.
 ///
 /// This provides a safe way to access the timer thread local.
+#[cfg(feature = "systick")]
 fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
     // Prevent this from being used from interrupt context.
     assert!(not_in_isr());
@@ -743,6 +769,7 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
 /// # Cancellation
 ///
 /// Dropping this future does nothing in particular.
+#[cfg(feature = "systick")]
 pub async fn sleep_until(deadline: Ticks) {
     // TODO: this early return means we can't simply return the insert_and_wait
     // future below, which is costing us some bytes of text.
@@ -768,6 +795,7 @@ pub async fn sleep_until(deadline: Ticks) {
 /// # Cancellation
 ///
 /// Dropping this future does nothing in particular.
+#[cfg(feature = "systick")]
 pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
     sleep_until(Ticks::now() + d)
 }
@@ -811,6 +839,7 @@ pub fn yield_cpu() -> impl Future<Output = ()> {
 ///
 /// Dropping this future will cancel any in-progress future previously returned
 /// from `action`, as well as dropping `action` itself.
+#[cfg(feature = "systick")]
 pub async fn every_until<F>(period: Duration, mut action: impl FnMut() -> F)
 where
     F: Future<Output = bool>,
@@ -840,11 +869,13 @@ where
 /// }
 /// ```
 #[derive(Debug)]
+#[cfg(feature = "systick")]
 pub struct PeriodicGate {
     interval: Duration,
     next: Ticks,
 }
 
+#[cfg(feature = "systick")]
 impl PeriodicGate {
     /// Creates a periodic gate that can be used to release execution every
     /// `interval`, starting right now.

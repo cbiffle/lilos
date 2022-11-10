@@ -9,6 +9,9 @@
 //! Application startup code needs to call [`initialize_sys_tick`] to inform the
 //! OS of the system clock speed. Otherwise, no timing-related calls will behave
 //! correctly.
+//!
+//! Note: this entire module is only available if the `systick` feature is
+//! present; it is on by default.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;

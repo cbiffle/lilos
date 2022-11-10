@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.3.0-rc1"
+version = "0.3.0-rc2"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2021"
 license = "MPL-2.0"
@@ -14,9 +14,10 @@ readme = "README.mkdn"
 default-target = "thumbv7em-none-eabihf"
 
 [features]
-default = ["mutex", "spsc", "handoff"]
+default = ["mutex", "spsc", "handoff", "systick"]
 mutex = []
 spsc = []
+systick = []
 handoff = ["scopeguard"]
 
 [dependencies]
