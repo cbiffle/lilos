@@ -549,7 +549,7 @@ impl Notify {
     where
         'b: 'a,
     {
-        futures::future::poll_fn(move |cx| {
+        futures_lite::future::poll_fn(move |cx| {
             if let Some(x) = cond().into_test_result() {
                 Poll::Ready(x)
             } else {
@@ -594,7 +594,7 @@ impl Notify {
     where
         'b: 'a,
     {
-        futures::future::poll_fn(move |cx| {
+        futures_lite::future::poll_fn(move |cx| {
             self.subscribe(cx.waker());
             if let Some(result) = cond().into_test_result() {
                 Poll::Ready(result)
@@ -617,7 +617,7 @@ impl Notify {
     ) -> impl Future<Output = ()> + '_
     {
         let mut setup = false;
-        futures::future::poll_fn(move |cx| {
+        futures_lite::future::poll_fn(move |cx| {
             if setup {
                 Poll::Ready(())
             } else {
@@ -810,7 +810,7 @@ pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
 /// Dropping this future does nothing in particular.
 pub fn yield_cpu() -> impl Future<Output = ()> {
     let mut pending = true;
-    futures::future::poll_fn(move |cx| {
+    futures_lite::future::poll_fn(move |cx| {
         if core::mem::replace(&mut pending, false) {
             cx.waker().wake_by_ref();
             Poll::Pending
