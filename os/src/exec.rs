@@ -675,7 +675,7 @@ static TIMER_LIST: AtomicPtr<List<Ticks>> =
 fn not_in_isr() -> bool {
     // Safety: we're dereferencing a raw pointer in order to read a read-only
     // portion of a single global register in the SCB, so this is fine.
-    let scb = unsafe { &*cortex_m::peripheral::SCB::ptr() };
+    let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
     // Bottom 9 bits are VECTACTIVE, which are 0 in Thread mode.
     scb.icsr.read() & 0x1FF == 0
 }
