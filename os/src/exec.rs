@@ -143,14 +143,19 @@ use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-use core::time::Duration;
 
 use crate::atomic::{AtomicExt, AtomicArithExt};
+
+#[cfg(feature = "systick")]
 use crate::list::List;
 #[cfg(feature = "systick")]
 use crate::time::Ticks;
+#[cfg(feature = "systick")]
+use core::sync::atomic::AtomicPtr;
+#[cfg(feature = "systick")]
+use core::time::Duration;
 
 /// How many bits in a `usize`, and thus in a pointer?
 const USIZE_BITS: usize = mem::size_of::<usize>() * 8;
@@ -506,7 +511,7 @@ pub const ALL_TASKS: usize = !0;
 /// can be built up cheaply and torn down atomically from interrupt context.
 /// (Contrast with e.g. a list of waiting tasks, which is more precise but
 /// harder to get right and more expensive at runtime.)
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Notify {
     mask: AtomicUsize,
 }
@@ -557,23 +562,6 @@ impl Notify {
                 Poll::Pending
             }
         })
-    }
-
-    /// Version of `until` that only works with `Option<T>`.
-    ///
-    /// This was used before `until` could work with any `TestResult` type,
-    /// which includes `bool`, `Option<T>`, and user-defined types. Use `until`
-    /// instead in new code.
-    #[deprecated(
-        since = "0.2.2",
-        note = "This will be removed in the next major version, \
-                please use Notify::until instead.",
-    )]
-    pub fn until_some<'a, 'b: 'a, T: 'a>(
-        &'a self,
-        cond: impl (FnMut() -> Option<T>) + 'b,
-    ) -> impl Future<Output = T> + 'a {
-        self.until(cond)
     }
 
     /// Subscribes to `notify` and then calls `cond`, completing if it returns
@@ -727,7 +715,7 @@ fn set_timer_list<R>(
 
 #[cfg(not(feature = "systick"))]
 fn set_timer_list<X, R>(
-    list: X,
+    _list: X,
     body: impl FnOnce() -> R,
 ) -> R {
     // Prevent this from being used from interrupt context.

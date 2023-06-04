@@ -146,7 +146,7 @@ pub struct Push<'a, T> {
     _marker: crate::NotSyncMarker,
 }
 
-impl<'q, T> Push<'q, T> {
+impl<T> Push<'_, T> {
     // Implementation note: Push "owns" the head and does not need to be careful
     // with its memory ordering, while the tail is "foreign" and must be
     // synchronized.
@@ -239,7 +239,7 @@ pub struct Pop<'a, T> {
     _marker: crate::NotSyncMarker,
 }
 
-impl<'q, T> Pop<'q, T> {
+impl<T> Pop<'_, T> {
     // Implementation note: Pop "owns" the tail and does not need to be careful
     // with its memory ordering, while the head is "foreign" and must be
     // synchronized.

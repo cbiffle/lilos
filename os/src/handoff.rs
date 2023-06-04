@@ -55,6 +55,7 @@ use crate::exec::Notify;
 
 /// Shared control block for a `Handoff`. See the module docs for more
 /// information.
+#[derive(Default)]
 pub struct Handoff<T> {
     state: Cell<State<T>>,
     ping: Notify,
@@ -103,8 +104,10 @@ impl<T> core::fmt::Debug for Handoff<T> {
 /// pinned future. So we know the futures cannot move without being dropped, and
 /// thus the pointers will remain valid (the futures take care to reset these
 /// pointers on drop).
+#[derive(Default)]
 enum State<T> {
     /// Nobody's waiting.
+    #[default]
     Idle,
     /// Push side is blocked, and here is a pointer to the value they're
     /// offering. (The `Option` will be `Some(value)`, and to pop you must reset
