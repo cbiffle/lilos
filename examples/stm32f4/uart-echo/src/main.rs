@@ -53,7 +53,6 @@ extern crate panic_halt;
 
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
-use core::time::Duration;
 use core::future::Future;
 
 use stm32f4::stm32f407 as device;
@@ -61,6 +60,7 @@ use device::interrupt;
 
 use lilos::exec::{Notify, PeriodicGate};
 use lilos::spsc;
+use lilos::time::Millis;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Entry point
@@ -119,7 +119,7 @@ fn heartbeat<'gpio>(
     // and don't need to retain access to it. This distinction is hard (or
     // impossible?) to express with an `async fn`.
 
-    const PERIOD: Duration = Duration::from_millis(500);
+    const PERIOD: Millis = Millis(500);
 
     // Configure our output pin.
     rcc.ahb1enr.modify(|_, w| w.gpioden().enabled());
@@ -127,7 +127,7 @@ fn heartbeat<'gpio>(
 
     // Set up our timekeeping to capture the current time (not whenever we first
     // get polled). This is usually not important but I'm being picky.
-    let mut gate = PeriodicGate::new(PERIOD);
+    let mut gate = PeriodicGate::from(PERIOD);
 
     // Return the task future. We use `move` so that the `gate` is transferred
     // from our stack into the future.

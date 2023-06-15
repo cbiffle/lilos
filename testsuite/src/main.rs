@@ -160,17 +160,17 @@ async fn test_other_tasks_started() {
 }
 
 async fn test_clock_advancing() {
-    let t1 = lilos::time::Ticks::now();
+    let t1 = lilos::time::TickTime::now();
     lilos::exec::sleep_for(A_BIT).await;
-    let t2 = lilos::time::Ticks::now();
+    let t2 = lilos::time::TickTime::now();
     assert!(t2 > t1);
 }
 
 async fn test_sleep_until_basic() {
-    let t1 = lilos::time::Ticks::now();
+    let t1 = lilos::time::TickTime::now();
     let target = t1 + core::time::Duration::from_millis(10);
     lilos::exec::sleep_until(target).await;
-    let t2 = lilos::time::Ticks::now();
+    let t2 = lilos::time::TickTime::now();
     assert!(t2 == target);
 }
 

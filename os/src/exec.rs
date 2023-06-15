@@ -142,6 +142,7 @@
 use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
+use core::ops::{Add, AddAssign};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -150,8 +151,9 @@ use crate::atomic::{AtomicExt, AtomicArithExt};
 
 #[cfg(feature = "systick")]
 use crate::list::List;
+use crate::time::Millis;
 #[cfg(feature = "systick")]
-use crate::time::Ticks;
+use crate::time::TickTime;
 #[cfg(feature = "systick")]
 use core::sync::atomic::AtomicPtr;
 #[cfg(feature = "systick")]
@@ -447,7 +449,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             #[cfg(feature = "systick")]
             {
                 // Scan for any expired timers.
-                with_timer_list(|tl| tl.wake_less_than(Ticks::now()));
+                with_timer_list(|tl| tl.wake_less_than(TickTime::now()));
             }
 
             // Capture and reset wake bits, then process any 1s.
@@ -669,7 +671,7 @@ pub fn wake_task_by_index(index: usize) {
 
 /// Tracks the timer list currently in scope.
 #[cfg(feature = "systick")]
-static TIMER_LIST: AtomicPtr<List<Ticks>> =
+static TIMER_LIST: AtomicPtr<List<TickTime>> =
     AtomicPtr::new(core::ptr::null_mut());
 
 fn not_in_isr() -> bool {
@@ -685,7 +687,7 @@ fn not_in_isr() -> bool {
 /// This doesn't nest, and will assert if you try.
 #[cfg(feature = "systick")]
 fn set_timer_list<R>(
-    list: Pin<&mut List<Ticks>>,
+    list: Pin<&mut List<TickTime>>,
     body: impl FnOnce() -> R,
 ) -> R {
     // Prevent this from being used from interrupt context.
@@ -728,7 +730,7 @@ fn set_timer_list<X, R>(
 ///
 /// This provides a safe way to access the timer thread local.
 #[cfg(feature = "systick")]
-fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
+fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
     // Prevent this from being used from interrupt context.
     assert!(not_in_isr());
 
@@ -750,7 +752,7 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
 /// Sleeps until the system time is equal to or greater than `deadline`.
 ///
 /// More precisely, `sleep_until(d)` returns a `Future` that will poll as
-/// `Pending` until `Ticks::now() >= deadline`; then it will poll `Ready`.
+/// `Pending` until `TickTime::now() >= deadline`; then it will poll `Ready`.
 ///
 /// If `deadline` is already in the past, this will instantly become `Ready`.
 ///
@@ -758,10 +760,10 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<Ticks>>) -> R) -> R {
 ///
 /// Dropping this future does nothing in particular.
 #[cfg(feature = "systick")]
-pub async fn sleep_until(deadline: Ticks) {
+pub async fn sleep_until(deadline: TickTime) {
     // TODO: this early return means we can't simply return the insert_and_wait
     // future below, which is costing us some bytes of text.
-    if Ticks::now() >= deadline {
+    if TickTime::now() >= deadline {
         return;
     }
 
@@ -775,17 +777,22 @@ pub async fn sleep_until(deadline: Ticks) {
 /// Sleeps until the system time has increased by `d`.
 ///
 /// More precisely, `sleep_for(d)` captures the system time, `t`, and returns a
-/// `Future` that will poll as `Pending` until `Ticks::now() >= t + d`; then it
-/// will poll `Ready`.
+/// `Future` that will poll as `Pending` until `TickTime::now() >= t + d`; then
+/// it will poll `Ready`.
 ///
 /// If `d` is 0, this will instantly become `Ready`.
+///
+/// `d` can be any type that can be added to a `TickTime`, which in practice
+/// means either [`Millis`] or [`Duration`].
 ///
 /// # Cancellation
 ///
 /// Dropping this future does nothing in particular.
 #[cfg(feature = "systick")]
-pub fn sleep_for(d: Duration) -> impl Future<Output = ()> {
-    sleep_until(Ticks::now() + d)
+pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
+    where TickTime: Add<D, Output = TickTime>,
+{
+    sleep_until(TickTime::now() + d)
 }
 
 /// Returns a future that will be pending exactly once before resolving.
@@ -823,16 +830,21 @@ pub fn yield_cpu() -> impl Future<Output = ()> {
 /// elapses *between* operations, this is *not* the right function -- you should
 /// just `loop` and call `sleep_for` instead.
 ///
+/// `period` can be any type that can be added to a `TickTime`, which in
+/// practice means either [`Millis`] or [`Duration`].
+///
 /// # Cancellation
 ///
 /// Dropping this future will cancel any in-progress future previously returned
 /// from `action`, as well as dropping `action` itself.
 #[cfg(feature = "systick")]
-pub async fn every_until<F>(period: Duration, mut action: impl FnMut() -> F)
+pub async fn every_until<D, F>(period: D, mut action: impl FnMut() -> F)
 where
     F: Future<Output = bool>,
+    TickTime: AddAssign<D>,
+    D: Copy,
 {
-    let mut next = Ticks::now();
+    let mut next = TickTime::now();
     loop {
         sleep_until(next).await;
         if action().await {
@@ -850,36 +862,56 @@ where
 /// milliseconds, you would write:
 ///
 /// ```ignore
-/// let gate = PeriodicGate::new(Duration::from_millis(30));
+/// let gate = PeriodicGate::from(Millis(30));
 /// loop {
 ///     f();
 ///     gate.next_time().await;
 /// }
 /// ```
+///
+/// This will maintain the 30-millisecond interval consistently, even if `f()`
+/// takes several milliseconds to run, and even if `f()` is sometimes fast and
+/// sometimes slow.
 #[derive(Debug)]
 #[cfg(feature = "systick")]
 pub struct PeriodicGate {
-    interval: Duration,
-    next: Ticks,
+    interval: Millis,
+    next: TickTime,
+}
+
+#[cfg(feature = "systick")]
+impl From<Duration> for PeriodicGate {
+    fn from(d: Duration) -> Self {
+        PeriodicGate {
+            interval: Millis(d.as_millis() as u64),
+            next: TickTime::now(),
+        }
+    }
+}
+
+#[cfg(feature = "systick")]
+impl From<Millis> for PeriodicGate {
+    /// Creates a periodic gate that can be used to release execution every
+    /// `interval`, starting right now.
+    fn from(interval: Millis) -> Self {
+        PeriodicGate {
+            interval,
+            next: TickTime::now(),
+        }
+    }
 }
 
 #[cfg(feature = "systick")]
 impl PeriodicGate {
     /// Creates a periodic gate that can be used to release execution every
-    /// `interval`, starting right now.
-    pub fn new(interval: Duration) -> Self {
-        PeriodicGate {
-            interval,
-            next: Ticks::now(),
-        }
-    }
-
-    /// Creates a periodic gate that can be used to release execution every
     /// `interval`, starting `delay` ticks in the future.
-    pub fn new_shift(interval: Duration, delay: Duration) -> Self {
+    ///
+    /// This can be useful for creating multiple periodic gates that operate out
+    /// of phase with respect to each other.
+    pub fn new_shift(interval: Millis, delay: Millis) -> Self {
         PeriodicGate {
             interval,
-            next: Ticks::now() + delay,
+            next: TickTime::now() + delay,
         }
     }
 

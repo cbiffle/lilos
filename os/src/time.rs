@@ -2,7 +2,7 @@
 //!
 //! The OS uses the Cortex-M SysTick Timer to maintain a count of ticks since
 //! boot. You can get the value of this counter using
-//! [`Ticks::now()`][Ticks::now].
+//! [`TickTime::now()`][TickTime::now].
 //!
 //! Ticks are currently fixed at 1ms.
 //!
@@ -12,6 +12,33 @@
 //!
 //! Note: this entire module is only available if the `systick` feature is
 //! present; it is on by default.
+//!
+//! # Types for describing time
+//!
+//! This module uses three main types for describing time, in slightly different
+//! roles.
+//!
+//! `TickTime` represents a specific point in time, measured as a number of
+//! ticks since boot (or, really, since the OS itself was started). It's a
+//! 64-bit count of milliseconds, which means it overflows every 584 million
+//! years. This lets us ignore overflows in timestamps, making everything
+//! simpler. `TickTime` is analogous to `std::time::Instant` from the Rust
+//! standard library.
+//!
+//! `Millis` represents a relative time interval in milliseconds. This uses the
+//! same representation as `TickTime`, so adding them together is cheap.
+//!
+//! `core::time::Duration` is similar to `Millis` but with a lot more bells and
+//! whistles. It's the type used to measure time intervals in the Rust standard
+//! library. It can be used with most time-related API in the OS, but you might
+//! not want to do so on a smaller CPU: `Duration` uses a mixed-number-base
+//! format internally that means almost all operations require a 64-bit multiply
+//! or divide. On machines lacking such instructions, this can become quite
+//! costly (in terms of both program size and time required).
+//!
+//! Cases where the OS won't accept `Duration` are mostly around things like
+//! sleeps, where the operation will be performed in millisecond units, so being
+//! able to pass (say) nanoseconds is misleading.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
@@ -40,9 +67,9 @@ pub fn initialize_sys_tick(syst: &mut SYST, clock_mhz: u32) {
 /// Represents a moment in time by the value of the system tick counter.
 /// System-specific analog of `std::time::Instant`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
-pub struct Ticks(u64);
+pub struct TickTime(u64);
 
-impl Ticks {
+impl TickTime {
     /// Retrieves the current value of the tick counter.
     pub fn now() -> Self {
         // This loop will only repeat if e != e2, which means we raced the
@@ -53,9 +80,15 @@ impl Ticks {
             let t = TICK.load(Ordering::SeqCst);
             let e2 = EPOCH.load(Ordering::SeqCst);
             if e == e2 {
-                break Ticks(((e as u64) << 32) | (t as u64));
+                break TickTime(((e as u64) << 32) | (t as u64));
             }
         }
+    }
+
+    /// Constructs a `TickTime` value describing a certain number of
+    /// milliseconds since the executor booted.
+    pub fn from_millis_since_boot(m: u64) -> Self {
+        Self(m)
     }
 
     /// Subtracts this time from an earlier time, giving the `Duration` between
@@ -64,47 +97,112 @@ impl Ticks {
     /// # Panics
     ///
     /// If this time is not actually `>= earlier`.
-    pub fn duration_since(self, earlier: Ticks) -> Duration {
-        Duration::from_millis(self.0.checked_sub(earlier.0).unwrap())
+    pub fn duration_since(self, earlier: TickTime) -> Duration {
+        Duration::from_millis(self.millis_since(earlier).0)
+    }
+
+    /// Subtracts this time from an earlier time, giving the amount of time
+    /// between them measured in `Millis`.
+    ///
+    /// # Panics
+    ///
+    /// If this time is not actually `>= earlier`.
+    pub fn millis_since(self, earlier: TickTime) -> Millis {
+        Millis(self.0.checked_sub(earlier.0).unwrap())
     }
 
     /// Checks the clock to determine how much time has elapsed since the
     /// instant recorded by `self`.
-    pub fn elapsed(self) -> Duration {
-        Self::now().duration_since(self)
+    pub fn elapsed(self) -> Millis {
+        Self::now().millis_since(self)
     }
 
-    /// Adds a duration to `self`, checking for overflow. Note that since we use
-    /// 64 bit ticks, overflow is unlikely in practice.
-    pub fn checked_add(self, duration: Duration) -> Option<Self> {
-        self.0.checked_add(duration.as_millis() as u64).map(Ticks)
+    /// Checks the clock to determine how much time has elapsed since the
+    /// instant recorded by `self`. Convenience version that returns the result
+    /// as a `Duration`.
+    pub fn elapsed_duration(self) -> Duration {
+        Duration::from_millis(self.elapsed().0)
     }
 
-    /// Subtracts a duration from `self`, checking for overflow. Overflow can
-    /// occur if `duration` is longer than the time from boot to `self`.
-    pub fn checked_sub(self, duration: Duration) -> Option<Self> {
-        self.0.checked_sub(duration.as_millis() as u64).map(Ticks)
+    /// Adds some milliseconds to `self`, checking for overflow. Note that since
+    /// we use 64 bit ticks, overflow is unlikely in practice.
+    pub fn checked_add(self, millis: Millis) -> Option<Self> {
+        self.0.checked_add(millis.0).map(TickTime)
+    }
+
+    /// Subtracts some milliseconds from `self`, checking for overflow. Overflow
+    /// can occur if `millis` is longer than the time from boot to `self`.
+    pub fn checked_sub(self, millis: Millis) -> Option<Self> {
+        self.0.checked_sub(millis.0).map(TickTime)
     }
 }
 
 /// Add a `Duration` to a `Ticks` with normal `+` overflow behavior (i.e.
 /// checked in debug builds, optionally not checked in release builds).
-impl core::ops::Add<Duration> for Ticks {
+impl core::ops::Add<Duration> for TickTime {
     type Output = Self;
     fn add(self, other: Duration) -> Self::Output {
-        Ticks(self.0 + other.as_millis() as u64)
+        TickTime(self.0 + other.as_millis() as u64)
     }
 }
 
-impl core::ops::AddAssign<Duration> for Ticks {
+impl core::ops::AddAssign<Duration> for TickTime {
     fn add_assign(&mut self, other: Duration) {
         self.0 += other.as_millis() as u64
     }
 }
 
-impl From<Ticks> for u64 {
-    fn from(t: Ticks) -> Self {
+impl From<TickTime> for u64 {
+    fn from(t: TickTime) -> Self {
         t.0
+    }
+}
+
+/// A period of time measured in milliseconds.
+///
+/// This plays a role similar to `core::time::Duration` but is designed to be
+/// cheaper to use. In particular, as of this writing, `Duration` insists on
+/// converting times to and from a Unix-style (seconds, nanoseconds)
+/// representation internally. This means that converting to or from any simple
+/// monotonic time -- even in nanoseconds! -- requires a 64-bit division or
+/// multiplication. Many useful processors, such as Cortex-M0, don't have 32-bit
+/// division, much less 64-bit division.
+///
+/// `Millis` wraps a `u64` and records a number of milliseconds. Since
+/// milliseconds are `lilos`'s unit used for internal timekeeping, this ensures
+/// that a `Millis` can be used for any deadline or timeout computation without
+/// any unit conversions or expensive arithmetic operations.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
+pub struct Millis(pub u64);
+
+/// Adds a number of milliseconds to a `TickTime` with normal `+` overflow
+/// behavior (i.e. checked in debug builds, optionally not checked in release
+/// builds).
+impl core::ops::Add<Millis> for TickTime {
+    type Output = Self;
+    fn add(self, other: Millis) -> Self::Output {
+        TickTime(self.0 + other.0)
+    }
+}
+
+/// Adds a number of milliseconds to a `TickTime` with normal `+=` overflow
+/// behavior (i.e. checked in debug builds, optionally not checked in release
+/// builds).
+impl core::ops::AddAssign<Millis> for TickTime {
+    fn add_assign(&mut self, other: Millis) {
+        self.0 += other.0;
+    }
+}
+
+impl From<Millis> for u64 {
+    fn from(x: Millis) -> Self {
+        x.0
+    }
+}
+
+impl From<u64> for Millis {
+    fn from(x: u64) -> Self {
+        Self(x)
     }
 }
 

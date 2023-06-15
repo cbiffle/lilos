@@ -27,7 +27,7 @@ extern crate panic_halt;
 static BOOT: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 // How often our blinky task wakes up (1/2 our blink frequency).
-const PERIOD: core::time::Duration = core::time::Duration::from_millis(500);
+const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -50,7 +50,7 @@ fn main() -> ! {
     let blink = async {
         // PeriodicGate is a `lilos` tool for implementing low-jitter periodic
         // actions. It opens once per PERIOD.
-        let mut gate = lilos::exec::PeriodicGate::new(PERIOD);
+        let mut gate = lilos::exec::PeriodicGate::from(PERIOD);
 
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.

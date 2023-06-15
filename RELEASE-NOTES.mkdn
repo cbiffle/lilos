@@ -1,0 +1,112 @@
+# Release Notes
+
+## Version 0.3.0 (in progress)
+
+**`lilos` now supports the stable toolchain!**
+
+- Minimum supported Rust version now 1.69 for various fixes.
+
+- OS APIs have given up on `never_type` ever stabilizing and switched to the
+  awkwardly-named-but-stable `core::convert::Infallible` type. The main
+  implication for programs: task futures should now have the type `async fn
+  my_task(arguments) -> Infallible` instead of `-> !`. You can probably
+  search-replace this.
+
+- Cortex-M0 CPUs are now fully supported, with a worked example for the RP2040
+  in `examples/rp2040`, and successful applications (not in this repo) on Nordic
+  nRF52832 and STM32G0. (Note that `lilos` is not multi-CPU aware, so the second
+  core on the RP2040 can run _code_ but not `lilos` tasks. Because very few
+  `lilos` types are `Send`, it should be hard to screw this up without effort.)
+
+- All SysTick timer support is now behind a feature, `systick`, which is on by
+  default. You can omit this if you're targeting a platform where the SysTick
+  timer is stopped in the normal sleep/wait states, such as the Nordic nRF52832.
+  Your application will need to use interrupts (including potentially interrupts
+  from a replacement low-power timer) to handle all events. I'll post a worked
+  example eventually.
+
+- APIs relying on `core::time::Duration` have been switched over to a new
+  `lilos::time::Millis` type, with `Duration` optionally supported where it
+  makes sense. It turns out that `Duration` is internally structured such that
+  essentially all operations require 64-bit (or 128-bit!) multiplication and/or
+  division/remainder. This became _really obvious_ on M0, which lacks any sort
+  of division insruction. Switching away from `Duration` cuts several kiB off
+  the size of the OS (which, depending on which features you're using, can be as
+  much as 50-60%).
+
+- The OS timestamp type has been renamed from `lilos::time::Ticks` to
+  `lilos::time::TickTime` because I kept feeling like "ticks" sounds like a
+  measure of time duration, rather than a timestamp. With the introduction of
+  `Millis` it started to seem really ambiguous, so, I changed it.
+
+- Two significant API changes to `PeriodicGate`:
+    - `PeriodicGate` is now created using `from` instead of `new`, which lets it
+      take either a cheap `Millis` or an expensive `Duration`. (This is the main
+      change required to port simple applications to 0.3 in my experience.)
+
+    - Added `PeriodicGate::new_shift` for setting up periodic timers out of
+      phase with respect to one another. This is useful for e.g. scheduling a
+      display refresh at 60 Hz, and scheduling serial communication to happen at
+      exactly the same frequency but shifted so they don't compete (which was
+      the motivating use case).
+
+- `Notify::until` is now more powerful and can wait for a `bool` condition (its
+  original use case), _or_ for an operation returning `Option` to return `Some`.
+  In the latter case, it returns the contained value. As a result, the old
+  `until_some` has been removed -- change any uses of it to use `until`.
+
+- Upgraded to `cortex-m-rt` 0.7.1; earlier 0.6-series `cortex-m-rt` crates don't
+  reliably preserve stack alignment on startup, and must be avoided. (It would
+  be nice if Cargo had something louder than yank in this case.) This is a
+  user-visible change because you're responsible for linking in the
+  `cortex-m-rt` setup code into your `main` routine -- make sure you're not
+  using 0.6.
+
+- All public types in the OS now have `Debug` impls for your debug-printing
+  pleasure.
+
+- `mutex` macros now import `Pin` so you don't have to (whoops!).
+
+- `TickTime` can now be converted to and from a `u64`.
+
+- Examples:
+    - New STM32H7 UART echo example -- similar to the STM32F407 example, but on
+      hardware you can buy! (Edit: ...aaaaand it's out of stock)
+    - Changes to ensure that RLS/rust-analyzer work in examples.
+
+- Internal changes:
+    - Switch to Rust 2021.
+    - Fix some uses of deprecated `cortex-m` API.
+    - More aggressive warning settings.
+    - Use `unsafe_op_in_unsafe_fn`, which should really be Rust's default.
+    - The repo is no longer a workspace, because builds in workspaces with
+      `.cargo/config` files change behavior depending on which directory you're
+      in, despite having all build targets available, and this keeps confusing
+      me.
+
+## Version 0.2.1
+
+- Add `handoff` (rendezvous) type, which can be _much_ cheaper than a full
+  `spsc` queue if you don't mind having the sender and receiver synchronize.
+
+- No longer require the `inline-asm` feature from `cortex-m`. This is a visible
+  change since it may affect your feature unification, but should not be a
+  breaking change.
+
+## Version 0.2.0
+
+- It became apparent that the original `queue` had soundness issues. Replaced
+  `queue` with `spsc`, a rewritten version that I'm more confident in. This has
+  a very different API, so this is a breaking change. `spsc` (single-producer
+  single-consumer) is intended to distinguish it from other kinds of queues in
+  the future.
+
+- Both `spsc` (formerly `queue`) and `mutex` are now behind features, so you can
+  opt into the parts of the system you need.
+
+## Version 0.1.0
+
+Initial public release of the "operating system" factored out of my LED
+controller project.
+
+0.1.1 and 0.1.2 were only docs changes.
