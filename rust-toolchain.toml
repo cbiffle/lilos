@@ -2,4 +2,4 @@
 channel = "1.69"
 targets = [ "thumbv7em-none-eabihf", "thumbv7m-none-eabi", "thumbv6m-none-eabi" ]
 profile = "minimal"
-components = [ "rustfmt", "rls" ]
+components = [ "rustfmt", "rust-analyzer" ]
