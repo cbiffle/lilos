@@ -1,0 +1,153 @@
+:showtitle:
+:toc: left
+:numbered:
+:icons: font
+:source-language: rust
+:source-highlighter: rouge
+
+= `lilos` vs Hubris
+
+I currently maintain two embedded Rust operating systems, `lilos` (which is the
+one you're reading) and https://github.com/oxidecomputer/hubris/[Hubris]. This
+might seem weird, so I've put together this little FAQ.
+
+== How are `lilos` and Hubris similar?
+
+Both `lilos` and Hubris are...
+
+- Embedded operating systems written in Rust.
+- Intended for applications with real-time requirements.
+- Designed for modern 32-bit microcontrollers (primarily ARM, though Hubris
+  flirts with having RISC-V support, as I think ARM have gotten too
+  comfortable).
+- Deployed and running in actual systems you might have interacted with (though
+  in `lilos`'s case you would have needed to encounter one of my art projects in
+  person).
+- Initially designed and written by me (hi!), and thus filled with certain of my
+  biases.
+
+Both operating systems are also derived from design studies of particular points
+in the Rust embedded OS design space, though they derive from _different_ points
+in that space, so calling that a similarity is a bit ... generous.
+
+== How are `lilos` and Hubris different?
+
+`lilos` and Hubris are very different systems aimed at different classes of
+applications. Here's a snazzy table to compare and contrast the two systems!
+
+[cols="1,1,1"]
+|===
+|Property |`lilos` |Hubris
+
+|Initially created by
+|me
+|me working for Oxide
+
+|Developed by
+|me
+|a team at Oxide
+
+|Implemented in
+|Rust (no assembly)
+|Rust and some assembly
+
+|Based on abstractions that are
+|`async`
+|synchronous
+
+|Targeting microcontrollers that are
+|small (8+ kiB flash, 1+ kiB RAM)
+|medium-size (64+ kiB flash, 8+ kiB RAM)
+
+|Supporting real-time requirements at the scale of
+|tens of cycles to microseconds
+|milliseconds
+
+|Running tasks that are
+|compiled together
+|separately compiled
+
+|With a concurrency model based on
+|arbitrary trees of cheap forking/joining tasks
+|one thread per isolated task
+
+|Built into applications using
+|just Cargo
+|custom build system
+
+|Achieving robustness by
+|requiring very little `unsafe` and crossing fingers
+|using hardware memory/privilege isolation and component-level restartability
+
+|Currently deployed in
+|my art projects and home automation systems
+|Oxide servers and manufacturing/test automation
+
+|Actively used by
+|...just me, I think
+|dozens of people across a handful of companies
+
+|===
+
+== Why would I, as a programmer, choose `lilos`?
+
+I've spoken at length about Hubris's benefits, and those are all still true.
+For many applications, including most of the ones I get paid for, Hubris is the
+best choice (in my biased opinion).
+
+Compared to Hubris, `lilos` has the following benefits:
+
+- **More expressive concurrency.** You can write programs that fork and join
+  into separate concurrent state machines as needed, using constructs like
+  `select!` or `join!`. You can exploit the "cancellation" behavior of Rust
+  futures to impose timeouts on the operations of your choice without having to
+  thread timeout values throughout your API.
+
+- **Lower flash/ROM requirements.** `lilos` is a significantly smaller
+  operating system than Hubris -- at the time of this writing, the smallest
+  useful `lilos` kernel takes about 1 kiB, while the smallest useful Hubris
+  kernel takes about 16 kiB. But beyond that, because all the tasks in a
+  `lilos` application are compiled together, they can share code, including the
+  standard library. This means the size of an application increases much more
+  slowly as you add tasks with `lilos`. (Of course, to achieve this, `lilos`
+  has to let tasks call each others' code, which means no hardware isolation or
+  component-level restartability.)
+
+- **Lower RAM requirements.** `lilos` is what we
+  embedded-operating-system-nerds refer to as a "single-stack tasker," which
+  means that it multiplexes a single stack across all tasks. This means the
+  stack memory requirement is the deepest stack required by any _one_ task, as
+  opposed to systems like Hubris (or Unix, for that matter) where you need to
+  reserve enough stack for the _sum of the deepest stacks required by all
+  tasks._ This can make a huge difference, particularly as the number of tasks
+  increases!
+
+== So is synchronous or `async` better?
+
+I've written quite a bit about why I think Hubris's synchronous model is better
+than systems providing purely asynchronous primitives. If you've (say) watched
+the talk where I announced Hubris, you might be confused to discover that I
+have this little `async` OS. Am I backing away from the advantages of
+synchronous systems?
+
+It turns out, that isn't the right question. Asynchronous is the opposite of
+synchronous; `async` is not the same thing as asynchronous. Yes, that's
+confusing. Let me explain.
+
+What's important to me is the programmer's (or the reader's, or the auditor's)
+ability to understand code, maintain it, change it, and convince themselves
+that it's correct. Synchronous or "straight-line" code can make this much
+easier, whereas asynchronous code filled with callbacks or explicit state
+machines makes this hard: it's the GOTO problem, but under a veneer of
+respectability.
+
+`async` lets you write and maintain code as straight-line code, and then
+_generate_ state machines and callbacks under the hood. It gives you many of
+the benefits of hand-unrolled state machines, without imposing most of the
+increased cognitive complexity of having your control flow splattered all over
+the place.
+
+In this sense, Hubris and `lilos` are both pursuing the same goal: embedded
+software that is relatively easy to read and maintain, while still being fast
+and resource-efficient and preventing certain classes of bugs. They're just
+pursuing it using different tools.
