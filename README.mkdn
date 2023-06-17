@@ -1,10 +1,10 @@
 # `lilos`: A minimal async RTOS
 
 This is a wee RTOS written to support the `async` style of programming in Rust.
-It fits in about 2.5 kiB of Flash, uses about 20 bytes of RAM, and provides a
-full async runtime with multiple tasks, support for complex concurrency via
-`join` and `select`, etc. See the `examples` directory for some worked examples
-of varying complexity.
+It fits in about 2.5 kiB of Flash, uses about 20 bytes of RAM (before your tasks
+are added), and provides a full async runtime with multiple tasks, support for
+complex concurrency via `join` and `select`, etc. See the `examples` directory
+for some worked examples of varying complexity.
 
 ## Repo layout
 
@@ -24,20 +24,18 @@ map:
 ## Building
 
 You will need a Rust toolchain installed through `rustup`, because we use a
-`rustup`-style `rust-toolchain` file to pin the toolchain version to ensure that
-you get the right results.
+`rustup`-style `rust-toolchain.toml` file to pin the toolchain version to ensure
+that you get the right results. Fortunately, if you're using `rustup`, it will
+automatically ensure you've got the appropriate toolchain version available,
+including support for the right target architecture.
 
-1. Ensure that the correct embedded target is installed, e.g.
-   `thumbv7m-none-eabi`. Normally the `rust-toolchain` file will handle this for
-   you.
-2. Enter the directory you're interested in, for example, `cd os`.
-3. Build: `cargo build`.
-4. To try an example on a microcontroller eval board, see the README in the
+1. Enter the directory you're interested in, for example, `cd os`.
+2. Build: `cargo build` (or, for smaller binaries, `cargo build --release`).
+3. To try an example on a microcontroller eval board, see the README in the
    individual example. (In most cases `cargo run` in the directory will
    suffice.)
 
-To build everything in the repo, install the appropriate targets and then run
-`./build-all.sh`.
+To build everything in the repo, run `./build-all.sh`.
 
 ## Contact and License
 
