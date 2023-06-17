@@ -122,6 +122,12 @@ Compared to Hubris, `lilos` has the following benefits:
   tasks._ This can make a huge difference, particularly as the number of tasks
   increases!
 
+- **More traditional RTOS API.** `lilos` has queues and mutexes and stuff that
+  you may be familiar with from systems like FreeRTOS (except memory-safe!).
+  Hubris relies on IPC and message passing to solve the same problems, which
+  can be a little harder for folks with RTOS experience to wrap their heads
+  around.
+
 == So is synchronous or `async` better?
 
 I've written quite a bit about why I think Hubris's synchronous model is better
