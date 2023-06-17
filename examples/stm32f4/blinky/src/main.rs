@@ -23,10 +23,10 @@
 extern crate panic_halt;
 
 use core::convert::Infallible;
+use core::pin::pin;
 use core::time::Duration;
 
 use lilos::exec::sleep_for;
-use pin_utils::pin_mut;
 
 // Shorthand for which SoC we're targeting:
 use stm32f4::stm32f407 as device;
@@ -57,14 +57,10 @@ fn main() -> ! {
     // also because `p.GPIOD` is not `Sync` and so normally cannot be shared
     // across threads -- but our tasks are not threads, since they are
     // cooperatively scheduled. So this just works.
-    let fut1 = blinky(1 << 12, Duration::from_millis(800), &p.GPIOD);
-    pin_mut!(fut1);
-    let fut2 = blinky(1 << 13, Duration::from_millis(400), &p.GPIOD);
-    pin_mut!(fut2);
-    let fut3 = blinky(1 << 14, Duration::from_millis(200), &p.GPIOD);
-    pin_mut!(fut3);
-    let fut4 = blinky(1 << 15, Duration::from_millis(100), &p.GPIOD);
-    pin_mut!(fut4);
+    let fut1 = pin!(blinky(1 << 12, Duration::from_millis(800), &p.GPIOD));
+    let fut2 = pin!(blinky(1 << 13, Duration::from_millis(400), &p.GPIOD));
+    let fut3 = pin!(blinky(1 << 14, Duration::from_millis(200), &p.GPIOD));
+    let fut4 = pin!(blinky(1 << 15, Duration::from_millis(100), &p.GPIOD));
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.

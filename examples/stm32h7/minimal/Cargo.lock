@@ -145,7 +145,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "futures",
- "pin-utils",
  "scopeguard",
 ]
 
@@ -158,7 +157,6 @@ dependencies = [
  "futures",
  "lilos",
  "panic-halt",
- "pin-utils",
  "stm32h7",
 ]
 

@@ -195,10 +195,9 @@ macro_rules! create_mutex {
         let $var = $contents;
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
-        let $var = unsafe {
+        let mut $var = core::pin::pin!(unsafe {
             core::mem::ManuallyDrop::into_inner($crate::mutex::Mutex::new($var))
-        };
-        pin_utils::pin_mut!($var);
+        });
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.
         unsafe {

@@ -60,7 +60,7 @@
 //!
 //! 2. Put the `Node` in its final resting place (which may be a local, or might
 //!    be a field of a struct, etc.) and pin it. The
-//!    [`pin_mut!`](https://docs.rs/pin-utils/0.1/pin_utils/macro.pin_mut.html)
+//!    [`pin!`](https://doc.rust-lang.org/stable/core/pin/macro.pin.html)
 //!    macro makes doing this on the stack easier.
 //!
 //! 3. Finish setting it up by calling [`Node::finish_init`].
@@ -77,18 +77,16 @@
 //!
 //! ```ignore
 //! # fn foo() {
-//! // Create a partially initialized node.
+//! // Create a partially initialized node, pinned on the stack.
 //! //
 //! // Safety: this is safe as long as we fulfill the rest of the conditions
 //! // required by Node::new before doing anything that could result in dropping
 //! // the node, including `panic!` or `await`.
-//! let my_node = unsafe {
+//! let mut my_node = core::pin::pin!(unsafe {
 //!     core::mem::ManuallyDrop::into_inner(
 //!         os::list::Node::new((), os::exec::noop_waker())
 //!     )
-//! };
-//! // Shadow the local binding with a pinned version.
-//! pin_utils::pin_mut!(my_node);
+//! });
 //! // Finish initialization.
 //! //
 //! // Safety: this discharges the rest of the obligations laid out by
@@ -657,10 +655,9 @@ macro_rules! create_list {
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
         #[allow(unused_unsafe)]
-        let $var = unsafe {
+        let mut $var = core::pin::pin!(unsafe {
             core::mem::ManuallyDrop::into_inner($crate::list::List::new())
-        };
-        pin_utils::pin_mut!($var);
+        });
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.
         #[allow(unused_unsafe)]
@@ -683,12 +680,11 @@ macro_rules! create_node {
     ($var:ident, $dl:expr, $w: expr) => {
         // Safety: we discharge the obligations of `new` by pinning and
         // finishing the value, below, before it can be dropped.
-        let $var = unsafe {
+        let mut $var = core::pin::pin!(unsafe {
             core::mem::ManuallyDrop::into_inner($crate::list::Node::new(
                 $dl, $w,
             ))
-        };
-        pin_utils::pin_mut!($var);
+        });
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.
         unsafe {

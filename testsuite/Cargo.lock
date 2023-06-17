@@ -148,7 +148,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "futures",
- "pin-utils",
  "scopeguard",
 ]
 
@@ -162,7 +161,6 @@ dependencies = [
  "futures",
  "lilos",
  "panic-semihosting",
- "pin-utils",
 ]
 
 [[package]]

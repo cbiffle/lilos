@@ -154,7 +154,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "futures",
- "pin-utils",
 ]
 
 [[package]]
@@ -166,7 +165,6 @@ dependencies = [
  "futures",
  "lilos",
  "panic-halt",
- "pin-utils",
  "rp2040-boot2",
  "rp2040-pac",
 ]

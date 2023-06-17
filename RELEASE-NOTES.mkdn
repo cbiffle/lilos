@@ -12,6 +12,10 @@
   my_task(arguments) -> Infallible` instead of `-> !`. You can probably
   search-replace this.
 
+- Example programs and OS internals have switched to the newly stabilized
+  `core::pin::pin!` macro instead of `pin_utils`. You don't have to do this in
+  your own programs, but I recommend it!
+
 - Cortex-M0 CPUs are now fully supported, with a worked example for the RP2040
   in `examples/rp2040`, and successful applications (not in this repo) on Nordic
   nRF52832 and STM32G0. (Note that `lilos` is not multi-CPU aware, so the second

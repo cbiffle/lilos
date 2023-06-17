@@ -16,6 +16,7 @@ mod mutex;
 mod handoff;
 
 use core::convert::Infallible;
+use core::pin::pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::FutureExt;
 
@@ -32,20 +33,15 @@ fn main() -> ! {
     let mut cp = cortex_m::Peripherals::take().unwrap();
 
     // Tasks
-    let coordinator = task_coordinator();
-    pin_utils::pin_mut!(coordinator);
-    let flag_auto = task_set_a_flag_then_halt(&AUTO_FLAG);
-    pin_utils::pin_mut!(flag_auto);
-    let flag_manual = task_set_a_flag_then_halt(&MUST_START_FLAG);
-    pin_utils::pin_mut!(flag_manual);
-    let flag_manual2 = task_set_a_flag_then_halt(&MUST_NOT_START_FLAG);
-    pin_utils::pin_mut!(flag_manual2);
-    let waiting_for_notify = async {
+    let coordinator = pin!(task_coordinator());
+    let flag_auto = pin!(task_set_a_flag_then_halt(&AUTO_FLAG));
+    let flag_manual = pin!(task_set_a_flag_then_halt(&MUST_START_FLAG));
+    let flag_manual2 = pin!(task_set_a_flag_then_halt(&MUST_NOT_START_FLAG));
+    let waiting_for_notify = pin!(async {
         NOTIFY.until_next().await;
         NOTIFY_REACHED.store(true, Ordering::SeqCst);
         block_forever().await
-    };
-    pin_utils::pin_mut!(waiting_for_notify);
+    });
 
     let start_mask = 0b011;
 

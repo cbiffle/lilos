@@ -57,8 +57,7 @@ pub async fn test_insert_and_wait() {
 
     // And just for funsies
     {
-        let fut = list.insert_and_wait(node.as_mut());
-        pin_utils::pin_mut!(fut);
+        let fut = core::pin::pin!(list.insert_and_wait(node.as_mut()));
         let _ = futures::poll!(fut); // polled exactly once but not woken
     }
     assert!(node.is_detached()); // still works?

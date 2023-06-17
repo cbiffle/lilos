@@ -53,6 +53,7 @@ extern crate panic_halt;
 
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
+use core::pin::pin;
 use core::future::Future;
 
 use stm32f4::stm32f407 as device;
@@ -76,15 +77,13 @@ fn main() -> ! {
     let p = device::Peripherals::take().unwrap();
 
     // Create and pin tasks.
-    let heartbeat = heartbeat(&p.RCC, &p.GPIOD);
-    pin_utils::pin_mut!(heartbeat);
-    let echo = usart_echo(
+    let heartbeat = pin!(heartbeat(&p.RCC, &p.GPIOD));
+    let echo = pin!(usart_echo(
         &p.RCC,
         &p.GPIOA,
         &p.USART2,
         CLOCK_HZ,
-    );
-    pin_utils::pin_mut!(echo);
+    ));
 
     p.RCC.ahb1enr.modify(|_, w| w.gpioden().enabled());
     p.GPIOD.moder.modify(|_, w| w.moder15().output());

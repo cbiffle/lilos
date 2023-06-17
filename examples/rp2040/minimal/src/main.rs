@@ -47,7 +47,7 @@ fn main() -> ! {
 
     // Create a task to blink the LED. You could also write this as an `async
     // fn` but we've inlined it as an `async` block for simplicity.
-    let blink = async {
+    let blink = core::pin::pin!(async {
         // PeriodicGate is a `lilos` tool for implementing low-jitter periodic
         // actions. It opens once per PERIOD.
         let mut gate = lilos::exec::PeriodicGate::from(PERIOD);
@@ -58,9 +58,7 @@ fn main() -> ! {
             p.SIO.gpio_out_xor.write(|w| unsafe { w.bits(1 << 25) });
             gate.next_time().await;
         }
-    };
-    // Pin our task in place on the stack.
-    pin_utils::pin_mut!(blink);
+    });
 
     // Configure the systick timer for 1kHz ticks at the default ROSC speed of
     // _roughly_ 6 MHz.

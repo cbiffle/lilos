@@ -53,6 +53,7 @@ extern crate panic_halt;
 
 use core::convert::{Infallible, TryFrom};
 use core::mem::MaybeUninit;
+use core::pin::pin;
 use core::future::Future;
 
 use stm32h7::stm32h743 as device;
@@ -77,15 +78,13 @@ fn main() -> ! {
     let p = device::Peripherals::take().unwrap();
 
     // Create and pin tasks.
-    let heartbeat = heartbeat(&p.RCC, &p.GPIOB);
-    pin_utils::pin_mut!(heartbeat);
-    let echo = usart_echo(
+    let heartbeat = pin!(heartbeat(&p.RCC, &p.GPIOB));
+    let echo = pin!(usart_echo(
         &p.RCC,
         &p.GPIOD,
         &p.USART3,
         CLOCK_HZ,
-    );
-    pin_utils::pin_mut!(echo);
+    ));
 
     // Set up and run the scheduler.
     lilos::time::initialize_sys_tick(&mut cp.SYST, CLOCK_HZ);
