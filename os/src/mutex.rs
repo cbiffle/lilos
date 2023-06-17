@@ -20,6 +20,7 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::atomic::AtomicArithExt;
 use crate::exec::noop_waker;
 use crate::list::List;
 
@@ -82,7 +83,7 @@ impl<T> Mutex<T> {
     ///
     /// If the mutex is _not_ free, returns `None`.
     pub fn try_lock(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
-        if self.state.fetch_or(1, Ordering::Acquire) == 0 {
+        if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
             Some(MutexGuard { mutex: self })
         } else {
             None
