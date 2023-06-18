@@ -674,12 +674,14 @@ pub fn wake_task_by_index(index: usize) {
 static TIMER_LIST: AtomicPtr<List<TickTime>> =
     AtomicPtr::new(core::ptr::null_mut());
 
-fn not_in_isr() -> bool {
-    // Safety: we're dereferencing a raw pointer in order to read a read-only
-    // portion of a single global register in the SCB, so this is fine.
-    let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
-    // Bottom 9 bits are VECTACTIVE, which are 0 in Thread mode.
-    scb.icsr.read() & 0x1FF == 0
+/// Panics if called from an interrupt service routine (ISR). This is used to
+/// prevent OS features that are unavailable to ISRs from being used in ISRs.
+fn assert_not_in_isr() {
+    let psr_value = cortex_m::register::apsr::read().bits();
+    // Bottom 9 bits are the exception number, which are 0 in Thread mode.
+    if psr_value & 0x1FF != 0 {
+        panic!();
+    }
 }
 
 /// Sets the timer list for the duration of `body`.
@@ -691,7 +693,7 @@ fn set_timer_list<R>(
     body: impl FnOnce() -> R,
 ) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(not_in_isr());
+    assert_not_in_isr();
 
     let old_list = TIMER_LIST.swap_polyfill(
         // Safety: since we've gotten a &mut, we hold the only reference, so
@@ -702,8 +704,10 @@ fn set_timer_list<R>(
     );
 
     // Detect weird reentrant uses of this function. This would indicate an
-    // internal error. Since this assert should only be checked on executor
-    // startup, there is no need to optimize it away in release builds.
+    // internal error, or possibly an application being cheeky and calling
+    // `run_tasks` from within a task. Since this assert should only be checked
+    // on executor startup, there is no need to optimize it away in release
+    // builds.
     assert!(old_list.is_null());
 
     let r = body();
@@ -715,28 +719,35 @@ fn set_timer_list<R>(
     r
 }
 
+/// No-op definition of `set_timer_list` if the OS has no actual timer list.
 #[cfg(not(feature = "systick"))]
 fn set_timer_list<X, R>(
     _list: X,
     body: impl FnOnce() -> R,
 ) -> R {
-    // Prevent this from being used from interrupt context.
-    assert!(not_in_isr());
-
     body()
 }
 
 /// Nabs a reference to the current timer list and executes `body`.
 ///
 /// This provides a safe way to access the timer thread local.
+///
+/// # Preconditions
+///
+/// - Must not be called from an interrupt.
+/// - Must only be called with a timer list available, which is to say, from
+///   within a task.
 #[cfg(feature = "systick")]
 fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
     // Prevent this from being used from interrupt context.
-    assert!(not_in_isr());
+    assert_not_in_isr();
 
     let list_ref = {
         let tlptr = TIMER_LIST.load(Ordering::Acquire);
-        assert!(!tlptr.is_null(), "with_timer_list outside of set_timer_list");
+        // If this assertion fails, it's a sign that one of the timer-aware OS
+        // primitives (likely a `sleep_*`) has been used without the OS actually
+        // running.
+        assert!(!tlptr.is_null());
 
         // Safety: if it's not null, then it came from a `Pin<&mut>` that we
         // have been loaned. We do not treat it as a &mut anywhere, so we can
@@ -755,6 +766,10 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
 /// `Pending` until `TickTime::now() >= deadline`; then it will poll `Ready`.
 ///
 /// If `deadline` is already in the past, this will instantly become `Ready`.
+///
+/// # Preconditions
+///
+/// This can only be used within a task.
 ///
 /// # Cancellation
 ///
