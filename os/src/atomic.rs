@@ -13,11 +13,14 @@
 //!    instructions and lack of BASEPRI. So, not a big loss.
 //!
 //! 2. They don't work in unprivileged mode. But, neither does most of `lilos`.
+//!
+//! This is exposed so that applications don't have to rewrite it for M0
+//! support.
 
 use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 
 /// Basic atomic operations.
-pub(crate) trait AtomicExt {
+pub trait AtomicExt {
     /// Primitive type corresponding to this atomic type.
     type Value;
 
@@ -27,7 +30,7 @@ pub(crate) trait AtomicExt {
 }
 
 /// Atomic operations that apply to arithmetic types.
-pub(crate) trait AtomicArithExt: AtomicExt {
+pub trait AtomicArithExt: AtomicExt {
     /// Atomically add `val` to our contents, returning the original value.
     fn fetch_add_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value;
     /// Atomically OR `val` into our contents, returning the original value.

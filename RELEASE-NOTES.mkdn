@@ -80,6 +80,10 @@
 
 - `TickTime` can now be converted to and from a `u64`.
 
+- The internal `atomic` module, containing "polyfill" atomic operations for
+  portability between bigger cores and Cortex-M0, is now `pub` so applications
+  can use it if desired.
+
 ### Bug fixes
 
 - `mutex` macros now import `Pin` so you don't have to (whoops!).

@@ -114,7 +114,7 @@ pub mod spsc;
 #[cfg(feature = "handoff")]
 pub mod handoff;
 
-mod atomic;
+pub mod atomic;
 
 use core::marker::PhantomData;
 
