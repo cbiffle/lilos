@@ -442,8 +442,10 @@ impl<T: PartialOrd> List<T> {
         // but that function had soundness risks and so I've inlined it.
         let nnn = NonNull::from(&*node);
         {
-            // Node should not already belong to a list.
-            assert!(node.prev.get() == nnn);
+            // Node should not already belong to a list. This is a debug_assert
+            // because this property _should be_ handled at compile time by
+            // taking ownership of the &mut Node while it's in a list.
+            debug_assert!(node.prev.get() == nnn);
             debug_assert!(node.next.get() == nnn); // technically redundant
 
             // Work through the nodes starting at the head, looking for the
@@ -540,6 +542,11 @@ impl List<()> {
 
 /// Dropping a non-empty list currently indicates a programming error in the OS,
 /// and so it will `panic!`.
+///
+/// This is because any node in the list should only be in the list for the
+/// duration of an insert future, which borrows the list -- preventing it from
+/// being dropped.
+#[cfg(debug_assertions)]
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
         // It's not immediately clear to me what the Drop behavior should
@@ -600,7 +607,9 @@ impl<T, F: FnOnce()> Drop for WaitForDetach<'_, T, F> {
                 // No action necessary.
             } else {
                 // Uh oh, we have not had a chance to handle the detach.
-                (self.cleanup.take().unwrap())();
+                if let Some(cleanup) = self.cleanup.take() {
+                    cleanup();
+                }
             }
         } else {
             self.node.detach();
