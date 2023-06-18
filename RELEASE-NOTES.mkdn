@@ -6,16 +6,6 @@
 
 - Minimum supported Rust version now 1.69 for various fixes.
 
-- OS APIs have given up on `never_type` ever stabilizing and switched to the
-  awkwardly-named-but-stable `core::convert::Infallible` type. The main
-  implication for programs: task futures should now have the type `async fn
-  my_task(arguments) -> Infallible` instead of `-> !`. You can probably
-  search-replace this.
-
-- Example programs and OS internals have switched to the newly stabilized
-  `core::pin::pin!` macro instead of `pin_utils`. You don't have to do this in
-  your own programs, but I recommend it!
-
 - Cortex-M0 CPUs are now fully supported, with a worked example for the RP2040
   in `examples/rp2040`, and successful applications (not in this repo) on Nordic
   nRF52832 and STM32G0. (Note that `lilos` is not multi-CPU aware, so the second
@@ -28,6 +18,32 @@
   Your application will need to use interrupts (including potentially interrupts
   from a replacement low-power timer) to handle all events. I'll post a worked
   example eventually.
+
+- Example programs and OS internals have switched to the newly stabilized
+  `core::pin::pin!` macro instead of `pin_utils`. You don't have to do this in
+  your own programs, but I recommend it!
+
+- Upgraded to `cortex-m-rt` 0.7.1; earlier 0.6-series `cortex-m-rt` crates don't
+  reliably preserve stack alignment on startup, and must be avoided. (It would
+  be nice if Cargo had something louder than yank in this case.) This is a
+  user-visible change because you're responsible for linking in the
+  `cortex-m-rt` setup code into your `main` routine -- make sure you're not
+  using 0.6.
+
+### Example app updates
+
+- New STM32H7 UART echo example -- similar to the STM32F407 example, but on
+  hardware you can buy! (Edit: ...aaaaand it's out of stock)
+
+- Changes to ensure that RLS/rust-analyzer work in examples.
+
+### API changes
+
+- OS APIs have given up on `never_type` ever stabilizing and switched to the
+  awkwardly-named-but-stable `core::convert::Infallible` type. The main
+  implication for programs: task futures should now have the type `async fn
+  my_task(arguments) -> Infallible` instead of `-> !`. You can probably
+  search-replace this.
 
 - APIs relying on `core::time::Duration` have been switched over to a new
   `lilos::time::Millis` type, with `Duration` optionally supported where it
@@ -59,34 +75,25 @@
   In the latter case, it returns the contained value. As a result, the old
   `until_some` has been removed -- change any uses of it to use `until`.
 
-- Upgraded to `cortex-m-rt` 0.7.1; earlier 0.6-series `cortex-m-rt` crates don't
-  reliably preserve stack alignment on startup, and must be avoided. (It would
-  be nice if Cargo had something louder than yank in this case.) This is a
-  user-visible change because you're responsible for linking in the
-  `cortex-m-rt` setup code into your `main` routine -- make sure you're not
-  using 0.6.
-
 - All public types in the OS now have `Debug` impls for your debug-printing
   pleasure.
 
-- `mutex` macros now import `Pin` so you don't have to (whoops!).
-
 - `TickTime` can now be converted to and from a `u64`.
 
-- Examples:
-    - New STM32H7 UART echo example -- similar to the STM32F407 example, but on
-      hardware you can buy! (Edit: ...aaaaand it's out of stock)
-    - Changes to ensure that RLS/rust-analyzer work in examples.
+### Bug fixes
 
-- Internal changes:
-    - Switch to Rust 2021.
-    - Fix some uses of deprecated `cortex-m` API.
-    - More aggressive warning settings.
-    - Use `unsafe_op_in_unsafe_fn`, which should really be Rust's default.
-    - The repo is no longer a workspace, because builds in workspaces with
-      `.cargo/config` files change behavior depending on which directory you're
-      in, despite having all build targets available, and this keeps confusing
-      me.
+- `mutex` macros now import `Pin` so you don't have to (whoops!).
+
+### Internal changes
+
+- A bunch of code size optimizations for small processors.
+- Switch to Rust 2021.
+- Fix some uses of deprecated `cortex-m` API.
+- More aggressive warning settings.
+- Use `unsafe_op_in_unsafe_fn`, which should really be Rust's default.
+- The repo is no longer a workspace, because builds in workspaces with
+  `.cargo/config` files change behavior depending on which directory you're in,
+  despite having all build targets available, and this keeps confusing me.
 
 ## Version 0.2.1
 
