@@ -123,13 +123,16 @@ impl<T> Drop for Queue<'_, T> {
         let mut t = self.head.load(Ordering::SeqCst);
 
         while h != t {
+            let unsafecell_ptr = self.storage[t].get();
             // Safety: this is unsafe because we're accessing the UnsafeCell
-            // contents and dropping whatever's in the MaybeUninit. We can do
-            // this because, since h != t, we are popping a previously
-            // initialized cell.
+            // contents. We can do this because since we're &mut Self we
+            // have exclusive control over our storage.
+            let maybeuninit = unsafe { &mut *unsafecell_ptr };
+            // Safety: we're dropping the contents of a MaybeUninit, which
+            // implies asserting that it's been initialized. We know it's been
+            // initialized because of the `h != t` condition on our loop.
             unsafe {
-                let cell_contents = &mut *self.storage[t].get();
-                core::ptr::drop_in_place(cell_contents.as_mut_ptr());
+                maybeuninit.assume_init_drop();
             }
             t = self.next_index(t);
         }
@@ -182,18 +185,17 @@ impl<T> Push<'_, T> {
             return Err(value);
         }
 
-        // Safety: this is unsafe due to the write through the raw pointer.
-        // Because this cell is between h and t, it is not aliased and is
-        // uninitialized. Because we're writing MaybeUninit, we can just assign
-        // to uninitialized memory instead of using ptr::write. And because we
-        // required a &mut, we know we're not racing any other pushes for this
-        // slot.
-        unsafe {
-            *self.q.storage[h].get() = MaybeUninit::new(value);
-        }
+        let unsafecell_ptr = self.q.storage[h].get();
+        // Safety: this is dereferencing a raw pointer into the unsafecell,
+        // which we can do because (1) the cell being between h and t implies
+        // that it is not aliased, and (2) because we have &mut Self we know
+        // we're not racing any other pushes for this slot. (Pops won't touch
+        // this slot.)
+        let maybeuninit = unsafe { &mut *unsafecell_ptr };
+        maybeuninit.write(value);
 
         // We can store instead of compare-exchange here because we are the only
-        // Push manipulating this field.
+        // Push manipulating this field (see: &mut Self).
         self.q.head.store(h_next, Ordering::Release);
         self.q.pushed.notify();
         Ok(())
@@ -271,19 +273,23 @@ impl<T> Pop<'_, T> {
 
         let t_next = self.q.next_index(t);
 
-        // Safety: this is unsafe due to the read through the UnsafeCell's raw
-        // pointer, and the move out of the MaybeUninit.
-        // Because this cell is between t and h, it is not aliased and is
-        // initialized. 
-        let result = Some(unsafe {
-            let cell_contents = &*self.q.storage[t].get();
-            cell_contents.as_ptr().read()
-        });
+        let unsafecell_ptr = self.q.storage[t].get();
+        // Safety: we're dereferencing the raw pointer into the UnsafeCell,
+        // which we can do because (1) this cell is between t and h, so it's not
+        // aliased by any pushing, and (2) we have a &mut Self, so it's also by
+        // definition not aliased by any popping.
+        let maybeuninit = unsafe { &mut *unsafecell_ptr };
+
+        // Safety: we're reading the possibly-uninitialized contents of the
+        // MaybeUninit, which we can do because the cell is between t and h, and
+        // thus has been initialized by a previous push. We will bump tail just
+        // below to switch the cell's state to uninitialized after reading.
+        let result = unsafe { maybeuninit.assume_init_read() };
 
         self.q.tail.store(t_next, Ordering::Release);
         self.q.popped.notify();
 
-        result
+        Some(result)
     }
 
     /// Produces a future that resolves to the next element that can be popped
