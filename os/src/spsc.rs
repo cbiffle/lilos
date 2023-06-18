@@ -109,7 +109,8 @@ impl<'s, T> Queue<'s, T> {
     fn next_index(&self, i: usize) -> usize {
         // This produced better code than using remainder on ARMv7-M last
         // I checked.
-        if i + 1 == self.storage.len() { 0 } else { i + 1 }
+        let ni = i.wrapping_add(1);
+        if ni == self.storage.len() { 0 } else { ni }
     }
 
 }
