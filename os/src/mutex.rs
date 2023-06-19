@@ -1,10 +1,52 @@
 //! Fair mutex that must be pinned.
 //!
-//! This implements a mutex, or lock, guarding a value of type `T`. Creating a
-//! `Mutex` by hand is somewhat involved (see [`Mutex::new`] for details), so
-//! there's a convenience macro, [`create_mutex!`].
+//! This implements a mutex (a kind of lock) guarding a value of type `T`.
+//! Creating a `Mutex` by hand is somewhat involved (see [`Mutex::new`] for
+//! details), so there's a convenience macro, [`create_mutex!`].
 //!
 //! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
+//!
+//! # `lock` vs `perform`
+//!
+//! This mutex API is subtly different from most other async mutex APIs in that
+//! it does _not_ expose an RAII-style mutex-guard-based `lock` operation by
+//! default. By default, the operation you get is `perform`.
+//!
+//! `perform` takes a function of your choice as an argument, and when it
+//! successfully locks the mutex, it will apply that function and unlock. The
+//! function must be a normal Rust `fn`, and _not_ an `async fn`. This means
+//! that there is no opportunity to `await` with the mutex locked.
+//!
+//! This helps to avoid a common implementation mistake in software using
+//! mutexes: assuming that you can temporarily violate invariants on the data
+//! guarded by the mutex, but `await`ing (and thus accepting possible
+//! cancellation) while those invariants are still being violated. This can
+//! cause the next observer of the guarded data to find the data in an invalid
+//! state, often leading to panics -- but _not_ panics in the code that had the
+//! bug!
+//!
+//! Because that's annoying, you have to opt-in to API that lets you make the
+//! mistake. In many cases it's perfectly safe to opt-in to that, because the
+//! mistake can't actually happen -- if the type contained within the Mutex
+//! guards its own invariants and can't ever be in an invalid state, then you're
+//! not at risk.
+//!
+//! However, some amount of application context is needed to judge whether a
+//! type can actually protect all its invariants. For instance, in one
+//! application's `Mutex<Option<T>>`, the application may never expect to leave
+//! `None` in there when the `Mutex` is unlocked -- but another application may
+//! be just fine with that. For this reason, the ability to leave a mutex locked
+//! across await points is _not_ an attribute of the contained type `T`. It's
+//! instead implemented using a wrapper type, `CancelSafe`.
+//!
+//! To declare a `Mutex` that includes the `lock` and `try_lock` operation,
+//! write it as `Mutex<CancelSafe<T>>` instead of just `Mutex<T>`.
+//!
+//! The `perform`-based API also prevents you from blocking to wait on another
+//! `Mutex` while you have one locked, which on the one hand makes certain
+//! classes of deadlock impossible, but on the other hand can be pretty
+//! limiting. If you need to lock a series of `Mutex`es with blocking, make sure
+//! the contents of all but the innermost are `CancelSafe`!
 //!
 //! # Implementation details
 //!
@@ -19,6 +61,8 @@ use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+use scopeguard::defer;
 
 use crate::atomic::AtomicArithExt;
 use crate::exec::noop_waker;
@@ -78,13 +122,17 @@ impl<T> Mutex<T> {
         }
     }
 
-    /// Locks this mutex immediately if it is free, and returns a guard for
-    /// holding it locked.
+    /// Locks this mutex immediately if it is free, and applies the operation
+    /// `op` to its contents before unlocking it.
+    ///
+    /// If the mutex is free, returns the value returned from `op`, wrapped in
+    /// `Some`.
     ///
     /// If the mutex is _not_ free, returns `None`.
-    pub fn try_lock(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
+    pub fn try_perform<R>(self: Pin<&Self>, op: impl FnOnce(&mut T) -> R) -> Option<R> {
         if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
-            Some(MutexGuard { mutex: self })
+            defer! { unsafe { self.unlock(); } }
+            Some(op(unsafe { self.contents_mut() }))
         } else {
             None
         }
@@ -113,6 +161,96 @@ impl<T> Mutex<T> {
         } else {
             // Nobody was waiting. Allow whoever tries next to get the mutex.
             self.state.store(0, Ordering::Release);
+        }
+    }
+
+    /// Returns a future that will attempt to obtain the mutex each time it gets
+    /// polled, completing only when it succeeds.
+    ///
+    /// When the future is first polled after it becomes the owner of the mutex,
+    /// it will immediately apply `op` to the contents of the mutex, unlock the
+    /// mutex, and then resolve to the value returned from `op`.
+    ///
+    /// If the mutex is free at the time of the first `poll`, the future will
+    /// resolve cheaply without blocking.
+    ///
+    /// # Cancellation
+    ///
+    /// Cancellation behavior for the returned future is slightly subtle.
+    ///
+    /// - If dropped before it's polled _at all_ it does essentially nothing.
+    /// - If dropped once it's added itself to the wait list for the mutex, but
+    ///   before it has been given the mutex, it will detach from the wait list.
+    /// - If dropped after it has been given the mutex, but before it's been
+    ///   polled (and thus given a chance to notice that), it will wake the next
+    ///   waiter on the mutex wait list.
+    pub async fn perform<R>(self: Pin<&Self>, op: impl FnOnce(&mut T) -> R) -> R {
+        // Complete synchronously if the mutex is uncontended.
+        // TODO this is repeated above the loop to avoid the cost of re-setting
+        // up the wait node in every loop iteration, and to avoid setting it up
+        // in the uncontended case. Is this premature optimization?
+        if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
+            defer! { unsafe { self.unlock(); } }
+            return op(unsafe { self.contents_mut() });
+        }
+
+        // We'd like to put our name on the wait list, please.
+        create_node!(wait_node, (), noop_waker());
+
+        self.waiters().insert_and_wait_with_cleanup(
+            wait_node.as_mut(),
+            || {
+                // Safety: if we are evicted from the wait list, which is
+                // the only time this cleanup routine is called, then we own
+                // the mutex and are responsible for unlocking it, though we
+                // have not yet created the MutexGuard.
+                unsafe {
+                    self.unlock();
+                }
+            },
+        ).await;
+        // We've been booted out of the waiter list, which (by construction)
+        // only happens in `unlock`. Meaning, someone just released the
+        // mutex and it's our turn. However, they should _not_ have cleared
+        // the mutex flag to prevent races -- and so we cannot use
+        // `try_lock` which expects to find the flag clear.
+        debug_assert_eq!(self.state.load(Ordering::Acquire), 1);
+
+        defer! { unsafe { self.unlock(); } }
+        op(unsafe { self.contents_mut() })
+    }
+
+    unsafe fn contents(&self) -> &T {
+        let ptr = self.value.get();
+        unsafe { &*ptr }
+    }
+
+    unsafe fn contents_mut(&self) -> &mut T {
+        let ptr = self.value.get();
+        unsafe { &mut *ptr }
+    }
+
+    fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
+        // Safety: this is a structural pin projection.
+        unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).waiters) }
+    }
+
+    fn waiters(self: Pin<&Self>) -> Pin<&List<()>> {
+        // Safety: this is a structural pin projection.
+        unsafe { Pin::map_unchecked(self, |s| &s.waiters) }
+    }
+}
+
+impl<T> Mutex<CancelSafe<T>> {
+    /// Locks this mutex immediately if it is free, and returns a guard for
+    /// holding it locked.
+    ///
+    /// If the mutex is _not_ free, returns `None`.
+    pub fn try_lock(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
+        if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
+            Some(MutexGuard { mutex: self })
+        } else {
+            None
         }
     }
 
@@ -166,16 +304,13 @@ impl<T> Mutex<T> {
         MutexGuard { mutex: self }
     }
 
-    fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
-        // Safety: this is a structural pin projection.
-        unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).waiters) }
-    }
-
-    fn waiters(self: Pin<&Self>) -> Pin<&List<()>> {
-        // Safety: this is a structural pin projection.
-        unsafe { Pin::map_unchecked(self, |s| &s.waiters) }
-    }
 }
+
+/// Newtype to wrap the contents of a `Mutex` when you know, in the context of
+/// the current application, that it is okay to unlock this mutex at _any_
+/// cancellation point.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Ord, PartialOrd)]
+pub struct CancelSafe<T>(pub T);
 
 /// Convenience macro for creating a pinned mutex on the stack.
 ///
@@ -276,7 +411,7 @@ macro_rules! create_static_mutex {
 /// Smart pointer representing successful locking of a mutex.
 #[derive(Debug)]
 pub struct MutexGuard<'a, T> {
-    mutex: Pin<&'a Mutex<T>>,
+    mutex: Pin<&'a Mutex<CancelSafe<T>>>,
 }
 
 impl<T> Drop for MutexGuard<'_, T> {
@@ -292,24 +427,22 @@ impl<T> Drop for MutexGuard<'_, T> {
 impl<T> core::ops::Deref for MutexGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        let v = &self.mutex.value;
         // Safety: this is deriving a shared reference to the contents of the
         // UnsafeCell. Because `self`, a guard, exists, we know the mutex is
         // locked. Because the caller was able to call a method on `&self`, we
         // further know that no other `&mut` references to this guard or its
         // contents exist.
-        unsafe { &*v.get() }
+        &unsafe { self.mutex.contents() }.0
     }
 }
 
 impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let v = &self.mutex.value;
         // Safety: this is deriving an exclusive reference to the contents of
         // the UnsafeCell. Because `self`, a guard, exists, we know the mutex is
         // locked. Because the caller was able to call a method on `&mut self`,
         // we further know that no other `&` or `&mut` references to this guard
         // or its contents exist.
-        unsafe { &mut *v.get() }
+        &mut unsafe { self.mutex.contents_mut() }.0
     }
 }

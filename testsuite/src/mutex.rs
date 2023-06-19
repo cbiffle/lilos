@@ -1,20 +1,20 @@
 use core::pin::Pin;
 use core::task::Poll;
 
-use lilos::{create_mutex, create_static_mutex, mutex::Mutex};
+use lilos::{create_mutex, create_static_mutex, mutex::Mutex, mutex::CancelSafe};
 use crate::A_BIT;
 
 pub async fn test_stack() {
-    create_mutex!(mutex, 42_usize);
+    create_mutex!(mutex, CancelSafe(42_usize));
     test_mutex_wherever(mutex).await
 }
 
 pub async fn test_static() {
-    let mutex = create_static_mutex!(usize, 42_usize);
+    let mutex = create_static_mutex!(CancelSafe<usize>, CancelSafe(42_usize));
     test_mutex_wherever(mutex).await
 }
 
-async fn test_mutex_wherever(mutex: Pin<&Mutex<usize>>) {
+async fn test_mutex_wherever(mutex: Pin<&Mutex<CancelSafe<usize>>>) {
     futures::join!(
         async {
             let mut g = mutex.lock().await;
@@ -27,13 +27,16 @@ async fn test_mutex_wherever(mutex: Pin<&Mutex<usize>>) {
             lilos::exec::sleep_for(A_BIT).await;
             *g += 2;
         },
+        async {
+            mutex.perform(|CancelSafe(x)| *x += 5).await
+        },
     );
 
-    assert_eq!(*mutex.lock().await, 42 + 2 + 1);
+    assert_eq!(*mutex.lock().await, 42 + 2 + 1 + 5);
 }
 
 pub async fn test_lock_cancel_before_poll() {
-    create_mutex!(mutex, ());
+    create_mutex!(mutex, CancelSafe(()));
     drop(mutex.lock());
 
     // Ensure that we can lock it again
@@ -41,7 +44,7 @@ pub async fn test_lock_cancel_before_poll() {
 }
 
 pub async fn test_lock_cancel_while_blocked() {
-    create_mutex!(mutex, ());
+    create_mutex!(mutex, CancelSafe(()));
 
     // Lock the by-definition-uncontended mutex.
     let held = mutex.lock().await;
@@ -65,7 +68,7 @@ pub async fn test_lock_cancel_while_blocked() {
 /// Ensure that the mutex is acquired in the order that the lock futures are
 /// initially polled, independent of the order of polling after that point.
 pub async fn test_fairness() {
-    create_mutex!(mutex, ());
+    create_mutex!(mutex, CancelSafe(()));
 
     // Initially lock the mutex.
     let held = mutex.lock().await;
@@ -105,7 +108,7 @@ pub async fn test_fairness() {
 /// Ensure that a future that acquires the mutex but is dropped before being
 /// polled passes it on to the next waiter.
 pub async fn test_rewake_on_cancel() {
-    create_mutex!(mutex, ());
+    create_mutex!(mutex, CancelSafe(()));
 
     // Initially lock the mutex.
     let held = mutex.lock().await;

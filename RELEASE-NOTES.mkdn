@@ -45,6 +45,13 @@
   my_task(arguments) -> Infallible` instead of `-> !`. You can probably
   search-replace this.
 
+- The `Mutex` API has changed to omit the `lock` operation by default. I've
+  decided the traditional `lock`/`MutexGuard` approach in async code makes it
+  too easy to accidentally write cancel-incorrect abstractions. You now have to
+  opt into the guard-based operations on a `Mutex`-by-`Mutex` basis by replacing
+  `Mutex<T>` with `Mutex<CancelSafe<T>>` -- but first try using the `perform`
+  operation instead.
+
 - APIs relying on `core::time::Duration` have been switched over to a new
   `lilos::time::Millis` type, with `Duration` optionally supported where it
   makes sense. It turns out that `Duration` is internally structured such that

@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "lilos"
-version = "0.3.0-rc3"
+version = "0.3.0-rc4"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
