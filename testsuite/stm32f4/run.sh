@@ -4,9 +4,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMG=target/thumbv7m-none-eabi/debug/lilos-testsuite
+IMG=target/thumbv7m-none-eabi/debug/lilos-testsuite-stm32f4
 
+# F4 has enough flash to build in debug mode
 cargo build
+
 openocd -f openocd.cfg \
     -c "init" \
     -c "reset halt" \

@@ -1,48 +1,27 @@
 # `lilos` test suite
 
 This test suite runs on the target processor and exercises most OS functions,
-reporting results through semihosting. It will run on any Cortex-M processor,
-though the scripts assume an STM32F407 (as found on the STM32F4DISCOVERY board)
-by default.
+reporting results through semihosting. It will run on any supported Cortex-M
+processor, though you usually need some processor-specific bits to actually
+build it (like a linker script and a programming config).
 
-## Running the tests on STM32F4DISCOVERY
+There are subdirectories here with working test suite configs for the following
+processors:
 
-Install the prerequisites described in the root of this repo, plus `openocd`.
+- `stm32f4`: STM32F407 and similar.
+- `stm32g0`: STM32G0xx with at least 32 kiB of flash.
 
-Run `run-stm32f4.sh`. It should call out to `openocd`, flash, verify, run the
-tests, and print the results, before exiting. If the tests passed it will exit
-with status 0.
+To run the tests on a particular processor implementation, see the `README.mkdn`
+file inside its subdirectory.
 
-If you would like to run the tests in GDB (i.e. they are not passing), run the
-following commands _from this directory._
 
-- In one terminal: `openocd`
-- It should report some info about the target CPU and wait.
-- In another terminal: `cargo run`
-- It should print status about flashing and then run the tests. The test output
-  emerges in the `openocd` terminal, not the `cargo run` terminal.
-- A successful run lists tests and then prints `tests complete`.
-- GDB should halt and give you a prompt. Use `exit` or Control-D to leave, or
-  do debugging things.
+## Running on some other processor
 
-## Running on some other processor (M3 or later)
+Use the `stm32f4` subdirectory as a guide. Copy it to a new name. You will need
+to edit the following things:
 
-By default, the test suite is compiled using the `thumbv7m-none-eabi` target,
-and the binary will work on a Cortex-M3 or later -- meaning M4 with or without
-FPU, M7, M33, etc. However, you will need to supply two files describing your
-processor:
-
-- `memory.x` gives the location of Flash and RAM in the address space.
-- `openocd.cfg` tells `openocd` how to find the SWD/JTAG programmer and what CPU
-  to expect to find.
-
-If your processor is not supported by `openocd` and you're using some other
-debug agent, you'll need to provide configuration to GDB and alter the
-`.cargo/config` file to tell GDB how to find it. I assume in this case that you
-know what you're doing.
-
-## Running on M0
-
-To run on M0 or M0+, follow the steps above but pass `--target
-thumbv6m-none-eabi` to any `cargo` command. This will disable generation of
-instructions that are not available on the M0.
+- `memory.x` needs to be adjusted to put RAM and flash in the right places.
+- `openocd.cfg` needs to be adjusted to tell OpenOCD how to get to your debug
+  probe and what kind of processor it's programming.
+- `.cargo/config` needs to be adjusted to set the right target (if it isn't an
+  ARMv7-M processor).

@@ -5,10 +5,6 @@
 //! means that every binary in this workspace has to target the same SoC. Sigh.
 
 #![no_std]
-#![no_main]
-
-// get the panic handler
-use panic_semihosting as _;
 
 mod list;
 mod spsc;
@@ -22,13 +18,7 @@ use futures::FutureExt;
 
 use cortex_m_semihosting::hprintln;
 
-/// This constant assumes a 16MHz clock at reset. You probably don't need to
-/// adjust it if your processor starts at a different speed; none of the tests
-/// rely on this being _correct,_ they only require it to have been set.
-const HZ: u32 = 16_000_000;
-
-#[cortex_m_rt::entry]
-fn main() -> ! {
+pub fn run_test_suite(hz: u32) -> ! {
     // Check out peripherals from the runtime.
     let mut cp = cortex_m::Peripherals::take().unwrap();
 
@@ -45,7 +35,7 @@ fn main() -> ! {
 
     let start_mask = 0b011;
 
-    lilos::time::initialize_sys_tick(&mut cp.SYST, HZ);
+    lilos::time::initialize_sys_tick(&mut cp.SYST, hz);
     lilos::exec::run_tasks(
         &mut [
             coordinator,

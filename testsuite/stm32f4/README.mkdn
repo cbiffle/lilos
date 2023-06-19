@@ -1,0 +1,21 @@
+# `lilos` test suite for STM32F4
+
+This crate customizes the test suite for STM32F407. To use:
+
+Install the prerequisites described in the root of this repo, plus `openocd`.
+
+Run `run.sh` from this directory. It should call out to `openocd`, flash,
+verify, run the tests, and print the results, before exiting.  If the tests
+passed it will exit with status 0.
+
+If you would like to run the tests in GDB (i.e. they are not passing), run the
+following commands _from this directory._
+
+- In one terminal: `openocd`
+- It should report some info about the target CPU and wait.
+- In another terminal: `cargo run`
+- It should print status about flashing and then run the tests. The test output
+  emerges in the `openocd` terminal, not the `cargo run` terminal.
+- A successful run lists tests and then prints `tests complete`.
+- GDB should halt and give you a prompt. Use `exit` or Control-D to leave, or
+  do debugging things.
