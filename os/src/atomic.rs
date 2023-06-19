@@ -17,7 +17,7 @@
 //! This is exposed so that applications don't have to rewrite it for M0
 //! support.
 
-use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 
 /// Basic atomic operations.
 pub trait AtomicExt {
@@ -181,6 +181,30 @@ impl AtomicArithExt for AtomicUsize {
         cortex_m::interrupt::free(|_| {
             let x = self.load(lo);
             self.store(x | val, so);
+            x
+        })
+    }
+}
+
+#[cfg(feature = "has-native-rmw")]
+impl AtomicExt for AtomicBool {
+    type Value = bool;
+
+    fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
+        self.swap(val, ordering)
+    }
+}
+
+#[cfg(not(feature = "has-native-rmw"))]
+impl AtomicExt for AtomicBool {
+    type Value = bool;
+
+    #[inline(always)]
+    fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
+        let (lo, so) = rmw_ordering(ordering);
+        cortex_m::interrupt::free(|_| {
+            let x = self.load(lo);
+            self.store(val, so);
             x
         })
     }
