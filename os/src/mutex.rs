@@ -235,11 +235,12 @@ macro_rules! create_static_mutex {
         use core::sync::atomic::{AtomicBool, Ordering};
         use core::mem::{ManuallyDrop, MaybeUninit};
         use core::pin::Pin;
+        use $crate::atomic::AtomicExt;
 
         // Flag for detecting multiple executions.
         static INIT: AtomicBool = AtomicBool::new(false);
 
-        assert_eq!(INIT.swap(true, Ordering::SeqCst), false);
+        assert_eq!(INIT.swap_polyfill(true, Ordering::SeqCst), false);
 
         // Static mutex storage.
         static mut M: MaybeUninit<$crate::mutex::Mutex<$t>> = MaybeUninit::uninit();

@@ -1,6 +1,7 @@
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use lilos::atomic::AtomicExt;
 use lilos::spsc::{Pop, Push, Queue};
 
 /// The easy case: a queue and its storage on the stack.
@@ -14,7 +15,7 @@ pub async fn test_stack() {
 /// you want to account for it at link time.
 pub async fn test_static_storage() {
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(!ONCE.swap(true, Ordering::SeqCst));
+    assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
     let mut q = Queue::new(unsafe { &mut STORAGE });
     test_wherever(&mut q).await
@@ -24,7 +25,7 @@ pub async fn test_static_storage() {
 /// Pop have `'static` life, so they can be shared with an ISR.
 pub async fn test_static_everything() {
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(!ONCE.swap(true, Ordering::SeqCst));
+    assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
     static mut Q: MaybeUninit<Queue<u8>> = MaybeUninit::uninit();
     let q = unsafe {
