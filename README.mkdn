@@ -1,5 +1,7 @@
 # `lilos`: A minimal async RTOS
 
+We now have a [intro guide!](doc/intro.adoc)
+
 This is a wee RTOS written to support the `async` style of programming in Rust.
 It fits in about 2.5 kiB of Flash, uses about 20 bytes of RAM (before your tasks
 are added), and provides a full async runtime with multiple tasks, support for

@@ -1,0 +1,1102 @@
+:showtitle:
+:toc: left
+:numbered:
+:icons: font
+:source-language: rust
+:source-highlighter: rouge
+
+:os: pass:quotes[`lilos`]
+
+= Introduction to {os}
+
+{os} is a small operating system for embedded Rust applications. It's
+intended for applications that have real-time needs.
+
+What makes {os} unique:
+
+- It relies on Rust futures and `async fn` to implement cheap and flexible
+  concurrency, without making you write explicit state machines. This means you
+  can have more tasks in less RAM, and do complex things like have tasks split
+  into multiple parts and rejoin, all with compiler checks.
+
+- It provides a small but extensible set of OS constructs, like queues and
+  mutexes, and makes it relatively easy for you to add custom ones.
+
+- {os} concurrency happens almost entirely on the stack, which means
+  concurrent tasks can freely borrow things from one another without requiring
+  `'static` or `Send`. This also means {os} doesn't need any sort of heap or
+  arena allocator.
+
+- {os} APIs try to be as clear and simple to understand as possible. There
+  are no magic macros or required code generation.
+
+- You can write a useful `{os}`-based application that uses no `unsafe` code.
+
+{os} was, as far as I'm aware, the first `async` embedded Rust OS, derived
+from a system I built in 2019. It's been running in deployed systems since then,
+and I've been gradually improving and fixing it as I use it for more and more
+projects.
+
+NOTE: {os} currently supports ARM Cortex processors (M0, M0+, M3, M4, M7, and
+probably M33). I would be delighted to port it to a RISC-V processor and stop
+being ARM-centric. Perhaps you could recommend a cheap dev board for me to buy?
+
+
+== Basic idea
+
+{os} is intended to be built into an _application,_ which is a program you
+write that does some sort of embedded microcontroller thing. {os} itself is a
+library (Rust crate) that you link into your application using Cargo. Once your
+application's `main` function hands control to {os} (using
+`lilos::exec::run_tasks`), {os} takes over the CPU and manages concurrent
+execution of your tasks until reset.
+
+Applications are built out of _tasks,_ which are the basic unit of concurrent
+execution in {os} (sort of like a thread). At the outermost layer, an
+application has a fixed set of one or more tasks, which are Rust futures
+(typically ``async fn``s)  handed to {os} in `run_tasks`. Some of those tasks
+are started right away, while others can be configured to start later in
+response to events.
+
+You can also have concurrency _within_ a task. For instance, you can write code
+like this to cause a task to do some work, split into two independent pieces
+that run to completion, and then merge back together:
+
+[source]
+----
+do_some_initial_work();
+
+// Things A and B will run concurrently until both finish.
+let (a_result, b_result) = join! {
+    work_on_thing_a(),
+    work_on_thing_b(),
+};
+
+do_something_with(a_result, b_result);
+----
+
+This is the reason why {os} is so useful: from a set of statically-defined
+top-level tasks, you can create complex patterns of concurrency that change
+dynamically.
+
+{os} tasks are managed by the _executor_, in the `lilos::exec` module. It's
+the chunk of code that ensures tasks get CPU time when they need it, and mostly
+don't get CPU time when they don't.
+
+The executor schedules application tasks _cooperatively_, which means that a
+task has to explicitly give up the CPU (by using, for example, `await`) for
+other tasks to run. This means you don't have to think about preemption, most
+race conditions are made more difficult, since each span of code between `await`
+points is effectively a free critical section. Of course, this has the drawback
+that code entering an infinite loop (which in this case includes panicking) will
+stop the whole executor.
+
+To make this "free critical section" idea consistent, the executor also manages
+the CPU's interrupt controller to carefully control when interrupt service
+handlers can run. By default, the executor will postpone any ISR from running
+until the current task completely yields the CPU. This ensures that ISRs run
+between tasks rather than preempting them, and makes ISR-task interaction a lot
+easier to reason about.
+
+TIP: While {os} always schedules _tasks_ cooperatively, it is possible to
+configure the executor to allow certain interrupts (or all interrupts) to
+preempt your task code, for situations where you need tightly bounded latency.
+This is an advanced technique, outside the scope of this guide, but if you're
+curious, see `lilos::exec::run_tasks_with_preemption`.
+
+=== A contrived example: using `join` with LEDs
+
+Here is an example that alternates between blinking two LEDs together, and
+blinking them at totally different frequencies. This is sort of pseudocode
+because I haven't provided all the build system files and such to make it work,
+but the code in the box below is actual {os} code that could work if plugged
+into the right scaffolding. (See the `examples` folder in the repo for complete
+worked examples.)
+
+[source]
+----
+// We have two LEDs, named Led::A and Led::B.
+// Make them both outputs.
+make_pin_output(Led::A);
+make_pin_output(Led::B);
+
+// With that done, enter into our blinky-pattern loop.
+loop {
+    // First we're going to blink the two LEDs together 10 times
+    // (for a total of 20 toggles). We'll make them blink at 5Hz,
+    // which means we need to sleep for 100 ms each time.
+    for _ in 0..20 {
+        sleep_for(Millis(100)).await;
+
+        toggle_pin(Led::A);
+        toggle_pin(Led::B);
+    }
+
+    // Now let's break into two concurrent state machines, one
+    // managing each LED, and blink them at different unrelated
+    // frequencies. For the next three seconds, A will toggle
+    // at delays divisible by 30, while B will toggle at delays
+    // divisible by 50; at any delay divisible by both 30 and 50,
+    // they will toggle near-simultaneously. (Note that this is
+    // very similar to the "fizzbuzz" cliche tech interview
+    // question.)
+    join! {
+        // A will go faster:
+        async {
+            for _ in 0..100 { // 100 * 30 = 3000
+                sleep_for(Millis(30)).await;
+                toggle_pin(Led::A);
+            }
+            done.set(true);
+        },
+        // B will go slower but finish at the same time:
+        async {
+            for _ in 0..60 { // 60 * 50 = 3000
+                sleep_for(Millis(50)).await;
+                toggle_pin(Led::B);
+            }
+        },
+    }
+
+    // We rejoin here with both async blocks complete,
+    // and continue our loop at the top.
+}
+----
+
+(The `join!` macro is from the `futures` crate, if you're curious.)
+
+== Structuring a {os} application
+
+A {os} application consists of the following parts:
+
+1. A `main` function, or entry point, which is responsible for setting up any
+   resources needed by tasks, and then starting {os}.
+2. State shared between any two or more tasks.
+3. One or more tasks, which are written as ``async fn``s that take the state
+they need as arguments -- either by value, for state they will own, or by
+reference, for state they will share with other tasks.
+
+For very simple applications that consist of totally independent concurrent
+tasks, you can skip number 2. But for most applications, some kind of
+communication between tasks is important.
+
+One of the things that makes {os} unusual is that you can declare shared
+state as local variables on ``main``'s stack -- safely. This has a lot of
+advantages, but the main one is that it lets the compiler's borrow-checking work
+across tasks. To use the main alternative -- putting state in `static` -- you
+have to be somewhat careful to retain Rust's guarantees.
+
+NOTE: There are a lot of times when the advantages of having state in a `static`
+outweigh the drawbacks, and I'll touch on that in a later section.
+
+=== Anatomy of a simple `main`
+
+The `main` function of a {os} application typically looks something like
+this:
+
+[source]
+----
+#[cortex_m_rt::entry] <1>
+fn main() {
+    let cp = cortex_m::Peripherals::take().unwrap(); <2>
+    let p = set_up_some_hardware(); <3>
+
+    let shared_between_a_and_b = Cell::new(true); <4>
+
+    let alice = pin!(task_alice( <5>
+        &shared_between_a_and_b,
+        p.TURBOENCABULATOR,
+    ));
+    let bob = pin!(task_bob( <6>
+        &shared_between_a_and_b,
+        p.LASER_SHARK,
+    ));
+
+    lilos::time::initialize_sys_tick(
+        &mut cp.SYST,
+        16_000_000, <7>
+    );
+    lilos::exec::run_tasks( <8>
+        &mut [alice, bob],
+        lilos::exec::ALL_TASKS, <9>
+    );
+}
+----
+<1> The `entry` proc-macro from `cortex_m_rt` binds the `main` function to the
+processor's Reset vector, and ensures that everything's set up the way Rust
+expects before starting `main`.
+<2> Hardware setup usually wants access to the shared Cortex-M peripherals
+defined by the architecture reference manual. Here we use the `cortex_m` crate
+to get a handle to them that we can use below.
+<3> Generally, some amount of hardware setup needs to happen before starting
+tasks. The most common example is adjusting the processor's clock frequency or
+starting an external crystal oscillator, but this is also a handy place to
+configure pins or turn on peripherals that tasks will use. This step often
+produces a `Peripherals` object from the processor-specific PAC crate, which is
+shown here as `p`.
+<4> State shared between tasks can be created as local variables here. The types
+shared between tasks do not need to be `Send` or `Sync`, so we can use simple
+types with interior mutation like `Cell`. (This is a core advantage of not
+letting tasks preempt one another except at `await` points.)
+<5> `task_alice` is initialized with a combination of state shared with `bob`,
+and a peripheral that she will exclusively control (the `TURBOENCABULATOR`).
+(We'll come back to the `pin!` macro below.)
+<6> `task_bob` gets the same shared state and a different exclusive peripheral.
+<7> This configures the `lilos::time` module assuming that the Cortex-M SYSTICK
+timer is ticking at 16 MHz. This must be done before using other API from
+`lilos::time`.
+<8> This starts the executor and runs `alice` and `bob` concurrently, until
+reset.
+<9> The "start mask" defines the subset of tasks to start immediately. It's
+usually `ALL_TASKS` which, as its name suggests, starts them all.
+
+=== Writing a simple task
+
+Tasks in {os} are ``async fn``s that will never complete. They return the
+`Infallible` type (from `core::convert`).
+
+Most tasks also want arguments, which provide them with resources and shared
+state.
+
+A prototypical task looks like this:
+
+[source]
+----
+async fn task_alice( <1>
+    shared: &MySharedState, <2>
+    owned: &mut SomeBuffer, <3>
+    turboencabulator: TURBOENCABULATOR, <4>
+) -> Infallible { <5>
+    loop { <6>
+        frob(turboencabulator);
+
+        shared.wait_for_bob().await; <7>
+    }
+}
+----
+<1> Each task is usually written as an `async fn`. This `async fn` is actually a
+task _constructor_: you could call it twice to make two Alice tasks, unless it
+prevents that somehow. (This one does not.)
+<2> Shared state is passed into the task constructor by shared reference (`&`).
+<3> Owned-but-external state, such as large buffers, are passed by exclusive
+reference (`&mut`).
+<4> You can also pass in resources by-value, like this `TURBOENCABULATOR` type,
+which is presumably from a Peripheral Access Crate since it disregards Rust
+style norms. This can help prevent a task constructor from being called more
+times than you intended, since there's no way for the code that called
+`task_alice` to get that `turboencabulator` _back_ to do it again. (Unless you
+build one, of course.)
+<5> The `async fn` for a task must never return. The `Infallible` type is the
+best way to describe this using only the standard library: it's an enum with no
+variants, so it's impossible to construct one, and so it's impossible to return
+from this function. (You can still `panic!` of course.) This ensures that the
+`Future` produced from the `async fn` will never complete.
+<6> The easiest way to ensure that a task never completes is to use a `loop`.
+<7> The `loop` should contain at least one `await` point or equivalent macro
+(such as `join!`, `select_biased!`, or `pending!`). Otherwise, it will never
+yield control to other tasks!
+
+TIP: You can also write your task as an explicit `Future` if you'd prefer. It'll
+work fine. Just make sure `type Output = Infallible`.
+
+=== Using `static` for state
+
+You can get quite far while keeping all your state on the stack. However, you
+may run into cases where it breaks down. For me, this is almost always one of
+the following situations:
+
+1. I'm using a lot of RAM, and I want to know if I've run out of RAM at compile
+time. (Stack usage isn't measured at compile time, so if you run out, you find
+out with a panic at runtime.)
+
+2. I have a variable that I want to inspect from a debugger, so I'd like it to
+be at a predictable place in memory with a predictable name. 
+
+3. I have a large buffer that I'd like to place somewhere specific. For
+instance, a lot of microcontrollers have several different RAMs that aren't
+right next to each other; you might put the stack in one, and a large
+communication buffer in another, to get the most out of the chip. The other
+common reason I want to do this is to use DMA.
+
+In all three of these cases, the state you're stuffing into a `static` may or
+may not be shared between tasks. It's often useful to put a single task's own
+state into a `static` for visibility.
+
+Rust has rules on the use of `static` that help to avoid the most common race
+conditions and other mistakes. These rules mean we have to do some extra
+paperwork to put state in a static, in most cases.
+
+The simplest case is putting an `Atomic` type in a `static`. These types are
+thread-safe and use interior-mutability, so Rust is totally chill with them
+being `static` (rather than the more restricted `static mut`). Putting an
+`AtomicUsize` in a `static` is trivial, and so is sharing it across tasks:
+
+[source]
+----
+static EVENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+async fn task_alice() -> Infallible {
+    loop {
+        some_event().await;
+        EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+async fn task_bob() -> Infallible {
+    loop {
+        sleep_for(Millis(1000).await;
+
+        print(EVENT_COUNTER.load(Ordering::Relaxed));
+    }
+}
+----
+
+(You could also pass each task a `&AtomicUsize` rather than having them hardcode
+the `static`, of course.)
+
+To `static` more complex things safely -- things that need to be `static mut` --
+there's a pattern that builds on this foundation. The core issue with `static
+mut` is that any code that can see the variable (in terms of scope) can try and
+poke it to generate a `&mut`. If you do this in two places, you've now got two
+`&mut` references pointing at the same thing, which is Bad And Wrong -- `&mut`
+needs to remain exclusive. You can defend against this by using a _pair_ of
+`static` variables and a pinch of unsafe. Here's a case where we want a 1 kiB
+buffer to be `static`:
+
+[source]
+----
+fn get_the_buffer() -> &'static [u8; 1024] { <1>
+    static TAKEN: AtomicBool = AtomicBool::new(false); <2>
+
+    if TAKEN.swap(true, Ordering::SeqCst) { <3>
+        // This function has been called more than once,
+        // which would produce an aliasing &mut.
+        // Just Say No!
+        panic!();
+    }
+
+    // If we get to this point, the check above passed.
+    // That means we're the first to execute this code since
+    // reset! That in turn means we can safely produce a
+    // &mut to our buffer and know it will be unique.
+    {
+        static mut BUFFER: [u8; 1024] = [0; 1024]; <4>
+
+        unsafe { &mut BUFFER } <5>
+    }
+}
+----
+<1> Because the buffer is `static`, we can return a reference with the `'static`
+lifetime. Doing anything else is complex and I don't recommend it.
+<2> Define an `AtomicBool` that records whether our buffer has been "taken" by a
+call to this function. Because it's defined _inside_ the function, we only have
+to read this one function to see all possible uses of the variable and convince
+ourselves that we've done the right thing.
+<3> This will return `true` on the _second_ time we call this function, causing
+us to panic. We've exchanged compile-time borrowing checks (which we get for
+free for state on the stack) for runtime borrowing checks. (There's not really a
+great alternative to this, since the compiler is very conservative about
+`static`.)
+<4> By declaring the `BUFFER` inside this function, we again ensure that only
+code written write here can potentially access it. By opening an anonymous scope
+on the line just above, we _also_ guarantee that no code _earlier_ in the
+function can access it -- so if you tried to touch `BUFFER` before checking
+`TAKEN`, you'd get a compile error. Overkill? Arguably. But I'm allergic to
+bugs.
+<5> Using `unsafe`, we assert to the compiler that we have checked all the
+preconditions for producing a `&mut` referring to `BUFFER`. Which, in this case,
+we have.
+
+This pattern covers the vast majority of uses of `static`. The main exception is
+if you want to build an array out of a type that is not `Copy`, or if the
+initializer expression you want to use to initialize your `static` is not
+`const`.
+
+There's a sneaky trick for getting around the `Copy` limitation for initializing
+arrays: array literals actually allow any `Copy` value _or any ``const``._ So
+this works:
+
+[source]
+----
+struct MyTypeThatIsNotCopy;
+
+static STATE: [MyTypeThatIsNotCopy; 256] = {
+    const X: MyTypeThatIsNotCopy = MyTypeThatIsNotCopy;
+    [X; 256]
+};
+----
+
+...where `[MyTypeThatIsNotCopy; 256]` would fail. Weird, huh? But useful.
+
+Initializing a `static` from a non-`const` expression is more involved, and for
+now I'm treating it as out of scope for the intro guide.
+
+== How to think about `async` and `await`
+
+Some documentation of Rust `async` and `await` has presented it as a seamless
+alternative to threads. Just sprinkle these keywords through your code and get
+concurrency that scales better! I think this is very misleading. An `async fn`
+is a different thing from a normal Rust `fn`, and you need to think about
+different things to write correct code in each case.
+
+=== `async fn` represents an inversion of control
+
+Here is how I think about `fn` vs `async fn`:
+
+- A Rust `fn` is a function that will execute until it decides to stop executing
+  (ignoring things like threads being preempted), or until it's interrupted by a
+  panic. In particular, its _caller_ gives up control by calling it, and cannot
+  decide to "un-call" it halfway through. (And likewise, if your `fn` calls
+  another `fn`, you give up control to that `fn`, which can decide to enter an
+  infinite loop or `panic!`.)
+
+- A Rust `async fn` is an explicit state machine that you can manipulate and
+  pass around, that happens to be phrased using normal Rust syntax instead of
+  tables and `match` statements. It generates a hidden type implementing the
+  `Future` trait. The code that calls an `async fn` (or uses any `Future`, for
+  that matter) has ultimate control over that `Future`, and can decide when it
+  runs or doesn't run, and can even discard it before it completes.
+
+This distinction is subtle but very important: an `async fn` represents an
+_inversion of control_ compared to a normal `fn`.
+
+=== Hand-rolling an explicit state machine
+
+If you wrote an explicit state machine by hand, this distinction would be clear
+in the code. For instance, here's a simple one:
+
+[source]
+----
+#[derive(Default)]
+enum State {
+    #[default]
+    Begin,
+    PinHigh,
+    PinLow,
+    Done,
+}
+
+impl State {
+    /// Returns `true` if it completes, `false` otherwise.
+    fn step(&mut self) -> bool {
+        match self {
+            Self::Begin => {
+                set_pin_high();
+                *self = Self::PinHigh;
+                false
+            }
+            Self::PinHigh => {
+                set_pin_low();
+                *self = Self::PinLow;
+                false
+            }
+            Self::PinLow => {
+                tristate_pin();
+                *self = Self::Done;
+                false
+            }
+            // Our terminal state:
+            Self::Done => true,
+        }
+    }
+}
+----
+
+State machines like this are almost universal in embedded systems, whether
+they're phrased explicitly or left implicit. Drivers that have a combination of
+API entry points and interrupt service routines, for instance, form this kind of
+state machine. This toy version is written to be small enough to pick apart.
+
+Each time the code that owns your `State` calls `step`, your code gets the
+opportunity to do stuff. At the end of that stuff, it _returns,_ and the calling
+code regains control. It can then keep calling `step` until it gets `true`,
+indicating completion; or it could do something else and never call `step`
+again; or it could `drop` your state. (Note that it can also choose to _keep
+calling ``step``_ even after getting the `true` result! It's very much in control
+here.)
+
+How long will the high and low periods on the pin last? Well, how often will the
+caller call `step`? Sometimes this is defined by a contract (e.g. "this state
+machine advances every 100 ms"), but in this code example, we haven't done
+anything to control timing. The caller could call `step` in a `loop` and make
+the high/low periods as short as possible, or it could sleep for months in
+between calls...or never call `step` again.
+
+What will the final state of the pin we're controlling be? Currently, we can't
+say. The caller could leave us paused forever without calling `step`, or could
+drop us before we finish. So the final state of the pin could be high, low, or
+tristate, depending on what the caller chooses. We could make this
+better-defined by adding a `Drop` impl, so if the caller were to `drop` the
+`State` before it finishes, the pin would do someting predictable:
+
+[source]
+----
+impl Drop for State {
+    fn drop(&mut self) {
+        if !matches(self, Self::Done) {
+            tristate_pin();
+            *self = Self::Done;
+        }
+    }
+}
+----
+
+But if your caller decides to hang on to `State` and never call `step`, there's
+not really anything `State` itself can do about this.
+
+And you want it this way. Really. Keep reading.
+
+=== Explicit state machines mean your caller has control
+
+That might sound bad, but it's **really powerful.** For instance, imagine that
+your caller looks like this:
+
+[source]
+----
+let mut state = State::default();
+
+loop {
+    wait_for_a_key_press();
+    let done = state.step();
+    if done { break; }
+}
+----
+
+If we want to `step` every time the user presses a key, then we have to accept
+the possibility of never ``step``-ping -- because we can't force the user to
+press a key! Being able to create a state machine and have it sit around waiting
+forever, at very low cost, is part of the power of writing explicit state
+machines.
+
+=== Writing state machines with `async fn`
+
+Writing explicit state machines in "long-hand" like this is error-prone
+and complex. Let's rewrite the running example as an `async fn`. (The `pending!`
+macro is from the `futures` crate, and yields to the caller without waiting for
+any particular event. It contains an `await`.)
+
+[source]
+----
+async fn my_state_machine() {
+    set_pin_high();
+    pending!();
+
+    set_pin_low();
+    pending!();
+
+    tristate_pin();
+}
+----
+
+That doesn't reproduce the `Drop` behavior if we're cancelled. To do this in an
+`async fn` you need to have something in the body of the function that will
+perform an action when destroyed. You can roll this by hand, but, I recommend
+the `scopeguard` crate and its `defer!` macro:
+
+[source]
+----
+async fn my_state_machine() {
+    set_pin_high();
+
+    // Now that we've set the pin, make sure
+    // it goes tristate again whether we exit
+    // normally or by cancellation.
+    defer! { tristate_pin(); }
+    pending!();
+
+    set_pin_low();
+    pending!();
+
+    // Pin gets tristated here
+}
+----
+
+That's dramatically less code. It's also much easier to check for correctness:
+
+* You can tell at a glance that there's no way to return to an earlier state
+  from a later one, since doing so would require a `for`, `loop`, or `while`,
+  and there isn't one here.
+
+* You can see (once you've read the docs for the `defer!` macro) that, as soon
+  as the pin gets set high and _before_ we yield control back, the state machine
+  will ensure that the pin gets tristated at the end, no-matter-what. You don't
+  have to go hunting for a separate `Drop` impl.
+
+=== `await` is a composition operator
+
+Often, an application winds up requiring a _hierarchy_ of state machines.
+Imagine that you wanted to take the pin-toggling state machine from the previous
+section, and ensure that it waits a certain minimum interval between changes. If
+the OS provides a "sleep for a certain time period" state machine (as {os}
+does) then the easiest way is to plug that into your state machine. Its states
+effectively become _sub-states_ within one of your states. This is
+_composition._
+
+In a hand-rolled state machine, this is hard enough to get right that I'm not
+going to present a worked example. (Try it if you're curious!)
+
+But with a state machine expressed using `async fn`, it's trivial, because we
+have an operator for it: `await`. `await` is the most common state machine
+composition operator (though not the only one!). It says, "take this other state
+machine, and run it to completion as part of my state machine."
+
+And so, we can add sleeps to our pin-toggler by changing our `pending!()` to
+instead `await` a reusable sleep-for-a-duration state machine:
+
+[source]
+----
+async fn my_state_machine() {
+    set_pin_high();
+    defer! { tristate_pin(); }
+
+    sleep_for(Millis(100)).await;
+
+    set_pin_low();
+    sleep_for(Millis(100)).await;
+
+    // Pin gets tristated here
+}
+----
+
+This will ensure that a _minimum_ of 100 ms elapses between our changes to the
+pin. We can't impose a _maximum_ using this approach, because -- as we saw above
+-- our caller could wait months between stepping our state machine, and that's
+part of what we're signing up for by writing this state machine.
+
+Composition and cancellation interact in wonderful ways. Let's say you're using
+`some_state_machine` and you're suspicious that it might take more than 200 ms.
+You'd like to impose a _timeout_ on it: it will have 200 ms to make progress,
+but if it doesn't complete by the end of that window, it will be cancelled
+(``drop``-ped).
+
+The easiest way to do this is to use the `select_biased!` macro from the
+`futures` crate. (It's called `biased` because it steps the state machines
+inside it from first to last, and if any complete, all the rest are dropped.
+This means it's slightly _biased_ toward completing the earlier ones.)
+
+[source]
+----
+select_biased! {
+    _ = sleep_for(Millis(200)) => {
+        // The timeout triggered first! Do any additional
+        // cleanup you require here.
+    }
+    result = some_state_machine() => {
+        // The state machine completed successfully!
+        print(result);
+    }
+}
+----
+
+This is the sort of power we get from the `async fn` ecosystem. Doing this with
+hand-rolled state machines is probably _possible,_ but would be complex -- and
+we haven't even _talked about_ borrowing and lifetimes. That's a bigger topic
+than will fit in this doc, but the short version is: borrowing across `await`
+points in an `async fn` pretty much Just Does What You'd Expect, but getting it
+right in a hand-rolled state machine requires `unsafe` and gymnastics.
+
+=== Summary
+
+From my perspective, _this_ is the fundamental promise of `async fn`: easier,
+composable, explicit state machines.
+
+If a chunk of code absolutely needs to run to completion without letting
+anything else run, use a normal `fn`. If a chunk of code doesn't need to call
+any ``async fn``s, use a normal `fn`. Basically, any function that can be
+written as a normal `fn` without breaking something, should be. It's easier.
+
+But if you need to write a state machine, use `async fn`. It's harder to
+understand than normal `fn` because of the inversion of control and potential
+for cancellation, but far easier to understand than the code you might write by
+hand to do the same thing!
+
+CAUTION: There's a proposal to make code generic on whether or not it's being
+used `async`, so that the same code could produce both a simple function and a
+`Future`. In this case you'd have to make sure to think about correctness in all
+possible ways your code could be used. I am suspicious, and I hope after reading
+this section, you are too.
+
+== {os} executor and API contracts
+
+To be able to reason about the behavior of a program written using `async fn`,
+it's important to understand the fundamental promises made by the _async
+runtime_ that underlies it. These promises will apply to the outermost futures
+(in {os}, the top-level _tasks_), and will by default apply to the futures
+composed _within_ those futures unless the code does something to alter the
+behavior.
+
+I like to be able to make statements like "my program can't do X" and not turn
+out to be wrong later, so I've tried to specify {os}'s behavior pretty
+rigorously. The API docs are, as always, the authoritative definition, but this
+section will summarize the important bits.
+
+=== Promises made to tasks by the executor
+
+If you give a future to the {os} executor in the top-level tasks array, the
+executor will:
+
+1. Poll it promptly when it receives an event.
+2. Generally not poll it when it has not received an event, but, no guarantees.
+
+"Receives an event" here means that the top-level future, _or any future
+contained within it,_ blocked waiting for an event like a `Notify` or a queue,
+and that event got signaled.
+
+This means, if you plug a future into the top-level tasks array, you can assume
+it will be polled at approximately the right times, and not dropped
+unexpectedly, or ignored for months for no reason.
+
+Each time it processes the task array, the executor polls the futures in the
+order they appear. This means the event response latency for the first task in
+the array will be slightly better than the latency for the 400th task in the
+array. This may be relevant if your application is latency-sensitive.
+
+TIP: The executor reserves the right to poll your task future _sometimes_ even
+when a relevant event has not occurred. These are called _spurious wakes._ The
+ability to generate spurious wakes is actually critical to the implementation of
+the executor, for reasons that are described in the executor code if you're
+curious. This is why the lowest-level event APIs like `Notify` always take a
+condition predicate, to tell if the event they're waiting for has really
+happened.
+
+=== Promises made by the API to their callers
+
+All futures produced by the {os} public API -- which includes every `pub async
+fn` in the {os} crate -- should have well-defined behavior on cancellation.
+Dropping a {os} API future without polling it, or without polling it to
+completion, should never lose data or corrupt state. The intent is that the APIs
+adhere to the following definition of "cancel-correct:"
+
+> Calling an `async fn` and dropping the returned future before it completes
+> should have no relevant side effects beyond dropping any values passed into the
+> `async fn` as arguments.
+
+I snuck the word "relevant" in there because it will obviously have _some_ side
+effects. At the very least, it will burn CPU time and mess with memory. It might
+increment some event counters behind the scenes. But from the perspective of a
+caller, it should be fine to drop the future and then retry the operation
+without having to think about it.
+
+The exception made for arguments passed into the `async fn` exists because
+there's no good way to get the arguments _back out_ on drop. So if you pass
+ownership of, say, a peripheral into an `async fn`, and then you throw that
+`async fn` away... well, you've thrown away access to the peripheral too. In
+general, if there's any chance you'll want to cancel and retry an operation, it
+should take its resources _by reference._
+
+Cases in the current {os} API where you can lose resources that were passed
+by-value into an `async fn` are:
+
+- The value given to the `push` operation on a `handoff` or `spsc` queue.
+  Ownership of the value is being transferred to the queue, and so must be
+  transferred first to the `push` future. Dropping it loses the value, and I'd
+  argue this is inherent.
+
+Any cases where the {os} APIs fail to adhere to this property are bugs, and I
+would very much appreciate it if you'd report them.
+
+== How to do the thing you're trying
+
+{os} has extensive API documentation, which is always the most up-to-date and
+complete source for information about the APIs. To view it from a local clone of
+the {os} repository, enter the `os` subdirectory and run:
+
+    cargo doc --open
+
+This section will give a higher-level tour of the APIs you might use while
+building an application, organized by the problem they solve.
+
+Note that {os} uses Cargo features to control which parts of its API are
+built. By default, {os} will build with all the toppings. You can opt out of
+this and request individual features a la carte if you like.
+
+[[howto-notify]]
+=== Using an interrupt to wake a task
+
+`lilos::exec::Notify` is what you want for this.
+
+`Notify` is a very small (8 bytes), very cheap object that is designed to hang
+out in a `static` and synchronize task code with events. Those events usually
+come from interrupts, though `Notify` is also used under the hood to implement
+most other inter-task-communication APIs in {os}.
+
+Here's an example of using `Notify` to synchronize with an interrupt when
+sending a byte out a UART. This is a simplified and platform-generic version of
+the code in the UART-related examples in the repo; see those examples if you
+want more.
+
+[source]
+----
+static TX_EMPTY: Notify = Notify::new(); <1>
+
+/// Sends a byte, waiting if the UART is busy.
+async fn send_byte(uart: &Uart, byte: u8) {
+    if uart.status.read().tx_empty().bit_is_clear() { <2>
+        // Uh-oh. There's still something in the UART's TX
+        // register, which means it's still working on the
+        // _last_ byte we gave it. With a fast CPU and a
+        // slow serial port, this could take a long time!
+        // Let's block until/ the hardware says it's done.
+
+        uart.control.modify(|_, w| { <3>
+            w.tx_empty_irq_enable().set_bit()
+        });
+
+        TX_EMPTY.until(|| {
+            uart.status.read().tx_empty().bit_is_set() <4>
+        }).await;
+    }
+
+    // tx_empty is set, so, we can stuff the next byte in!
+    uart.transmit.write(|w| w.bits(byte));
+}
+
+#[interrupt] <5>
+fn UART() {
+    // Get access to the UART from the ISR. Because it's a shared reference
+    // this is almost always okay.
+    let uart = unsafe { &*my_device_pac::UART::PTR };
+
+    let control = uart.control.read();
+    let status = uart.status.read();
+
+    if control.tx_empty_irq_enable().bit_is_set() { <6>
+        if status.tx_empty().bit_is_set() {
+            // The send_byte routine is blocked waiting to hear from us.
+            // Keep the interrupt from reoccurring:
+            uart.control.modify(|_, w| {
+                w.tx_empty_irq_enable().clear_bit() <7>
+            });
+            // And signal the task:
+            TX_EMPTY.notify(); <8>
+        }
+    }
+}
+----
+<1> We declare a `Notify` at `static` scope where both our `async fn` and the
+interrupt handler can see it. I generally name the `Notify` after the hardware
+event it represents.
+<2> Check UART status before attempting to send, to find out if it's still
+working. This is an optimization; you could also do the
+enable-interrupt-and-wait sequence unconditionally. That code would be correct,
+but slower in cases where there's no need to wait.
+<3> Alter the UART configuration to generate an interrupt when `tx_empty` gets
+set.
+<4> Use `Notify::until` to wait for the event. `until` takes a predicate
+function to tell when to wake up; here, we check the same status bit we read
+before to see when it gets set. It's important to do this check, because it's
+entirely possible (and sometimes useful) for tasks to wake spuriously. This
+makes sure the condition we think we're waiting for has actually happened.
+<5> Peripheral access crates for microcontrollers in the `cortex-m-rt` ecosystem
+define `interrupt` proc-macros for marking functions as ISRs. Since this example
+is generic, this pretends we're targeting a micro with an interrupt named
+"UART."
+<6> Interrupts can happen for a variety of reasons, and can be spurious. More
+complex interrupt handlers than this one usually wind up handling a variety of
+different conditions in the same routine. Here we check for the interrupt-enable
+bit that we set above to decide whether to act on the `tx_empty` status bit.
+This is technically overkill for the example, but becomes really important as
+soon as you also want to (say) receive data!
+<7> If the event has occurred, we clear its interrupt-enable bit at the UART to
+keep this ISR from triggering again (at least, due to that particular event).
+<8> This signals any tasks waiting on the `Notify` that they should check the
+condition they're monitoring. In our case, because `tx_empty` is set (we
+checked!), this will cause the suspended `send_byte` routine to wake and finish
+processing.
+
+=== Giving other tasks an opportunity to run if ready
+
+If you want to temporarily pause an `async fn` to give any other pending tasks a
+chance to run, but without yielding the CPU for more time than necessary, use
+either `lilos::exec::yield_cpu` or the `futures::pending!` macro.
+
+Here's how to use `yield_cpu` to periodically give other tasks a chance to run
+during a large mem-copy, which would otherwise burn the whole CPU until it
+finishes (because it's all synchronous code):
+
+[source]
+----
+async fn polite_copy(source: &[u8], dest: &mut [u8]) {
+    assert_eq!(source.len(), dest.len());
+
+    for (schunk, dchunk) in source.chunks(256).zip(dest.chunks_mut(256)) {
+        dchunk.copy_from_slice(schunk);
+
+        // Every 256 bytes, pause briefly and see if anyone else
+        // is ready to run.
+        lilos::exec::yield_cpu().await;
+    }
+}
+----
+
+`futures::pending!()` is _more or less_ equivalent to
+`lilos::exec::yield_cpu().await`. I prefer `yield_cpu` because it makes the
+`await` visible to the reader, but do whatever feels best to you!
+
+=== Doing something periodically
+
+The easiest way to do something periodically is with the `lilos::time` module,
+which uses the SysTick timer common to all ARM Cortex-M CPUs.
+
+TIP: `lilos::time` is available if {os} was built with the `systick` feature,
+which is on by default.
+
+To use this module, make sure you're calling `lilos::time::initialize_sys_tick`
+in your `main` function!
+
+For precisely timing a periodic task in a loop, use `lilos::time::PeriodicGate`.
+
+[source]
+----
+let mut gate = PeriodicGate::from(Millis(100));
+loop {
+    gate.next_time().await;
+
+    toggle_a_pin();
+}
+----
+
+`PeriodicGate` will try to minimize drift by always computing the "next time" in
+terms of the previous time, no matter how long you spend doing other actions in
+this iteration of the loop. So, this example will call `toggle_a_pin` every 100
+ms, even if it takes 50 ms to run.
+
+If what you actually want is to make sure that a minimum amount of time passes
+between two operations, you're looking for `lilos::exec::sleep_for` instead:
+
+[source]
+----
+loop {
+    sleep_for(Millis(100)).await;
+
+    toggle_a_pin();
+}
+----
+
+If `toggle_a_pin()` takes 50 ms to run, this loop will call it every 150 ms
+instead of every 100 ms.
+
+=== Doing something periodically without SysTick
+
+If you want to do something periodically, but you don't want to use the SysTick
+timer to do it, you will want to set up some hardware timer (provided by your
+microcontroller) and use interrupts as described in the section
+<<howto-notify>>.
+
+Why would you want to do this? In my case it's usually one of two reasons:
+
+1. I'm on a device where idling the CPU in its lowest power state _stops the
+SysTick timer from counting,_ so it loses time. The Nordic nRF52 series of
+microcontrollers behave this way.
+
+2. I need timing more precise than milliseconds. The {os} default time unit
+is a compromise choice.
+
+=== Sending something to another task
+
+TIP: If you're cool with requiring the tasks to synchronize -- that is, the
+sender will wait until the receiver is ready to receive, and vice versa -- then
+see the next section for a cheaper and easier option.
+
+If you need to send things from task A to task B, the most general option is the
+single-producer single-consumer queue in `lilos::spsc`. This covers cases like:
+
+* Task A will generate bursts of events intermittently, and task B wants to
+  process them gradually at its own pace.
+
+* Task A will generate events at regular but variable paces, and task B wants to
+  consume them in large periodic batches.
+
+...in addition to the simple case of "A wants to send a thing to B."
+
+TIP: `lilos::spsc` is available if {os} is built with the `spsc` feature,
+which is on by default.
+
+=== Sending something to another task, but synchronously
+
+If you need to send things from task A to task B, and it's okay to make the two
+tasks synchronize each time they want to exchange data, then `lilos::handoff` is
+your new best friend. Creating a `Handoff` doesn't require any storage, and
+exchanging data using a `Handoff` guarantees to only copy your data in memory
+once -- unlike `spsc`, which copies data at least twice: once on the way in,
+once on the way out.
+
+If you just want the _sender_ to wait while the receiver goes on doing its work,
+have a look at the `try_pop` operation on `lilos::handoff::Pop`.
+
+TIP: `lilos::handoff` is available if {os} is built with the `handoff`
+feature, which is on by default.
+
+=== Sharing a read-write resource between two or more tasks
+
+If two or more tasks need access to a resource, and they all want to have
+``&mut``-style access (but not at the same time, because `&mut`), you probably
+want `lilos::mutex`.
+
+TIP: `lilos::mutex` is available if {os} is built with the `mutex` feature,
+which is on by default.
+
+NOTE: {os}'s mutex API is somewhat unusual, and attempts to make it harder for
+applications to accidentally build cancel-unsafe code on top of it. See the
+module docs for details.
+
+=== Doing something only when all tasks are waiting
+
+If you want to run some code only when there's nothing else to do, you can
+provide a custom _idle hook_ to {os} by starting the executor using
+`lilos::exec::run_tasks_with_idle`. The default idle hook just contains the WFI
+instruction that sleeps the processor until the next interrupt. If your
+processor needs other care when going to sleep (setting some bits in a register,
+turning off something expensive, reading a bedtime story) the idle hook is the
+right place to do it.
+
+Two things to note:
+
+1. Like task code, the idle hook will be run with interrupts _off._ This is okay
+because the WFI instruction will resume if a pending interrupt arrives, even if
+interrupt handler execution is currently disabled.
+
+2. You can't use `async fn` in the idle hook because, by definition, it runs
+only when no `async fn` has anything to do.
+
+TIP: I like to install an idle hook that sets a pin low, calls
+`cortex_m::asm::wfi()`, and then sets that same pin high. By monitoring the pin
+with a logic analyzer, I can see how often the CPU is idle -- the pin will be
+high when any task is running, and low when nothing is running. Having the logic
+analyzer compute "average duty cycle" of the signal gives me CPU utilization
+percentage -- for nearly free!
+
+=== Getting {os} working on a different microcontroller
+
+There are worked examples in the repo for a bunch of different microcontroller
+platforms -- mostly RP2040 and various STM32s -- but maybe you've got something
+different!
+
+If the microcontroller in question is an ARM Cortex-M based system, and you can
+successfully compile a basic embedded Rust program for it (say, a `main` that
+just panics), then {os} should work out of the box. {os} has no
+dependencies on any features of the microcontroller except those specified by
+ARM.
+
+If the microcontroller is particularly oriented toward low-power applications,
+you may want to consider disabling the `time` feature so that {os} doesn't
+expect the SysTick to be configured. Nordic nRF52 micros in particular benefit
+from this. (There's not a worked example for the nRF52 in the repo, but I am
+using them in several projects with {os}.)
+
+On the other hand, if the microcontroller is _not_ an ARM Cortex-M ... that's
+going to be significantly harder.
+
+- If it's a 32-bit RISC-V with the standard interrupt controller, I'm actually
+  pretty interested in porting {os} -- email me.
+
+- I haven't really thought about other 32-bit microcontrollers. As long as it's
+  supported by rustc, I'm open to it. I love learning about unusual
+  microcontrollers. Email me.
+
+- If it's 64-bit, that's...probably feasible? But less obviously useful? I'd be
+  curious to hear about your application.
+
+- I am uninterested in ports to 16- and 8-bit CPUs, and there are parts of the
+  executor's implementation that will be difficult to get working on such CPUs
+  because of assumptions about atomic types. But, good luck to you!
