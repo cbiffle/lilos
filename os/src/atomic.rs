@@ -132,7 +132,7 @@ impl AtomicArithExt for AtomicU32 {
         let (lo, so) = rmw_ordering(ordering);
         cortex_m::interrupt::free(|_| {
             let x = self.load(lo);
-            self.store(x + val, so);
+            self.store(x.wrapping_add(val), so);
             x
         })
     }
@@ -170,7 +170,7 @@ impl AtomicArithExt for AtomicUsize {
         let (lo, so) = rmw_ordering(ordering);
         cortex_m::interrupt::free(|_| {
             let x = self.load(lo);
-            self.store(x + val, so);
+            self.store(x.wrapping_add(val), so);
             x
         })
     }
