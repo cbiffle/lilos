@@ -134,8 +134,9 @@ are three ways to do this in practice:
 2. You can write a custom resource type used _inside_ your future, whose _only_
 role is to have a custom `Drop` impl. This is nearly as flexible as a custom
 `Future` type, but lets you continue using `async fn` for most of your code.
-3. You can use the `scope_guard` crate, which is basically a generalized version
-of the previous option.
+3. You can use the `scopeguard` crate (_not_ the `scope_guard` crate, which I
+haven't tested but sure looks like typo-squatting), which is basically a
+generalized version of the previous option.
 
 == Cancellation in the `lilos` API
 
