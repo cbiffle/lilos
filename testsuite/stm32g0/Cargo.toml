@@ -25,6 +25,16 @@ name = "lilos-testsuite-stm32g0"
 test = false
 bench = false
 
+# Soooooo we don't actually _fit_ on a 32 kiB M0 with all the tests
+# unless we turn optimizations on. Because I like building all the
+# other examples and tests using the faster debug mode, I'll just
+# override the debug settings here to make things small.
+[profile.dev]
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+lto = true # better optimizations
+opt-level = "z"
+
 [profile.release]
 codegen-units = 1 # better optimizations
 debug = true # symbols are nice and they don't increase the size on Flash
