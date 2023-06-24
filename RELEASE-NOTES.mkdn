@@ -19,10 +19,6 @@
   from a replacement low-power timer) to handle all events. I'll post a worked
   example eventually.
 
-- Example programs and OS internals have switched to the newly stabilized
-  `core::pin::pin!` macro instead of `pin_utils`. You don't have to do this in
-  your own programs, but I recommend it!
-
 - Upgraded to `cortex-m-rt` 0.7.1; earlier 0.6-series `cortex-m-rt` crates don't
   reliably preserve stack alignment on startup, and must be avoided. (It would
   be nice if Cargo had something louder than yank in this case.) This is a
@@ -105,6 +101,9 @@
 - The repo is no longer a workspace, because builds in workspaces with
   `.cargo/config` files change behavior depending on which directory you're in,
   despite having all build targets available, and this keeps confusing me.
+- Example programs and OS internals have switched to the newly stabilized
+  `core::pin::pin!` macro instead of `pin_utils`. You don't have to do this in
+  your own programs, but I recommend it!
 
 ## Version 0.2.1
 
