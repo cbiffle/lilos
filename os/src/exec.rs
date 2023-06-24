@@ -435,6 +435,25 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
     interrupts: Interrupts,
     mut idle_hook: impl FnMut(),
 ) -> ! {
+    // Record the task futures for debugger access.
+    {
+        // Degrade &mut[] to *mut[]
+        let futures_ptr: *mut [Pin<&mut dyn Future<Output = Infallible>>] = futures;
+        // Change interpretation of the Pins; this assumes that &mut and *mut
+        // have equivalent representation! But we want to store *mut into the
+        // static because
+        // 1. It grants no authority without unsafe, so the fact that it aliases
+        //    an array we intend to keep using is nbd.
+        // 2. It relieves us from having to pretend the array has static
+        //    lifetime, which it does _not._ Casting it to `&'static mut` would
+        //    be wrong.
+        let futures_ptr: *mut [Pin<*mut dyn Future<Output = Infallible>>] = futures_ptr as _;
+        // Stash the task future array in a known location.
+        unsafe {
+            TASK_FUTURES = Some(futures_ptr);
+        }
+    }
+
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
 
     // TODO make this list static for more predictable memory usage
@@ -477,6 +496,19 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
         // this prevents ISR starvation by polling tasks.
     })
 }
+
+/// This `static` variable is only written by the OS, and never read. It exists
+/// to be observed from a debugger.
+///
+/// Without this, it's really hard to figure out where the official list of
+/// tasks is. We don't put the list of tasks in a `static` because we can't
+/// predict its size (it's up to the client). We don't use this `static` as
+/// _our_ sense of the task list because, well, we don't have to.
+///
+/// The fact that we don't _read_ this variable dodges most lifetime/safety
+/// issues.
+#[used]
+static mut TASK_FUTURES: Option<*mut [Pin<*mut dyn Future<Output = Infallible>>]> = None;
 
 /// Constant that can be passed to `run_tasks` and `wake_tasks_by_mask` to mean
 /// "all tasks."
