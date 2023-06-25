@@ -505,7 +505,7 @@ impl<T: PartialOrd> List<T> {
             let next = cref.next.get();
             cref.detach();
             unsafe {
-                (&*cref.waker.get()).wake_by_ref();
+                (*cref.waker.get()).wake_by_ref();
             }
 
             candidate = next;
@@ -531,7 +531,7 @@ impl List<()> {
             let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
             cref.detach();
             unsafe {
-                (&*cref.waker.get()).wake_by_ref();
+                (*cref.waker.get()).wake_by_ref();
             }
             true
         } else {

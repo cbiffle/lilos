@@ -225,6 +225,16 @@ impl<T> Mutex<T> {
         unsafe { &*ptr }
     }
 
+    /// Wraps up the boilerplatey bits of getting a &mut to the Mutex's guarded
+    /// data.
+    ///
+    /// Clippy fires on this function, and for good reason: at its face it's
+    /// wildly dangerous, producing arbitrary numbers of aliasing &mut
+    /// references from a single &self. This is why it's marked `unsafe`.
+    ///
+    /// To use this safely: call at most once on a code path where you are
+    /// confident it will not alias.
+    #[allow(clippy::mut_from_ref)]
     unsafe fn contents_mut(&self) -> &mut T {
         let ptr = self.value.get();
         unsafe { &mut *ptr }
