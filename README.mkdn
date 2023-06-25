@@ -1,12 +1,19 @@
 # `lilos`: A minimal async RTOS
 
-We now have a [intro guide!](doc/intro.adoc)
+(Hi! We now have a [intro guide!](doc/intro.adoc))
 
-This is a wee RTOS written to support the `async` style of programming in Rust.
-It fits in about 2.5 kiB of Flash, uses about 20 bytes of RAM (before your tasks
-are added), and provides a full async runtime with multiple tasks, support for
-complex concurrency via `join` and `select`, etc. See the `examples` directory
-for some worked examples of varying complexity.
+This is a wee operating system written to support the `async` style of
+programming in Rust on microcontrollers. It fits in about 2 kiB of Flash and
+uses about 20 bytes of RAM (before your tasks are added). In that space, you get
+a full `async` runtime with multiple tasks, support for complex concurrency via
+`join` and `select`, and a lot of convenient but simple APIs. (If you want to
+see what a `lilos` program looks like, look in the `examples` directory, or read
+the intro guide.)
+
+`lilos` has been deployed in real embedded systems since 2019, running
+continuously. I've built about a dozen systems around it of varying complexity,
+on half a dozen varieties of microcontroller. It works pretty okay! Perhaps you
+will find it useful too.
 
 ## Repo layout
 
@@ -25,11 +32,15 @@ map:
 
 ## Building
 
-You will need a Rust toolchain installed through `rustup`, because we use a
-`rustup`-style `rust-toolchain.toml` file to pin the toolchain version to ensure
-that you get the right results. Fortunately, if you're using `rustup`, it will
-automatically ensure you've got the appropriate toolchain version available,
-including support for the right target architecture.
+These instructions are mostly for building the examples or working on the
+operating system itself. If you're trying to use `lilos` in a program, the usual
+way is to just `cargo add lilos` to your application.
+
+To build in the repo, you will need a Rust toolchain installed through `rustup`,
+because we use a `rustup`-style `rust-toolchain.toml` file to pin the toolchain
+version to ensure that you get the right results. `rustup` will automatically
+ensure you've got the appropriate toolchain version available, including support
+for the right target architecture for whatever program you're building.
 
 1. Enter the directory you're interested in, for example, `cd os`.
 2. Build: `cargo build` (or, for smaller binaries, `cargo build --release`).

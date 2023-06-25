@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.3.0-rc.4"
+version = "0.3.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2021"
 license = "MPL-2.0"
@@ -8,7 +8,7 @@ description = "A tiny embedded OS based around Futures and async."
 repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
-readme = "README.mkdn"
+readme = "../README.mkdn"
 
 [package.metadata.docs.rs]
 default-target = "thumbv7em-none-eabihf"
