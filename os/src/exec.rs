@@ -583,19 +583,17 @@ impl Notify {
     /// future is possible).
     pub fn until<'a, 'b, T: TestResult>(
         &'a self,
-        mut cond: impl (FnMut() -> T) + 'b,
+        cond: impl (FnMut() -> T) + 'b,
     ) -> impl Future<Output = T::Output> + 'a
     where
         'b: 'a,
     {
-        futures::future::poll_fn(move |cx| {
-            if let Some(x) = cond().into_test_result() {
-                Poll::Ready(x)
-            } else {
-                self.subscribe(cx.waker());
-                Poll::Pending
-            }
-        })
+        // TODO: in a future breaking revision, change the public type of until
+        // to expose the concrete Until type, in case that's useful to someone.
+        Until {
+            cond,
+            notify: self,
+        }
     }
 
     /// Subscribes to `notify` and then calls `cond`, completing if it returns
@@ -639,15 +637,7 @@ impl Notify {
     ) -> impl Future<Output = ()> + '_
     {
         let mut setup = false;
-        futures::future::poll_fn(move |cx| {
-            if setup {
-                Poll::Ready(())
-            } else {
-                setup = true;
-                self.subscribe(cx.waker());
-                Poll::Pending
-            }
-        })
+        self.until(move || core::mem::replace(&mut setup, true))
     }
 }
 
@@ -680,6 +670,37 @@ impl<T> TestResult for Option<T> {
     type Output = T;
     fn into_test_result(self) -> Option<Self::Output> {
         self
+    }
+}
+
+/// Internal future type used to implement `Notify::until`. This makes it much
+/// easier to recognize the future in a debugger.
+struct Until<'n, F> {
+    cond: F,
+    notify: &'n Notify,
+}
+
+impl<F> Until<'_, F> {
+    fn cond(self: Pin<&mut Self>) -> &mut F {
+        // Safety: this is a structural pin projection, safe because cond is
+        // never treated as pinned.
+        unsafe { &mut self.get_unchecked_mut().cond }
+    }
+}
+
+impl<F, T> Future for Until<'_, F>
+    where F: FnMut() -> T,
+          T: TestResult,
+{
+    type Output = T::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(x) = self.as_mut().cond()().into_test_result() {
+            Poll::Ready(x)
+        } else {
+            self.notify.subscribe(cx.waker());
+            Poll::Pending
+        }
     }
 }
 
