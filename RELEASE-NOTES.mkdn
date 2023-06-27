@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 0.3.0 (in progress)
+## Version 0.3.0
 
 **`lilos` now supports the stable toolchain!**
 
