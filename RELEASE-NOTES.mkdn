@@ -1,5 +1,15 @@
 # Release Notes
 
+## Version 0.3.1 (in progress)
+
+- Based on watching people learning `async`, I'm adding a new operation to
+  `lilos::spsc::Push`: `reserve`. This is similar to the old `push` but resolves
+  to a `Permit` that lets you do the push synchronously. This lets you avoid
+  losing data if cancelled, which is critical for building higher-level
+  cancel-safe abstractions. Because I'm increasingly convinced of its danger, I
+  have deprecated `lilos::spsc::Push::push`. Please use `reserve` if you need to
+  block: `q.reserve().await.push(data);`
+
 ## Version 0.3.0
 
 **`lilos` now supports the stable toolchain!**

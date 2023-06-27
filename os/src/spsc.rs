@@ -150,7 +150,7 @@ pub struct Push<'a, T> {
     _marker: crate::NotSyncMarker,
 }
 
-impl<T> Push<'_, T> {
+impl<'q, T> Push<'q, T> {
     // Implementation note: Push "owns" the head and does not need to be careful
     // with its memory ordering, while the tail is "foreign" and must be
     // synchronized.
@@ -167,6 +167,55 @@ impl<T> Push<'_, T> {
         let t = self.q.tail.load(Ordering::Acquire);
 
         self.q.next_index(h) != t
+    }
+
+    /// Checks if there is room to push at least one item, and if so, returns a
+    /// `Permit` that entitles its holder to that queue slot.
+    ///
+    /// If the queue is full, returns `None`.
+    ///
+    /// This operation is slightly less useful than [`Push::reserve`] because
+    /// `try_push` is slightly simpler to use, and doesn't risk data loss.
+    /// (Whereas `reserve` is specifically designed to fix a class of data loss
+    /// bugs.)
+    pub fn try_reserve(&mut self) -> Option<Permit<'q, T>> {
+        let h = self.q.head.load(Ordering::Relaxed);
+        let t = self.q.tail.load(Ordering::Acquire);
+        let h_next = self.q.next_index(h);
+
+        if h_next == t {
+            // We're full.
+            return None;
+        }
+
+        let unsafecell_ptr = self.q.storage[h].get();
+        // Safety: this is dereferencing a raw pointer into the unsafecell,
+        // which we can do because (1) the cell being between h and t implies
+        // that it is not aliased, and (2) because we have &mut Self we know
+        // we're not racing any other pushes for this slot. (Pops won't touch
+        // this slot.)
+        let maybeuninit = unsafe { &mut *unsafecell_ptr };
+
+        Some(Permit {
+            maybeuninit,
+            head: &self.q.head,
+            h_next,
+            pushed: &self.q.pushed,
+        })
+    }
+
+    /// Produces a future that resolves when there is enough space in the queue
+    /// to push one element. It resolves into a [`Permit`], which entitles the
+    /// holder to pushing an element without needing to check or `await`. This
+    /// is a deliberate design choice -- it means you can cancel the future
+    /// without losing the element you were trying to push.
+    ///
+    /// # Cancellation
+    ///
+    /// This does basically nothing if cancelled (it is intrinsically
+    /// cancel-safe).
+    pub async fn reserve(&mut self) -> Permit<'q, T> {
+        self.q.popped.until(|| self.try_reserve()).await
     }
 
     /// Attempts to stuff `value` into the queue.
@@ -218,6 +267,7 @@ impl<T> Push<'_, T> {
     /// The future returned by `push` takes ownership of `value` immediately. If
     /// the future is dropped before `value` makes it into the queue, `value` is
     /// dropped along with it.
+    #[deprecated = "please use Push::reserve to avoid cancellation bugs"]
     pub async fn push(&mut self, value: T) {
         let mut value = Some(value);
         self.q.popped.until(move || {
@@ -311,5 +361,34 @@ impl<T> Pop<'_, T> {
     /// no data is lost.
     pub async fn pop(&mut self) -> T {
         self.q.pushed.until(move || self.try_pop()).await
+    }
+}
+
+/// A "permit" giving its holder the right to push one element into a queue,
+/// without waiting.
+///
+/// This is produced by [`Push::try_reserve`]/[`Push::reserve`] when they find
+/// space available in the queue. The key property here is that producing a
+/// `Permit` does not, by itself, change the queue state -- you can turn around
+/// and `Drop` the `Permit` without losing data or pushing anything. This makes
+/// cancel safety much easier to reason about.
+#[derive(Debug)]
+pub struct Permit<'q, T> {
+    maybeuninit: &'q mut MaybeUninit<T>,
+    head: &'q AtomicUsize,
+    pushed: &'q Notify,
+    h_next: usize,
+}
+
+impl<T> Permit<'_, T> {
+    /// Pushes `value` to the queue, consuming this `Permit`.
+    ///
+    /// The `push` operation is guaranteed to succeed synchronously, since
+    /// holding a `Permit` is proof that the next cell at the head of the queue
+    /// is available for use.
+    pub fn push(self, value: T) {
+        self.maybeuninit.write(value);
+        self.head.store(self.h_next, Ordering::Release);
+        self.pushed.notify();
     }
 }

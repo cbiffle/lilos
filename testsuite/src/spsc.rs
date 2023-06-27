@@ -41,7 +41,7 @@ async fn test_wherever(q: &mut Queue<'_, u8>) {
     futures::join!(
         async {
             for i in 0..10 {
-                push.push(i).await;
+                push.reserve().await.push(i);
             }
         },
         async {

@@ -213,7 +213,7 @@ async fn echo_rx(
     mut q: spsc::Push<'_, u8>,
 ) -> Infallible {
     loop {
-        q.push(recv(usart).await).await;
+        q.reserve().await.push(recv(usart).await);
     }
 }
 
