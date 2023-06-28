@@ -21,11 +21,9 @@ This repo contains crates in subdirectories, but it is _not_ a Cargo workspace.
 This means you will need to `cd` into subdirectories to build things. Here is a
 map:
 
-- `os` contains the operating system crate. The [README in that
-  crate](https://github.com/cbiffle/lilos/blob/main/os/README.mkdn) gives more
-  background.
+- `os` contains the operating system crate.
 - `testsuite` contains a test suite for the operating system, which can run on a
-  Cortex-M3 or better. See [its
+  Cortex-M0 or better. See [its
   README](https://github.com/cbiffle/lilos/blob/main/testsuite/README.mkdn) for
   instructions.
 - `examples` contains example programs for various microcontrollers.
