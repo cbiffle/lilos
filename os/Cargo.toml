@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2021"
 license = "MPL-2.0"
@@ -23,7 +23,6 @@ handoff = ["scopeguard"]
 [dependencies]
 cortex-m = {version = "0.7.4", features = ["inline-asm"]}
 cortex-m-rt = "0.7.1"
-futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
 scopeguard = { version = "1.1.0", default-features = false, optional = true }
 
 [lib]

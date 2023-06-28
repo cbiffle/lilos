@@ -609,19 +609,18 @@ impl Notify {
     /// future is possible).
     pub fn until_racy<'a, 'b, T: TestResult>(
         &'a self,
-        mut cond: impl (FnMut() -> T) + 'b,
+        cond: impl (FnMut() -> T) + 'b,
     ) -> impl Future<Output = T::Output> + 'a
     where
         'b: 'a,
     {
-        futures::future::poll_fn(move |cx| {
-            self.subscribe(cx.waker());
-            if let Some(result) = cond().into_test_result() {
-                Poll::Ready(result)
-            } else {
-                Poll::Pending
-            }
-        })
+        // TODO: in a future breaking revision, change the public type of
+        // until_racy to expose the concrete UntilRacy type, in case that's
+        // useful to someone.
+        UntilRacy {
+            cond,
+            notify: self,
+        }
     }
 
     /// Subscribes to `notify` and blocks until the task is awoken. This may
@@ -699,6 +698,37 @@ impl<F, T> Future for Until<'_, F>
             Poll::Ready(x)
         } else {
             self.notify.subscribe(cx.waker());
+            Poll::Pending
+        }
+    }
+}
+
+/// Internal future type used to implement `Notify::until_racy`. This makes it
+/// much easier to recognize the future in a debugger.
+struct UntilRacy<'n, F> {
+    cond: F,
+    notify: &'n Notify,
+}
+
+impl<F> UntilRacy<'_, F> {
+    fn cond(self: Pin<&mut Self>) -> &mut F {
+        // Safety: this is a structural pin projection, safe because cond is
+        // never treated as pinned.
+        unsafe { &mut self.get_unchecked_mut().cond }
+    }
+}
+
+impl<F, T> Future for UntilRacy<'_, F>
+    where F: FnMut() -> T,
+          T: TestResult,
+{
+    type Output = T::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.notify.subscribe(cx.waker());
+        if let Some(x) = self.as_mut().cond()().into_test_result() {
+            Poll::Ready(x)
+        } else {
             Poll::Pending
         }
     }
@@ -872,15 +902,26 @@ pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
 ///
 /// Dropping this future does nothing in particular.
 pub fn yield_cpu() -> impl Future<Output = ()> {
-    let mut pending = true;
-    futures::future::poll_fn(move |cx| {
-        if core::mem::replace(&mut pending, false) {
-            cx.waker().wake_by_ref();
-            Poll::Pending
-        } else {
+    YieldCpu { polled: true }
+}
+
+struct YieldCpu {
+    polled: bool,
+}
+
+impl Future for YieldCpu {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if core::mem::replace(&mut self.polled, true) {
             Poll::Ready(())
+        } else {
+            // Ensure that we get called next round.
+            cx.waker().wake_by_ref();
+
+            Poll::Pending
         }
-    })
+    }
 }
 
 /// Makes a future periodic, with a termination condition.

@@ -10,6 +10,10 @@
   have deprecated `lilos::spsc::Push::push`. Please use `reserve` if you need to
   block: `q.reserve().await.push(data);`
 
+- Internally, `yield_cpu` and `Notify::until/until_racy` now use concrete (but
+  private) future types rather than `poll_fn`. This means we no longer require
+  `futures`, and makes things easier to interpret in a debugger.
+
 ## Version 0.3.0
 
 **`lilos` now supports the stable toolchain!**
