@@ -1,5 +1,17 @@
 # Release Notes
 
+## Version 0.3.2
+
+No externally visible changes.
+
+- Added explicit cancel safety annotations to all async/future operations.
+  Currently everything except `handoff` is either strict cancel-safe or
+  deprecated! Yay.
+- Made certain implementation details cheaper on ARMv6-M.
+- Took a pass over all the rustdoc and tidied things up. There are now more
+  examples and stuff.
+
+
 ## Version 0.3.1
 
 - Based on watching people learning `async`, I'm adding a new operation to
