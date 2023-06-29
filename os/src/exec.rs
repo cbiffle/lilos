@@ -159,12 +159,18 @@ use core::sync::atomic::AtomicPtr;
 #[cfg(feature = "systick")]
 use core::time::Duration;
 
-/// How many bits in a `usize`, and thus in a pointer?
-const USIZE_BITS: usize = mem::size_of::<usize>() * 8;
-
 /// Accumulates bitmasks from wakers as they are invoked. The executor
 /// atomically checks and clears this at each iteration.
 static WAKE_BITS: AtomicUsize = AtomicUsize::new(0);
+
+/// Computes the wake bit mask for the task with the given index, which is
+/// equivalent to `1 << (index % USIZE_BITS)`.
+const fn wake_mask_for_index(index: usize) -> usize {
+    // Lossy as-cast used here because rotate_left implies a mod by small power
+    // of 2 (32, 64) and `as u32` implies mod by 2**32, which doesn't change the
+    // result.
+    1_usize.rotate_left(index as u32)
+}
 
 /// VTable for our wakers. Our wakers store a task notification bitmask in their
 /// "pointer" member, and atomically OR it into `WAKE_BITS` when invoked.
@@ -183,7 +189,7 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
 ///
 /// Technically, this will wake any task `n` where `n % 32 == index % 32`.
 fn waker_for_task(index: usize) -> Waker {
-    let mask = 1usize << (index % USIZE_BITS);
+    let mask = wake_mask_for_index(index);
     // Safety: Waker::from_raw is unsafe because bad things happen if the
     // combination of this particular pointer and the functions in the vtable
     // don't meet the Waker contract or are incompatible. In our case, our
@@ -478,7 +484,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             // increased complexity.
             let mask = WAKE_BITS.swap_polyfill(0, Ordering::SeqCst);
             for (i, f) in futures.iter_mut().enumerate() {
-                if mask & (1 << (i % USIZE_BITS)) != 0 {
+                if mask & wake_mask_for_index(i) != 0 {
                     poll_task(i, f.as_mut());
                 }
             }
@@ -749,7 +755,7 @@ pub fn wake_tasks_by_mask(mask: usize) {
 /// This operation isn't precise: it may wake other tasks, but it is guaranteed
 /// to at least wake the desired task.
 pub fn wake_task_by_index(index: usize) {
-    wake_tasks_by_mask(1 << (index % USIZE_BITS));
+    wake_tasks_by_mask(wake_mask_for_index(index));
 }
 
 /// Tracks the timer list currently in scope.
