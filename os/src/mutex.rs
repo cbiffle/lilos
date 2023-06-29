@@ -2,7 +2,8 @@
 //!
 //! This implements a mutex (a kind of lock) guarding a value of type `T`.
 //! Creating a `Mutex` by hand is somewhat involved (see [`Mutex::new`] for
-//! details), so there's a convenience macro, [`create_mutex!`].
+//! details), so there's a convenience macro,
+//! [`create_mutex!`][crate::create_mutex].
 //!
 //! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
 //!
@@ -10,7 +11,8 @@
 //!
 //! This mutex API is subtly different from most other async mutex APIs in that
 //! it does _not_ expose an RAII-style mutex-guard-based `lock` operation by
-//! default. By default, the operation you get is `perform`.
+//! default. By default, the operation you get is `perform`. There is a very
+//! good reason for this.
 //!
 //! `perform` takes a function of your choice as an argument, and when it
 //! successfully locks the mutex, it will apply that function and unlock. The
@@ -51,11 +53,15 @@
 //! # Implementation details
 //!
 //! This implementation uses a wait-list to track all processes that are waiting
-//! to unlock the mutex. This makes unlocking more expensive, but means that the
-//! unlock operation is *fair*, preventing starvation of contending tasks.
+//! to unlock the mutex. (An OS task may contain many processes.) This makes
+//! unlocking more expensive, but means that the unlock operation is *fair*,
+//! preventing starvation of contending tasks.
 //!
 //! However, in exchange for this property, mutexes must be pinned, which makes
-//! using them slightly more awkward.
+//! using them slightly more awkward. See the macros
+//! [`create_mutex!`][crate::create_mutex] and
+//! [`create_static_mutex!`][crate::create_static_mutex] for convenient shorthand (or as examples of how to
+//! do it yourself).
 
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
@@ -123,7 +129,9 @@ impl<T> Mutex<T> {
     }
 
     /// Locks this mutex immediately if it is free, and applies the operation
-    /// `op` to its contents before unlocking it.
+    /// `op` to its contents before unlocking it. This is a non-blocking version
+    /// of [`Mutex::perform`]; see that function for a more detailed discussion
+    /// of why this takes a closure.
     ///
     /// If the mutex is free, returns the value returned from `op`, wrapped in
     /// `Some`.
@@ -165,18 +173,30 @@ impl<T> Mutex<T> {
     }
 
     /// Returns a future that will attempt to obtain the mutex each time it gets
-    /// polled, completing only when it succeeds.
+    /// polled, completing only when it succeeds. When the future resolves, it
+    /// will return the value returned by your closure (`op`).
     ///
     /// When the future is first polled after it becomes the owner of the mutex,
     /// it will immediately apply `op` to the contents of the mutex, unlock the
-    /// mutex, and then resolve to the value returned from `op`.
+    /// mutex, and then resolve to the value returned from `op`. This is
+    /// designed to let you perform state inspection or updates of the contents
+    /// of the mutex, without having the opportunity to `await` (`op` is a
+    /// normal `fn` closure, not an `async` block). This dodges the cancel
+    /// safety implications of the more general `MutexGuard` pattern, which can
+    /// be hard to reason about. (However, that pattern is still available, if
+    /// you opt in; see [`Mutex::lock`].)
     ///
     /// If the mutex is free at the time of the first `poll`, the future will
-    /// resolve cheaply without blocking.
+    /// resolve cheaply without blocking, immediately calling `op` without
+    /// messing around with any wait-lists and such. This makes using an
+    /// uncontended `Mutex` very cheap.
     ///
     /// # Cancellation
     ///
-    /// Cancellation behavior for the returned future is slightly subtle.
+    /// **Cancel safety:** Strict, with a caveat about the closure you pass in.
+    ///
+    /// Cancellation behavior for the returned future is slightly subtle, but
+    /// does the right thing in almost all circumstances:
     ///
     /// - If dropped before it's polled _at all_ it does essentially nothing.
     /// - If dropped once it's added itself to the wait list for the mutex, but
@@ -184,6 +204,13 @@ impl<T> Mutex<T> {
     /// - If dropped after it has been given the mutex, but before it's been
     ///   polled (and thus given a chance to notice that), it will wake the next
     ///   waiter on the mutex wait list.
+    ///
+    /// This means the only cancel-safety thing to think about here is that
+    /// `op`, the closure you supply, will be dropped on cancellation. If you
+    /// `move` resources into the closure, they will be lost. Depending on
+    /// context this could be just fine, or could imply data loss. If you need
+    /// to add a `Drop` behavior to your closure, you can do it most easily with
+    /// a crate like `scopeguard`.
     pub async fn perform<R>(self: Pin<&Self>, op: impl FnOnce(&mut T) -> R) -> R {
         // Complete synchronously if the mutex is uncontended.
         // TODO this is repeated above the loop to avoid the cost of re-setting
@@ -265,14 +292,41 @@ impl<T> Mutex<CancelSafe<T>> {
     }
 
     /// Returns a future that will attempt to obtain the mutex each time it gets
-    /// polled, completing only when it succeeds.
+    /// polled, completing only when it succeeds. When the future resolves it
+    /// will produce a `MutexGuard`, a resource token that represents
+    /// successfully locking a mutex, and grants its holder access to the
+    /// guarded data.
     ///
     /// If the mutex is free at the time of the first `poll`, the future will
     /// resolve cheaply without blocking.
     ///
+    /// # This operation is opt-in
+    ///
+    /// `lock` is not available on mutexes unless you wrap the contents in the
+    /// [`CancelSafe`] marker type. This is because the traditional Rust mutex
+    /// API pattern of returning a guard can introduce surprising problems in
+    /// `async` code. See the docs on [`Mutex`] about `lock` vs `perform` for
+    /// more details.
+    ///
+    /// Consider whether you can use the [`Mutex::perform`] operation instead.
+    ///
     /// # Cancellation
     ///
-    /// Cancellation behavior for the returned future is slightly subtle.
+    /// **Cancel safety:** Strict. No, really. Even with the warning above.
+    ///
+    /// The future returned by `lock`, and the `MutexGuard` it resolves to, can
+    /// both be dropped/cancelled at any time without side effect, and simply
+    /// calling `lock` again works to retry. The reason this API is behind a
+    /// guard rail is that that statement isn't _sufficient:_ yeah, this is
+    /// technically strictly cancel-safe, but it makes it _really easy_ for you
+    /// to write code on top of it that _isn't._ (It would be great if
+    /// cancel-safety were purely compositional, so writing a program in terms
+    /// of all cancel-safe operations is automatically cancel-safe; this is not
+    /// the case.) So, please read the [`Mutex`] docs carefully before deciding
+    /// to use this.
+    ///
+    /// Cancellation behavior for the returned future is slightly subtle, but
+    /// does the right thing for all cases.
     ///
     /// - If dropped before it's polled _at all_ it does essentially nothing.
     /// - If dropped once it's added itself to the wait list for the mutex, but

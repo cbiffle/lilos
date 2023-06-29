@@ -30,8 +30,9 @@
 //! all operations require that they be
 //! [pinned](https://doc.rust-lang.org/core/pin/). Because we don't use the
 //! heap, we provide ways to create and use pinned data structures on the stack.
-//! This is, unfortunately, kind of involved -- but the [`create_node!`] and
-//! [`create_list!`] convenience macros help.
+//! This is, unfortunately, kind of involved -- but the
+//! [`create_node!`][crate::create_node] and
+//! [`create_list!`][crate::create_list] convenience macros help.
 //!
 //! Here is an example of creating a `Node`, since that's what user code creates
 //! most often; see the sources for [`mutex`](crate::mutex) for a real-world
@@ -279,8 +280,8 @@ impl<T: core::fmt::Debug> core::fmt::Debug for Node<T> {
 /// node keeps ownership of it, and if they drop the node, it leaves the list.
 ///
 /// Because lists contain self-referential pointers, creating one is somewhat
-/// involved. Use the [`create_list!`] macro when possible, or see `List::new`
-/// for instructions.
+/// involved. Use the [`create_list!`][crate::create_list] macro when possible,
+/// or see `List::new` for instructions.
 ///
 /// # Drop
 ///
@@ -312,8 +313,8 @@ impl<T: Default> List<T> {
     /// 2. Unwrap it, pin it, and then call `List::finish_init`.
     ///
     /// You must *not* do anything that might `panic!` or `await` between these
-    /// steps! To make this process easier, consider using the [`create_list!`]
-    /// macro where possible.
+    /// steps! To make this process easier, consider using the
+    /// [`create_list!`][crate::create_list] macro where possible.
     pub unsafe fn new() -> ManuallyDrop<List<T>> {
         // Safety: Node::new is unsafe because it produces a node that cannot be
         // safely dropped. We punt its obligations down the road by re-wrapping
@@ -362,6 +363,9 @@ impl<T: PartialOrd> List<T> {
     /// When the returned future completes, `node` has been detached again.
     ///
     /// # Cancellation
+    ///
+    /// **Cancel safety:** Strict, but see `insert_and_wait_with_cleanup` if the
+    /// context this is used needs help being cancel-safe.
     ///
     /// Dropping the future returned by `insert_and_wait` will forceably detach
     /// `node` from `self`. This is important for safety: the future borrows
@@ -413,6 +417,8 @@ impl<T: PartialOrd> List<T> {
     ///
     /// # Cancellation
     ///
+    /// **Cancel safety:** Strict, plus cleanup opportunity.
+    ///
     /// Dropping the future returned by `insert_and_wait_with_cleanup` will
     /// forceably detach `node` from `self`. This is important for safety: the
     /// future borrows `node`, preventing concurrent modification while there
@@ -421,9 +427,11 @@ impl<T: PartialOrd> List<T> {
     /// also has pointers, violating aliasing.
     ///
     /// If the node is detached on drop, but this future has not yet been
-    /// polled, `cleanup` will be run. If you find yourself passing a no-op
-    /// closure for `cleanup`, have a look at `insert_and_wait` for your
-    /// convenience.
+    /// polled, `cleanup` will be run. You can use this to cause a more complex
+    /// abstraction built around a `List` to also be strictly cancel-safe. This
+    /// is a subtle topic, but, see the `mutex` implementation for a worked
+    /// example. If you find yourself passing a no-op closure for `cleanup`,
+    /// have a look at `insert_and_wait` for your convenience.
     ///
     /// # Panics
     ///

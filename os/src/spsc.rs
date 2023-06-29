@@ -12,12 +12,15 @@
 //! can be used to pop things out of it.
 //!
 //! The `Push` and `Pop` can then be handed off to separate code paths, so long
-//! as they don't outlive the `Queue` and its storage.
+//! as they don't outlive the `Queue` and its storage. (The compiler will ensure
+//! this.)
 //!
 //! This queue uses the Rust type system to ensure that only one code path is
 //! attempting to push or pop the queue at any given time, because both `Push`
 //! and `Pop` endpoints borrow the central `Queue`, and an `async` operation to
-//! push or pop through an endpoint borrows that endpoint in turn.
+//! push or pop through an endpoint borrows that endpoint in turn. Neither
+//! `Push` nor `Pop` can be cloned or copied, ensuring the single-producer
+//! single-consumer property.
 //!
 //! # Implementation
 //!
@@ -212,6 +215,8 @@ impl<'q, T> Push<'q, T> {
     ///
     /// # Cancellation
     ///
+    /// **Cancel Safety:** Strict.
+    ///
     /// This does basically nothing if cancelled (it is intrinsically
     /// cancel-safe).
     pub async fn reserve(&mut self) -> Permit<'q, T> {
@@ -264,9 +269,14 @@ impl<'q, T> Push<'q, T> {
     ///
     /// # Cancellation
     ///
+    /// **Cancel Safety:** Weak.
+    ///
     /// The future returned by `push` takes ownership of `value` immediately. If
     /// the future is dropped before `value` makes it into the queue, `value` is
-    /// dropped along with it.
+    /// dropped along with it. While this behavior is well-defined and
+    /// predictable (thus my "weak cancel-safe" label) it is probably not what
+    /// you want, and so this operation is currently deprecated. Please use
+    /// [`Push::reserve`] instead.
     #[deprecated = "please use Push::reserve to avoid cancellation bugs"]
     pub async fn push(&mut self, value: T) {
         let mut value = Some(value);
@@ -355,6 +365,8 @@ impl<T> Pop<'_, T> {
     /// competing pops, moving concerns about fairness to compile time.
     ///
     /// # Cancellation
+    ///
+    /// **Cancel Safety:** Strict.
     ///
     /// The future returned by this function has no side effects until it
     /// resolves to a popped element. If you drop it before it has resolved,

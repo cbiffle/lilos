@@ -15,7 +15,7 @@
 //!
 //! # Time
 //!
-//! (Note: as of 3.0 the timekeeping features are only compiled in if the
+//! (Note: as of 0.3 the timekeeping features are only compiled in if the
 //! `systick` feature is present, which it is by default. It turns out the
 //! operating system can still be quite useful without it!)
 //!
@@ -24,9 +24,8 @@
 //! produces a future that resolves at a particular time, while [`sleep_for`]
 //! expresses the time relative to the current time.
 //!
-//! As their names imply, these functions can be used to delay the current task
-//! -- but they can also be used to impose a timeout on any async operation, by
-//! using [`select!`](https://docs.rs/futures/0.3/futures/macro.select.html).
+//! Those functions can also be used to apply a timeout to any operation; see
+//! [`sleep_until`] for more details.
 //!
 //! For the common case of needing to do an operation periodically, consider
 //! [`every_until`] or [`PeriodicGate`], which try to minimize jitter and drift.
@@ -72,36 +71,11 @@
 //! and when it is signaled, all subscribed tasks get their wake bits set.
 //!
 //! `Notify` is very low level -- the more pleasant abstractions of
-//! [`queue`][crate::queue], [`mutex`][crate::mutex], and
+//! [`spsc::Queue`][crate::spsc], [`mutex`][crate::mutex], and
 //! [`sleep_until`]/[`sleep_for`] are built on top of it. However, `Notify` is
 //! the only OS facility that's safe to use from interrupt service routines,
-//! making it an ideal way to wake tasks when hardware events occur.
-//!
-//! Here is a basic example of using `Notify`; see the `queue` and `mutex`
-//! modules for details on the higher-level options.
-//!
-//! ```ignore
-//! /// Global notification signal for ethernet interrupts.
-//! static ETH_NOTIFY: os::exec::Notify = os::exec::Notify::new();
-//!
-//! #[interrupt]
-//! fn ETH() {
-//!     // omitted: code to clear interrupt condition so it doesn't just recur
-//!
-//!     // Signal any tasks waiting for this interrupt.
-//!     ETH_NOTIFY.notify();
-//! }
-//!
-//! async fn ethernet_driver() {
-//!     // ... stuff ...
-//!
-//!     // Wait for the interrupt we care about. Check the status register to
-//!     // distinguish interrupt conditions and to handle spurious wakeups.
-//!     ETH_NOTIFY.until(|| dma.dmasr.read().nis()).await;
-//!
-//!     // ... continue ...
-//! }
-//! ```
+//! making it an ideal way to wake tasks when hardware events occur. See the
+//! [`Notify`] docs for an example of using this to handle events from a UART.
 //!
 //! # Building your own task notification mechanism
 //!
@@ -116,24 +90,29 @@
 //! actually waking any task where `index % 32 == 0`. Very complex systems with
 //! greater than 32 top-level tasks will thus experience more spurious wakeups.
 //! The advantage of this "lossy" technique is that wake bit manipulation is
-//! very, very cheap.
+//! very, very cheap, and can be done entirely with processor atomic operations.
 //!
 //! # Idle behavior
 //!
 //! When no tasks have their wake bits set, the default behavior is to idle the
 //! processor using the `WFI` instruction. You can override this behavior by
-//! starting the scheduler with [`run_tasks_with_idle`] or
-//! [`run_tasks_with_preemption_and_idle`], which let you substitute a custom
-//! "idle hook" to execute when no tasks are ready.
+//! starting the scheduler with [`run_tasks_with_idle`] or (if you're using
+//! preemption, below) [`run_tasks_with_preemption_and_idle`], which let you
+//! substitute a custom "idle hook" to execute when no tasks are ready.
+//!
+//! A common use for such an idle hook is to toggle a pin to indicate CPU usage
+//! on a logic analyzer, or feed a watchdog.
 //!
 //! # Adding preemption
 //!
 //! By default, the scheduler does not preempt task code: task poll routines are
 //! run cooperatively, and ISRs are allowed only in between polls. This
 //! increases interrupt response latency, because if an event occurs while
-//! polling tasks, all polling must complete before the ISR is run.
+//! polling tasks, all polling must complete before the ISR is run. However, it
+//! makes the program much easier to reason about, because code is simply never
+//! preempted.
 //!
-//! Applications can override this by starting the scheduler with
+//! Applications can change this by starting the scheduler with
 //! [`run_tasks_with_preemption`] or [`run_tasks_with_preemption_and_idle`].
 //! These entry points let you set a _preemption policy_, which allows ISRs
 //! above some priority level to preempt task code. (Tasks still cannot preempt
@@ -255,6 +234,7 @@ static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
 
 /// Returns a [`Waker`] that doesn't do anything and costs nothing to `clone`.
 /// This is useful as a placeholder before a *real* `Waker` becomes available.
+/// You probably don't need this unless you're building your own wake lists.
 pub fn noop_waker() -> Waker {
     // Safety: Waker::from_raw is unsafe because the Waker can do weird and
     // destructive stuff if either the pointer, or the vtable functions, don't
@@ -523,6 +503,8 @@ pub const ALL_TASKS: usize = !0;
 /// A lightweight task notification scheme that can be used to safely route
 /// events from interrupt handlers to task code.
 ///
+/// This is the lowest level inter-task communication type in `lilos`.
+///
 /// Any number of tasks can [`subscribe`][Notify::subscribe] to a `Notify`. When
 /// [`notify`][Notify::notify] is called on it, all those tasks will be awoken
 /// (i.e. their `Waker` will be triggered so that they become eligible for
@@ -537,6 +519,40 @@ pub const ALL_TASKS: usize = !0;
 ///
 /// ```ignore
 /// static EVENT: Notify = Notify::new();
+/// ```
+///
+/// You can use that style of `static` `Notify` to sleep waiting for interrupt
+/// conditions in async code. Here's an example for a made-up but typical UART
+/// driver:
+///
+/// ```ignore
+/// /// Event signal for waking task(s) when data arrives.
+/// static RX_NOT_EMPTY: Notify = Notify::new();
+///
+/// /// UART interrupt handler.
+/// #[interrupt]
+/// fn UART() {
+///     let uart = get_uart_peripheral_somehow();
+///
+///     let control = uart.control.read();
+///     let status = uart.status.read();
+///
+///     if control.rx_irq_enabled() && status.rx_not_empty() {
+///         // Shut off the interrupt source to keep this from reoccurring.
+///         uart.control.modify(|_, w| w.rx_irq_enabled().clear());
+///         // Wake up the task that requested this.
+///         RX_NOT_EMPTY.notify();
+///     }
+/// }
+///
+/// async fn uart_recv(uart: &Uart) -> u8 {
+///     // Enable the rx data interrupt so we get notified.
+///     uart.control.modify(|_, w| w.rx_irq_enabled().set());
+///     // Listen for data, using a predicate to filter out spurious wakes.
+///     RX_NOT_EMPTY.until(|| uart.status.read().rx_not_empty());
+///
+///     UART.data.read()
+/// }
 /// ```
 ///
 /// # Waker coalescing
@@ -584,6 +600,8 @@ impl Notify {
     ///
     /// # Cancellation
     ///
+    /// **Cancel safety:** Strict.
+    ///
     /// Dropping this future will drop `cond`, and may leave the current task
     /// subscribed to `self` (meaning one potential spurious wakeup in the
     /// future is possible).
@@ -610,6 +628,8 @@ impl Notify {
     ///
     /// # Cancellation
     ///
+    /// **Cancel safety:** Strict.
+    ///
     /// Dropping this future will drop `cond`, and will leave the current task
     /// subscribed to `self` (meaning one potential spurious wakeup in the
     /// future is possible).
@@ -635,6 +655,8 @@ impl Notify {
     ///
     /// # Cancellation
     ///
+    /// **Cancel safety:** Strict.
+    ///
     /// Dropping this future will leave the current task subscribed to `self`
     /// (meaning one potential spurious wakeup in the future is possible).
     pub fn until_next(
@@ -646,12 +668,13 @@ impl Notify {
     }
 }
 
-/// Trait implemented by things that indicate success or failure.
+/// Trait implemented by things that indicate success or failure, to be used
+/// with [`Notify::until`] and friends.
 ///
 /// In practice this is `bool` (if there's no output associated with success) or
 /// `Option<T>` (if there is).
 ///
-/// This is used by the various `poll` functions in this module.
+/// This is used by the various polling functions in this module.
 pub trait TestResult {
     /// Type of content produced on success.
     type Output;
@@ -856,11 +879,41 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
 ///
 /// If `deadline` is already in the past, this will instantly become `Ready`.
 ///
+/// Other tools you might consider:
+///
+/// - If you want to sleep for a relative time interval, consider [`sleep_for`].
+/// - If you want to make an action periodic by sleeping in a loop,
+///   [`PeriodicGate`] helps avoid common mistakes that cause timing drift and
+///   jitter.
+///
+/// # Imposing a timeout on async code
+///
+/// This function can be used to delay the current task -- but it can also be
+/// used to impose a timeout on any async operation, by using
+/// [`select_biased!`](https://docs.rs/futures/latest/futures/macro.select_biased.html)
+/// or something similar:
+///
+/// ```ignore
+/// use futures::select_biased;
+///
+/// select_biased! {
+///     result = my_long_running_operation() => {
+///         // we finished in time, yay! use result here.
+///     }
+///     _ = lilos::exec::sleep_until(deadline) => {
+///         // we reached the deadline without finishing, the long
+///         // running operation is now cancelled.
+///     }
+/// }
+/// ```
+///
 /// # Preconditions
 ///
 /// This can only be used within a task.
 ///
 /// # Cancellation
+///
+/// **Cancel safety:** Strict.
 ///
 /// Dropping this future does nothing in particular.
 #[cfg(feature = "systick")]
@@ -889,7 +942,12 @@ pub async fn sleep_until(deadline: TickTime) {
 /// `d` can be any type that can be added to a `TickTime`, which in practice
 /// means either [`Millis`] or [`Duration`].
 ///
+/// This function is a thin wrapper around [`sleep_until`]. See that function's
+/// docs for examples, details, and alternatives.
+///
 /// # Cancellation
+///
+/// **Cancel safety:** Strict.
 ///
 /// Dropping this future does nothing in particular.
 #[cfg(feature = "systick")]
@@ -905,6 +963,8 @@ pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
 /// to run, and then take it back without waiting for an event.
 ///
 /// # Cancellation
+///
+/// **Cancel safety:** Strict.
 ///
 /// Dropping this future does nothing in particular.
 pub fn yield_cpu() -> impl Future<Output = ()> {
@@ -950,8 +1010,11 @@ impl Future for YieldCpu {
 ///
 /// # Cancellation
 ///
+/// **Cancel safety:** Strict with caveat about nested future.
+///
 /// Dropping this future will cancel any in-progress future previously returned
-/// from `action`, as well as dropping `action` itself.
+/// from `action`, as well as dropping `action` itself. If the future produced
+/// by `action` is not cancel-safe, `every_until` will not fix that.
 #[cfg(feature = "systick")]
 pub async fn every_until<D, F>(period: D, mut action: impl FnMut() -> F)
 where
@@ -969,7 +1032,7 @@ where
     }
 }
 
-/// Utility for doing something periodically.
+/// Helper for doing something periodically, accurately.
 ///
 /// A `PeriodicGate` can be used to *gate* (pause) execution of a task until a
 /// point in time arrives; that point in time is *periodic*, meaning it repeats
@@ -986,7 +1049,21 @@ where
 ///
 /// This will maintain the 30-millisecond interval consistently, even if `f()`
 /// takes several milliseconds to run, and even if `f()` is sometimes fast and
-/// sometimes slow.
+/// sometimes slow. (If `f` sometimes takes more than 30 milliseconds, the next
+/// execution will happen later than normal -- there's not a lot we can do about
+/// that. However, as soon as calls to `f` take less than 30 milliseconds, we'll
+/// return to the normal periodic timing.)
+///
+/// This is often, but not always, what you want in a timing loop.
+///
+/// - `PeriodicGate` has "catch-up" behavior that might not be what you want: if
+///   one execution takes (say) 5 times longer than the chosen period, it will
+///   frantically run 4 more just after it to "catch up." This attempts to
+///   maintain a constant number of executions per unit time, but that might not
+///   be what you want.
+///
+/// - [`sleep_for`] can ensure a minimum delay _between_ operations, which is
+///   different from `PeriodicGate`'s behavior.
 #[derive(Debug)]
 #[cfg(feature = "systick")]
 pub struct PeriodicGate {
@@ -1033,6 +1110,8 @@ impl PeriodicGate {
     /// Returns a future that will resolve when it's time to execute again.
     ///
     /// # Cancellation
+    ///
+    /// **Cancel safety:** Strict.
     ///
     /// Dropping this future does nothing in particular.
     pub async fn next_time(&mut self) {

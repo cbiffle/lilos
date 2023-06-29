@@ -45,6 +45,13 @@
 //! want to attempt to store one in a `static` -- you will succeed with enough
 //! `unsafe`, but the result will not be useful! The queues provided in `spsc`
 //! do not have this limitation, at the cost of being more work to set up.
+//!
+//! # Cancel safety
+//!
+//! This module is currently the only part of `lilos` that has non-deprecated
+//! API that is not strictly cancel-safe. This is often okay, the way handoffs
+//! are used (in my code at least), but please read the docs for [`Push::push`]
+//! carefully.
 
 use core::cell::Cell;
 use core::ptr::NonNull;
@@ -174,8 +181,19 @@ impl<T> Push<'_, T> {
     ///
     /// # Cancellation
     ///
+    /// **Cancel Safety:** Weak.
+    ///
     /// If this future is dropped before it resolves, `value` is dropped, i.e.
-    /// both you and the peer lose access to it.
+    /// both you and the peer lose access to it. This means the operation can't
+    /// reasonably be retried, and means that if collecting `value` in the first
+    /// place had side effects, there's no good way to roll those back.
+    ///
+    /// If the code using `push` can hang on to a copy of `value`, or if losing
+    /// `value` on cancellation is okay, then this operation _can_ be used
+    /// safely.
+    ///
+    /// I'm trying to figure out a version of this with strict safety.
+    /// Suggestions welcome.
     pub async fn push(&mut self, value: T) {
         let mut guard = scopeguard::guard(Some(value), |v| {
             if v.is_some() {
@@ -268,6 +286,8 @@ impl<T> Pop<'_, T> {
     /// Produces a future that resolves when the peer offers a value.
     ///
     /// # Cancellation
+    ///
+    /// **Cancel Safety:** Strict.
     ///
     /// If this is dropped before it resolves, no data will be lost: we have
     /// either taken data from the `Push` side and resolved, or we have not
