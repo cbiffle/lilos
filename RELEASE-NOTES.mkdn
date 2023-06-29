@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 0.3.1 (in progress)
+## Version 0.3.1
 
 - Based on watching people learning `async`, I'm adding a new operation to
   `lilos::spsc::Push`: `reserve`. This is similar to the old `push` but resolves
