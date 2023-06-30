@@ -1,12 +1,15 @@
 # Release Notes
 
-## Version 0.3.4 (in progress!)
+## Version 0.3.4
 
 - Changed the lifetimes on the `reserve` operation on `spsc::Push`. The original
   definition allowed for an unlikely but easily reachable deadlock, where code
   could simultaneously wait for two permits from the same queue -- the second
   permit will never arrive. I consider this a bug fix, and it won't break code
   unless that code contains a deadlock, so I'm including this in a minor rev.
+  Currently not planning on yanking 0.3.3.
+
+- Further code size improvements.
 
 ## Version 0.3.3
 
