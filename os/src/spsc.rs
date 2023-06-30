@@ -213,13 +213,24 @@ impl<'q, T> Push<'q, T> {
     /// is a deliberate design choice -- it means you can cancel the future
     /// without losing the element you were trying to push.
     ///
+    /// The returned `Permit` borrows `self` exclusively. This means you must
+    /// use the `Permit`, or drop it, before you can request another. This
+    /// prevents a deadlock, where you wait for a second permit that will never
+    /// emerge.
+    ///
+    /// The future produced by `reserve` also borrows `self` exclusively. This
+    /// means you can't simultaneously have two futures waiting for permits from
+    /// the same `Push`. This wouldn't necessarily be a bad thing, but we need
+    /// to maintain the exclusive borrow in order to pass it through to the
+    /// `Permit`.
+    ///
     /// # Cancellation
     ///
     /// **Cancel Safety:** Strict.
     ///
     /// This does basically nothing if cancelled (it is intrinsically
     /// cancel-safe).
-    pub async fn reserve(&mut self) -> Permit<'q, T> {
+    pub async fn reserve<'s>(&'s mut self) -> Permit<'s, T> {
         self.q.popped.until(|| self.try_reserve()).await
     }
 
