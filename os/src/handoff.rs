@@ -281,7 +281,7 @@ impl<T> Pop<'_, T> {
             },
             #[cfg(debug_assertions)]
             State::PopWait(_) => panic!(),
-            State::Idle => None,
+            _ => None,
         }
     }
 
