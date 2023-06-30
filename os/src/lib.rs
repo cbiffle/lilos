@@ -156,6 +156,17 @@
     unused_qualifications,
 )]
 
+/// Internal assert macro that doesn't stringify its expression or generate any
+/// fancy messages. This means failures must be diagnosed by file:line only, so,
+/// don't use this more than once on the same line. In exchange, this makes
+/// asserts significantly smaller in terms of text size.
+macro_rules! cheap_assert {
+    ($x:expr) => {
+        if !$x { panic!(); };
+    }
+}
+pub(crate) use cheap_assert;
+
 #[macro_use]
 pub mod list;
 pub mod exec;

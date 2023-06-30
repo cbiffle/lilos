@@ -126,6 +126,7 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
+use crate::cheap_assert;
 use crate::atomic::{AtomicExt, AtomicArithExt};
 
 #[cfg(feature = "systick")]
@@ -768,6 +769,7 @@ impl<F, T> Future for UntilRacy<'_, F>
 ///
 /// This is a very low-level operation and is rarely what you want to use. See
 /// `Notify`.
+#[inline(always)]
 pub fn wake_tasks_by_mask(mask: usize) {
     WAKE_BITS.fetch_or_polyfill(mask, Ordering::SeqCst);
 }
@@ -777,6 +779,7 @@ pub fn wake_tasks_by_mask(mask: usize) {
 ///
 /// This operation isn't precise: it may wake other tasks, but it is guaranteed
 /// to at least wake the desired task.
+#[inline(always)]
 pub fn wake_task_by_index(index: usize) {
     wake_tasks_by_mask(wake_mask_for_index(index));
 }
@@ -800,6 +803,7 @@ fn assert_not_in_isr() {
 ///
 /// This doesn't nest, and will assert if you try.
 #[cfg(feature = "systick")]
+#[inline(always)]
 fn set_timer_list<R>(
     list: Pin<&mut List<TickTime>>,
     body: impl FnOnce() -> R,
@@ -820,7 +824,7 @@ fn set_timer_list<R>(
     // `run_tasks` from within a task. Since this assert should only be checked
     // on executor startup, there is no need to optimize it away in release
     // builds.
-    assert!(old_list.is_null());
+    cheap_assert!(old_list.is_null());
 
     let r = body();
 
@@ -833,6 +837,7 @@ fn set_timer_list<R>(
 
 /// No-op definition of `set_timer_list` if the OS has no actual timer list.
 #[cfg(not(feature = "systick"))]
+#[inline(always)]
 fn set_timer_list<X, R>(
     _list: X,
     body: impl FnOnce() -> R,
@@ -859,7 +864,7 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
         // If this assertion fails, it's a sign that one of the timer-aware OS
         // primitives (likely a `sleep_*`) has been used without the OS actually
         // running.
-        assert!(!tlptr.is_null());
+        cheap_assert!(!tlptr.is_null());
 
         // Safety: if it's not null, then it came from a `Pin<&mut>` that we
         // have been loaned. We do not treat it as a &mut anywhere, so we can

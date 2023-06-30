@@ -565,7 +565,7 @@ impl<T> Drop for List<T> {
         // wake them now, they'll sleep, possibly forever.
         //
         // When in doubt: panic and set the behavior later.
-        assert!(self.root.is_detached());
+        cheap_assert!(self.root.is_detached());
     }
 }
 
