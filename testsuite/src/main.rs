@@ -1,8 +1,9 @@
 //! OS test suite.
 //!
-//! The test suite is SoC-independent, but we build and test on STM32F407
-//! because Cargo's feature resolution plus `cortex-m-rt`'s feature handling
-//! means that every binary in this workspace has to target the same SoC. Sigh.
+//! The test suite is SoC-independent, though building it for a particular SoC
+//! will require Cargo config changes, a linker script, and whatever
+//! configuration's needed to program the physical chip. See the SoC-specific
+//! subdirectories for examples.
 
 #![no_std]
 #![no_main]
