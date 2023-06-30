@@ -19,7 +19,7 @@ cortex-m = "0.7.4"
 cortex-m-rt = { version = "0.7.1", default-features = false }
 cortex-m-semihosting = "0.5.0"
 futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
-lilos = { version = "0.3.0-rc1", path = "../os" }
+lilos = { path = "../os" }
 panic-semihosting = "0.6.0"
 
 [lib]

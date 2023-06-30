@@ -17,7 +17,7 @@ default-target = "thumbv7em-none-eabihf"
 [dependencies]
 cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
-lilos = { version = "0.3.0-rc1", path = "../../../os" }
+lilos = { path = "../../../os" }
 panic-halt = "0.2.0"
 
 [dependencies.stm32f4]
