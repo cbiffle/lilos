@@ -1,6 +1,8 @@
 # `lilos`: A minimal async RTOS
 
-(Hi! We now have a [intro guide!](doc/intro.adoc))
+- [Intro guide](doc/intro.adoc)
+- [API Docs](https://docs.rs/lilos)
+- [crates.io](https://crates.io/crates/lilos)
 
 This is a wee operating system written to support the `async` style of
 programming in Rust on microcontrollers. It fits in about 2 kiB of Flash and
