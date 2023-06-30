@@ -85,6 +85,7 @@ impl<T> AtomicExt for AtomicPtr<T> {
 }
 
 #[cfg(not(feature = "has-native-rmw"))]
+#[inline(always)]
 fn rmw_ordering(o: Ordering) -> (Ordering, Ordering) {
     match o {
         Ordering::AcqRel => (Ordering::Acquire, Ordering::Release),

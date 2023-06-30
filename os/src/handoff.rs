@@ -162,7 +162,6 @@ impl<T> Push<'_, T> {
     /// Otherwise, it returns `Err(value)`, giving `value` back to you.
     pub fn try_push(&mut self, value: T) -> Result<(), T> {
         match self.0.state.get() {
-            State::Idle => Err(value),
             State::PopWait(dest_ptr) => {
                 // Our peer is waiting.
                 unsafe {
@@ -172,7 +171,9 @@ impl<T> Push<'_, T> {
                 self.0.ping.notify();
                 Ok(())
             },
+            #[cfg(debug_assertions)]
             State::PushWait(_) => panic!(),
+            _ => Err(value),
         }
     }
 
@@ -268,7 +269,6 @@ impl<T> Pop<'_, T> {
     /// Otherwise, returns `None`.
     pub fn try_pop(&mut self) -> Option<T> {
         match self.0.state.get() {
-            State::Idle => None,
             State::PushWait(src_ptr) => {
                 // Our peer is waiting.
                 let value = core::mem::replace(
@@ -279,7 +279,9 @@ impl<T> Pop<'_, T> {
                 self.0.ping.notify();
                 value
             },
+            #[cfg(debug_assertions)]
             State::PopWait(_) => panic!(),
+            State::Idle => None,
         }
     }
 
