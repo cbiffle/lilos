@@ -1,8 +1,11 @@
 # Release Notes
 
-## Version 0.3.2
+## Version 0.3.3
 
-No externally visible changes.
+- Fixed a bug I introduced into `yield_cpu` in 0.3.1. Please move away from
+  0.3.1/0.3.2 at your convenience. No other changes in this release.
+
+## Version 0.3.2
 
 - Added explicit cancel safety annotations to all async/future operations.
   Currently everything except `handoff` is either strict cancel-safe or

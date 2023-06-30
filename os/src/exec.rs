@@ -968,7 +968,7 @@ pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
 ///
 /// Dropping this future does nothing in particular.
 pub fn yield_cpu() -> impl Future<Output = ()> {
-    YieldCpu { polled: true }
+    YieldCpu { polled: false }
 }
 
 struct YieldCpu {
