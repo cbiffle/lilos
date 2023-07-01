@@ -890,27 +890,8 @@ fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
 /// - If you want to make an action periodic by sleeping in a loop,
 ///   [`PeriodicGate`] helps avoid common mistakes that cause timing drift and
 ///   jitter.
-///
-/// # Imposing a timeout on async code
-///
-/// This function can be used to delay the current task -- but it can also be
-/// used to impose a timeout on any async operation, by using
-/// [`select_biased!`](https://docs.rs/futures/latest/futures/macro.select_biased.html)
-/// or something similar:
-///
-/// ```ignore
-/// use futures::select_biased;
-///
-/// select_biased! {
-///     result = my_long_running_operation() => {
-///         // we finished in time, yay! use result here.
-///     }
-///     _ = lilos::exec::sleep_until(deadline) => {
-///         // we reached the deadline without finishing, the long
-///         // running operation is now cancelled.
-///     }
-/// }
-/// ```
+/// - If you want to impose a deadline/timeout on async code, see
+///   [`with_deadline`].
 ///
 /// # Preconditions
 ///
@@ -960,6 +941,82 @@ pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
     where TickTime: Add<D, Output = TickTime>,
 {
     sleep_until(TickTime::now() + d)
+}
+
+/// Alters a future to impose a deadline on its completion.
+///
+/// Concretely,
+/// - The output type is changed from `T` to `Option<T>`.
+/// - If the future resolves on any polling that starts before `deadline`, its
+///   result will be produced, wrapped in `Some`.
+/// - If poll is called at or after `deadline`, the future resolves to `None`.
+///
+/// The wrapped future is _not_ immediately dropped if the timeout expires. It
+/// will be dropped when you drop the wrapped version.
+pub fn with_deadline<F>(deadline: TickTime, code: F) -> impl Future<Output = Option<F::Output>>
+    where F: Future,
+{
+    TimeLimited {
+        limiter: sleep_until(deadline),
+        process: code,
+    }
+}
+
+/// Alters a future to impose a timeout on its completion.
+///
+/// This is equivalent to `with_deadline` using a deadline of `TickTime::now() +
+/// timeout`. That is, the current time is captured when `with_timeout` is
+/// called (_not_ at first poll), the provided timeout is added, and that's used
+/// as the deadline for the returned future.
+///
+/// See [`with_deadline`] for more details.
+pub fn with_timeout<D, F>(timeout: D, code: F) -> impl Future<Output = Option<F::Output>>
+    where F: Future,
+          TickTime: Add<D, Output = TickTime>,
+{
+    with_deadline(TickTime::now() + timeout, code)
+}
+
+/// A future-wrapper that gates polling a future `B` on whether another future
+/// `A` has resolved.
+///
+/// Once `A` resolved, `B` is no longer polled and the combined future resolves
+/// to `None`. If `B` resolves first, its result is produced wrapped in `Some`.
+#[derive(Debug)]
+struct TimeLimited<A, B> {
+    limiter: A,
+    process: B,
+}
+
+impl<A, B> TimeLimited<A, B> {
+    fn limiter(self: Pin<&mut Self>) -> Pin<&mut A> {
+        // Safety: this is a structural pin projection.
+        unsafe {
+            Pin::new_unchecked(&mut self.get_unchecked_mut().limiter)
+        }
+    }
+    fn process(self: Pin<&mut Self>) -> Pin<&mut B> {
+        // Safety: this is a structural pin projection.
+        unsafe {
+            Pin::new_unchecked(&mut self.get_unchecked_mut().process)
+        }
+    }
+}
+
+impl<A, B> Future for TimeLimited<A, B>
+    where A: Future<Output = ()>,
+          B: Future,
+{
+    type Output = Option<B::Output>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // We always check the limiter first. If the limiter's condition has
+        // occurred, we bail, even if the limited process is also ready.
+        if let Poll::Ready(()) = self.as_mut().limiter().poll(cx) {
+            return Poll::Ready(None);
+        }
+        self.process().poll(cx).map(Some)
+    }
 }
 
 /// Returns a future that will be pending exactly once before resolving.

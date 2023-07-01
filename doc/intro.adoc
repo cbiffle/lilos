@@ -669,24 +669,26 @@ You'd like to impose a _timeout_ on it: it will have 200 ms to make progress,
 but if it doesn't complete by the end of that window, it will be cancelled
 (``drop``-ped).
 
-The easiest way to do this is to use the `select_biased!` macro from the
-`futures` crate. (It's called `biased` because it steps the state machines
-inside it from first to last, and if any complete, all the rest are dropped.
-This means it's slightly _biased_ toward completing the earlier ones.)
+`lilos` provides a "future decorator" for this purpose: `with_timeout`. It's a
+function that takes any future as input, and returns an altered future that
+won't be polled past a certain time.
 
 [source]
 ----
-select_biased! {
-    _ = sleep_for(Millis(200)) => {
-        // The timeout triggered first! Do any additional
-        // cleanup you require here.
-    }
-    result = some_state_machine() => {
+match with_timeout(Millis(200), some_state_machine()).await {
+    Some(result) => {
         // The state machine completed successfully!
         print(result);
     }
+    None => {
+        // The timeout triggered first! Do any additional
+        // cleanup you require here.
+    }
 }
 ----
+
+TIP: There are many other ways of doing this, such as using the
+`select_biased!` macro from the `futures` crate; `with_timeout` is cheaper.
 
 This is the sort of power we get from the `async fn` ecosystem. Doing this with
 hand-rolled state machines is probably _possible,_ but would be complex -- and

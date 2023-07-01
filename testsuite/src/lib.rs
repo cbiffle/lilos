@@ -76,6 +76,8 @@ async fn task_coordinator() -> Infallible {
             test_clock_advancing,
             test_sleep_until_basic,
             test_sleep_until_multi,
+            test_with_deadline_actively_polled,
+            test_with_deadline_blocking,
             test_notify,
             list::test_node_basics,
             list::test_list_basics,
@@ -113,12 +115,12 @@ async fn task_coordinator() -> Infallible {
     // "sys".
     const TEST_TIMEOUT: core::time::Duration = core::time::Duration::from_millis(1000);
 
-    futures::select_biased! {
-        _ = tests.fuse() => {
+    match exec::with_timeout(TEST_TIMEOUT, tests).await {
+        Some(()) => {
             hprintln!("tests complete.");
             cortex_m_semihosting::debug::exit(Ok(()));
-        },
-        _ = lilos::exec::sleep_for(TEST_TIMEOUT).fuse() => {
+        }
+        None => {
             panic!("tests timed out.");
         }
     }
@@ -169,6 +171,44 @@ async fn test_sleep_until_multi() {
             panic!("longer sleep should not wake first")
         }
     }
+}
+
+/// Evaluates basic behavior of `with_deadline` when its task doesn't need
+/// waking at expiration.
+async fn test_with_deadline_actively_polled() {
+    use lilos::{time::TickTime, exec::yield_cpu, exec::with_deadline};
+
+    let start = TickTime::now();
+    let mut last_poll = start;
+    let deadline = last_poll + time::Millis(10);
+    with_deadline(deadline, async {
+        loop {
+            last_poll = TickTime::now();
+            yield_cpu().await;
+        }
+    }).await;
+    let end_time = TickTime::now();
+    assert_eq!(end_time, deadline);
+    assert!(last_poll < deadline);
+}
+
+/// Tests `with_deadline` in cases where the deadline is responsible for waking
+/// the task to make progress.
+async fn test_with_deadline_blocking() {
+    use lilos::{time::TickTime, exec::with_deadline};
+
+    let start = TickTime::now();
+    let mut last_poll = start;
+    let deadline = last_poll + time::Millis(10);
+    with_deadline(deadline, async {
+        loop {
+            last_poll = TickTime::now();
+            exec::sleep_for(time::Millis(100)).await;
+        }
+    }).await;
+    let end_time = TickTime::now();
+    assert_eq!(end_time, deadline);
+    assert!(last_poll < deadline);
 }
 
 async fn test_notify() {

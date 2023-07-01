@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version x.y.z (in progress)
+
+- Added `exec::with_deadline` and `exec::with_timeout`, more convenient methods
+  for time-limiting the execution of a future. Compared to the traditional
+  method of using `select_biased!`, these functions are significantly less
+  verbose, more obvious, and produce smaller code too. This also relieves
+  applications from depending on the `futures` crate for timeouts if they don't
+  want to.
+
 ## Version 0.3.5
 
 - Fix bug in `handoff` when built without `debug_assertions` -- I introduced
