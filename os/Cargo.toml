@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "0.3.5"
+version = "0.3.6-pre.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 edition = "2021"
 license = "MPL-2.0"
