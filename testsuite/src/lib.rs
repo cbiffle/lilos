@@ -17,6 +17,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use futures::FutureExt;
 
 use cortex_m_semihosting::hprintln;
+use lilos::exec;
+use lilos::time;
 
 pub fn run_test_suite(hz: u32) -> ! {
     // Check out peripherals from the runtime.
@@ -35,8 +37,8 @@ pub fn run_test_suite(hz: u32) -> ! {
 
     let start_mask = 0b011;
 
-    lilos::time::initialize_sys_tick(&mut cp.SYST, hz);
-    lilos::exec::run_tasks(
+    time::initialize_sys_tick(&mut cp.SYST, hz);
+    exec::run_tasks(
         &mut [
             coordinator,
             flag_auto,
@@ -51,7 +53,7 @@ pub fn run_test_suite(hz: u32) -> ! {
 static AUTO_FLAG: AtomicBool = AtomicBool::new(false);
 static MUST_START_FLAG: AtomicBool = AtomicBool::new(false);
 static MUST_NOT_START_FLAG: AtomicBool = AtomicBool::new(false);
-static NOTIFY: lilos::exec::Notify = lilos::exec::Notify::new();
+static NOTIFY: exec::Notify = exec::Notify::new();
 static NOTIFY_REACHED: AtomicBool = AtomicBool::new(false);
 
 const A_BIT: core::time::Duration = core::time::Duration::from_millis(2);
@@ -127,12 +129,12 @@ async fn task_coordinator() -> Infallible {
 /// Make sure that yield CPU handles waking correctly -- otherwise the tests
 /// will just halt here.
 async fn test_yield_cpu() {
-    lilos::exec::yield_cpu().await;
+    exec::yield_cpu().await;
 }
 
 async fn test_other_tasks_started() {
     // Let all initially-started tasks run.
-    lilos::exec::yield_cpu().await;
+    exec::yield_cpu().await;
     // Check that the auto flag got set.
     assert!(AUTO_FLAG.load(Ordering::SeqCst), "flag_auto task not started?");
     // Check that the manual flag did _not._
@@ -146,24 +148,24 @@ async fn test_other_tasks_started() {
 }
 
 async fn test_clock_advancing() {
-    let t1 = lilos::time::TickTime::now();
-    lilos::exec::sleep_for(A_BIT).await;
-    let t2 = lilos::time::TickTime::now();
+    let t1 = time::TickTime::now();
+    exec::sleep_for(A_BIT).await;
+    let t2 = time::TickTime::now();
     assert!(t2 > t1);
 }
 
 async fn test_sleep_until_basic() {
-    let t1 = lilos::time::TickTime::now();
+    let t1 = time::TickTime::now();
     let target = t1 + core::time::Duration::from_millis(10);
-    lilos::exec::sleep_until(target).await;
-    let t2 = lilos::time::TickTime::now();
+    exec::sleep_until(target).await;
+    let t2 = time::TickTime::now();
     assert!(t2 == target);
 }
 
 async fn test_sleep_until_multi() {
     futures::select_biased! {
-        _ = lilos::exec::sleep_for(A_BIT).fuse() => (),
-        _ = lilos::exec::sleep_for(A_BIT + A_BIT).fuse() => {
+        _ = exec::sleep_for(A_BIT).fuse() => (),
+        _ = exec::sleep_for(A_BIT + A_BIT).fuse() => {
             panic!("longer sleep should not wake first")
         }
     }
@@ -173,8 +175,8 @@ async fn test_notify() {
     start_task_by_index(4).await;
     assert!(!NOTIFY_REACHED.load(Ordering::SeqCst));
     NOTIFY.notify();
-    lilos::exec::yield_cpu().await;
-    lilos::exec::yield_cpu().await;
+    exec::yield_cpu().await;
+    exec::yield_cpu().await;
     assert!(NOTIFY_REACHED.load(Ordering::SeqCst));
 }
 
@@ -182,9 +184,9 @@ async fn test_notify() {
 // Utility functions and task constructors
 
 async fn start_task_by_index(index: usize) {
-    lilos::exec::wake_task_by_index(index);
-    lilos::exec::yield_cpu().await; // first pass completes all tasks already awake
-    lilos::exec::yield_cpu().await // second pass lets new task run
+    exec::wake_task_by_index(index);
+    exec::yield_cpu().await; // first pass completes all tasks already awake
+    exec::yield_cpu().await // second pass lets new task run
 }
 
 async fn task_set_a_flag_then_halt(flag: &AtomicBool) -> Infallible {
@@ -193,7 +195,7 @@ async fn task_set_a_flag_then_halt(flag: &AtomicBool) -> Infallible {
 }
 
 async fn block_forever() -> Infallible {
-    let notify = lilos::exec::Notify::new();
+    let notify = exec::Notify::new();
     loop {
         notify.until(|| false).await;
     }
