@@ -68,31 +68,35 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use pin_project_lite::pin_project;
 use scopeguard::defer;
 
 use crate::atomic::AtomicArithExt;
 use crate::exec::noop_waker;
 use crate::list::List;
 
-/// Holds a `T` that can be accessed from multiple concurrent futures/tasks, but
-/// only one at a time.
-///
-/// This implementation is more efficient than a spin-lock, because when the
-/// mutex is contended, all competing tasks but one register themselves for
-/// waking when the mutex is freed. Thus, nobody needs to spin.
-///
-/// When the mutex is unlocked, the task doing the unlocking will check the
-/// mutex's wait list and release the oldest task on it.
-#[derive(Debug)]
-pub struct Mutex<T: ?Sized> {
-    /// Stores 0 when unlocked, 1 when locked.
-    state: AtomicUsize,
-    /// Accumulates the wakers for all tasks that have attempted to obtain this
-    /// mutex while it was locked.
-    waiters: List<()>,
-    /// The contents of the mutex. Safe to access only when `state` is
-    /// atomically flipped 0->1.
-    value: UnsafeCell<T>,
+pin_project! {
+    /// Holds a `T` that can be accessed from multiple concurrent futures/tasks,
+    /// but only one at a time.
+    ///
+    /// This implementation is more efficient than a spin-lock, because when the
+    /// mutex is contended, all competing tasks but one register themselves for
+    /// waking when the mutex is freed. Thus, nobody needs to spin.
+    ///
+    /// When the mutex is unlocked, the task doing the unlocking will check the
+    /// mutex's wait list and release the oldest task on it.
+    #[derive(Debug)]
+    pub struct Mutex<T: ?Sized> {
+        // Stores 0 when unlocked, 1 when locked.
+        state: AtomicUsize,
+        // Accumulates the wakers for all tasks that have attempted to obtain this
+        // mutex while it was locked.
+        #[pin]
+        waiters: List<()>,
+        // The contents of the mutex. Safe to access only when `state` is
+        // atomically flipped 0->1.
+        value: UnsafeCell<T>,
+    }
 }
 
 impl<T> Mutex<T> {
@@ -124,7 +128,7 @@ impl<T> Mutex<T> {
         // Safety: List::finish_init is safe if our _own_ safety contract is
         // upheld.
         unsafe {
-            List::finish_init(this.waiters_mut());
+            List::finish_init(this.project().waiters);
         }
     }
 
@@ -162,7 +166,8 @@ impl<T> Mutex<T> {
     /// might do this if you have, for instance, used `forget` on the
     /// `MutexGuard` for some reason.
     pub unsafe fn unlock(self: Pin<&Self>) {
-        if self.waiters().wake_one() {
+        let p = self.project_ref();
+        if p.waiters.wake_one() {
             // Someone was waiting. We will leave the state as taken to ensure
             // that no interloper can steal the mutex from the new rightful
             // owner before that owner is polled next.
@@ -224,7 +229,8 @@ impl<T> Mutex<T> {
         // We'd like to put our name on the wait list, please.
         create_node!(wait_node, (), noop_waker());
 
-        self.waiters().insert_and_wait_with_cleanup(
+        let p = self.project_ref();
+        p.waiters.insert_and_wait_with_cleanup(
             wait_node.as_mut(),
             || {
                 // Safety: if we are evicted from the wait list, which is
@@ -265,16 +271,6 @@ impl<T> Mutex<T> {
     unsafe fn contents_mut(&self) -> &mut T {
         let ptr = self.value.get();
         unsafe { &mut *ptr }
-    }
-
-    fn waiters_mut(self: Pin<&mut Self>) -> Pin<&mut List<()>> {
-        // Safety: this is a structural pin projection.
-        unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).waiters) }
-    }
-
-    fn waiters(self: Pin<&Self>) -> Pin<&List<()>> {
-        // Safety: this is a structural pin projection.
-        unsafe { Pin::map_unchecked(self, |s| &s.waiters) }
     }
 }
 
@@ -346,7 +342,8 @@ impl<T> Mutex<CancelSafe<T>> {
         // We'd like to put our name on the wait list, please.
         create_node!(wait_node, (), noop_waker());
 
-        self.waiters().insert_and_wait_with_cleanup(
+        let p = self.project_ref();
+        p.waiters.insert_and_wait_with_cleanup(
             wait_node.as_mut(),
             || {
                 // Safety: if we are evicted from the wait list, which is
