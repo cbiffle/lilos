@@ -170,30 +170,14 @@ pub(crate) use cheap_assert;
 #[macro_use]
 pub mod list;
 pub mod exec;
+pub mod util;
+pub mod atomic;
+
 #[cfg(feature = "systick")]
 pub mod time;
-
 #[cfg(feature = "mutex")]
 pub mod mutex;
 #[cfg(feature = "spsc")]
 pub mod spsc;
 #[cfg(feature = "handoff")]
 pub mod handoff;
-
-pub mod atomic;
-
-use core::marker::PhantomData;
-
-/// Zero-sized marker type that can be included to ensure that a data structure
-/// is not automatically made `Sync` (i.e. safe for sharing across threads).
-///
-/// A type that includes this may still be inferred as `Send`.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct NotSyncMarker(PhantomData<core::cell::Cell<()>>);
-
-/// Zero-sized marker type that can be included to ensure that a data structure
-/// is not automatically made `Send` (i.e. safe for transfer across threads).
-///
-/// This also blocks `Sync`.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct NotSendMarker(PhantomData<*const ()>);

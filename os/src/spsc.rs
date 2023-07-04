@@ -41,6 +41,7 @@ use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::exec::Notify;
+use crate::util::NotSyncMarker;
 
 /// A single-producer, single-consumer queue. The `Queue` struct contains the
 /// controlling information for the queue overall, and _borrows_ the storage.
@@ -104,8 +105,8 @@ impl<'s, T> Queue<'s, T> {
     /// later -- that's fine.
     pub fn split(&mut self) -> (Push<'_, T>, Pop<'_, T>) {
         (
-            Push { q: self, _marker: crate::NotSyncMarker::default() },
-            Pop { q: self, _marker: crate::NotSyncMarker::default() },
+            Push { q: self, _marker: NotSyncMarker::default() },
+            Pop { q: self, _marker: NotSyncMarker::default() },
         )
     }
 
@@ -150,7 +151,7 @@ impl<T> Drop for Queue<'_, T> {
 #[derive(Debug)]
 pub struct Push<'a, T> {
     q: &'a Queue<'a, T>,
-    _marker: crate::NotSyncMarker,
+    _marker: NotSyncMarker,
 }
 
 impl<'q, T> Push<'q, T> {
@@ -310,7 +311,7 @@ impl<'q, T> Push<'q, T> {
 #[derive(Debug)]
 pub struct Pop<'a, T> {
     q: &'a Queue<'a, T>,
-    _marker: crate::NotSyncMarker,
+    _marker: NotSyncMarker,
 }
 
 impl<T> Pop<'_, T> {

@@ -132,8 +132,7 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
-
-use crate::NotSendMarker;
+use crate::util::NotSendMarker;
 
 /// A member of a list.
 ///
