@@ -15,7 +15,7 @@ default-target = "thumbv7em-none-eabihf"
 
 [features]
 default = ["mutex", "spsc", "handoff", "systick"]
-mutex = []
+mutex = ["scopeguard"]
 spsc = []
 systick = []
 handoff = ["scopeguard"]
