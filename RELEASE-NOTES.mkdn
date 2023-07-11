@@ -15,6 +15,11 @@
 - Removed operations that were marked as deprecated during the 0.3.0 series:
   `spsc::Push::push`.
 
+- The `handoff` module is no longer available by default. If you want it,
+  request it by enabling the the `handoff` Cargo feature. (It's incredibly
+  useful, but has some gotchas, so I wanted to make it a little harder to
+  reach.)
+
 ## Version 0.3.6
 
 - Fixed bug that meant `mutex` wouldn't build if you didn't also have `handoff`
