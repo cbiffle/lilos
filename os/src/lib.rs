@@ -165,6 +165,7 @@ macro_rules! cheap_assert {
         if !$x { panic!(); };
     }
 }
+#[allow(unused_imports)]
 pub(crate) use cheap_assert;
 
 #[macro_use]

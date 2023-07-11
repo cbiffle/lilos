@@ -121,25 +121,26 @@
 use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
-use core::ops::{Add, AddAssign};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use pin_project_lite::pin_project;
 
-use crate::cheap_assert;
 use crate::atomic::{AtomicExt, AtomicArithExt};
 
-#[cfg(feature = "systick")]
-use crate::list::List;
-use crate::time::Millis;
-#[cfg(feature = "systick")]
-use crate::time::TickTime;
-#[cfg(feature = "systick")]
-use core::sync::atomic::AtomicPtr;
-#[cfg(feature = "systick")]
-use core::time::Duration;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "systick")] {
+        use core::ops::{Add, AddAssign};
+
+        use crate::cheap_assert;
+        use crate::list::List;
+        use crate::time::Millis;
+        use crate::time::TickTime;
+        use core::sync::atomic::AtomicPtr;
+        use core::time::Duration;
+    }
+}
 
 /// Accumulates bitmasks from wakers as they are invoked. The executor
 /// atomically checks and clears this at each iteration.
@@ -783,6 +784,7 @@ static TIMER_LIST: AtomicPtr<List<TickTime>> =
 
 /// Panics if called from an interrupt service routine (ISR). This is used to
 /// prevent OS features that are unavailable to ISRs from being used in ISRs.
+#[cfg(feature = "systick")]
 fn assert_not_in_isr() {
     let psr_value = cortex_m::register::apsr::read().bits();
     // Bottom 9 bits are the exception number, which are 0 in Thread mode.
@@ -945,6 +947,7 @@ pub fn sleep_for<D>(d: D) -> impl Future<Output = ()>
 ///
 /// The wrapped future is _not_ immediately dropped if the timeout expires. It
 /// will be dropped when you drop the wrapped version.
+#[cfg(feature = "systick")]
 pub fn with_deadline<F>(deadline: TickTime, code: F) -> impl Future<Output = Option<F::Output>>
     where F: Future,
 {
@@ -962,6 +965,7 @@ pub fn with_deadline<F>(deadline: TickTime, code: F) -> impl Future<Output = Opt
 /// as the deadline for the returned future.
 ///
 /// See [`with_deadline`] for more details.
+#[cfg(feature = "systick")]
 pub fn with_timeout<D, F>(timeout: D, code: F) -> impl Future<Output = Option<F::Output>>
     where F: Future,
           TickTime: Add<D, Output = TickTime>,
@@ -969,6 +973,7 @@ pub fn with_timeout<D, F>(timeout: D, code: F) -> impl Future<Output = Option<F:
     with_deadline(TickTime::now() + timeout, code)
 }
 
+#[cfg(feature = "systick")]
 pin_project! {
     /// A future-wrapper that gates polling a future `B` on whether another
     /// future `A` has resolved.
@@ -985,6 +990,7 @@ pin_project! {
     }
 }
 
+#[cfg(feature = "systick")]
 impl<A, B> Future for TimeLimited<A, B>
     where A: Future<Output = ()>,
           B: Future,
