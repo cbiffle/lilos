@@ -2,6 +2,16 @@
 
 ## Version x.y.z (in progress)
 
+- Totally reworked the Mutex API to further improve robustness in the face of
+  cancellation.
+  - The basic locking operation `lock` (and its friend `try_lock`) now return a
+    "permit" that can be used to do one synchronous thing to the guarded data.
+    (This operation was named `perform`/`try_perform` in 0.3.)
+  - If you need to access the guarded data on either side of an `await` point,
+    the `lock_asserting_cancel_safe` operation becomes available if you opt-in.
+    (This operation was named `lock` in all prior versions, but was renamed to
+    make it harder to grab by accident and easier to spot in code review.)
+
 ## Version 0.3.6
 
 - Fixed bug that meant `mutex` wouldn't build if you didn't also have `handoff`

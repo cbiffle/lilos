@@ -7,48 +7,55 @@
 //!
 //! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
 //!
-//! # `lock` vs `perform`
+//! # `lock` vs `lock_asserting_cancel_safe`
 //!
 //! This mutex API is subtly different from most other async mutex APIs in that
-//! it does _not_ expose an RAII-style mutex-guard-based `lock` operation by
-//! default. By default, the operation you get is `perform`. There is a very
-//! good reason for this.
+//! its default `lock` operation does _not_ return a "smart pointer" style mutex
+//! guard that can `Deref` to access the guarded data. Instead, by default,
+//! locking this mutex only grants you the ability to do a single action with
+//! the guarded data, without being able to `await` during the action. There is
+//! a very good reason for this, but it's subtle.
 //!
-//! `perform` takes a function of your choice as an argument, and when it
-//! successfully locks the mutex, it will apply that function and unlock. The
-//! function must be a normal Rust `fn`, and _not_ an `async fn`. This means
-//! that there is no opportunity to `await` with the mutex locked.
+//! You'd use this default `lock` API like this:
+//!
+//! ```ignore
+//! some_mutex.lock().await.perform(|data| data.squirrels += 1);
+//! ```
+//!
+//! That is, you call `.lock().await` to block until the mutex is yours, and
+//! then call `perform` on the result to access the guarded data. The function
+//! provided to `perform` must be a normal Rust `fn`, and _not_ an `async fn`.
+//! The mutex is released as soon as `perform` runs your function. This means
+//! there is no way to make alterations to the guarded data, `await`, and then
+//! try and make more.
 //!
 //! This helps to avoid a common implementation mistake in software using
 //! mutexes: assuming that you can temporarily violate invariants on the data
-//! guarded by the mutex, but `await`ing (and thus accepting possible
-//! cancellation) while those invariants are still being violated. This can
-//! cause the next observer of the guarded data to find the data in an invalid
-//! state, often leading to panics -- but _not_ panics in the code that had the
-//! bug!
+//! guarded by the mutex because you will restore things before you unlock it --
+//! but then `await`ing (and thus accepting possible cancellation) while those
+//! invariants are still being violated. This can cause the next observer of the
+//! guarded data to find the data in an invalid state, often leading to panics
+//! -- but _not_ panics in the code that had the bug! This makes the bug very
+//! difficult to track down.
 //!
-//! Because that's annoying, you have to opt-in to API that lets you make the
-//! mistake. In many cases it's perfectly safe to opt-in to that, because the
-//! mistake can't actually happen -- if the type contained within the Mutex
-//! guards its own invariants and can't ever be in an invalid state, then you're
-//! not at risk.
+//! To make this class of bugs harder to write, the default `lock` operation on
+//! this mutex doesn't allow you to access the guarded data on two sides of an
+//! `await` point.
 //!
-//! However, some amount of application context is needed to judge whether a
-//! type can actually protect all its invariants. For instance, in one
-//! application's `Mutex<Option<T>>`, the application may never expect to leave
-//! `None` in there when the `Mutex` is unlocked -- but another application may
-//! be just fine with that. For this reason, the ability to leave a mutex locked
-//! across await points is _not_ an attribute of the contained type `T`. It's
-//! instead implemented using a wrapper type, `CancelSafe`.
+//! But because this doesn't cover every use case, and in keeping with the
+//! broader OS philosophy of letting you do potentially dangerous but powerful
+//! things, there's an _opt-in_ API that provides the traditional, smart-pointer
+//! style interface. To use this API, you must create your mutex in a way that
+//! asserts that you intend to keep its contents valid across any possible
+//! cancellation point. As long as you do that, this API won't cause you any
+//! problems.
 //!
-//! To declare a `Mutex` that includes the `lock` and `try_lock` operation,
-//! write it as `Mutex<CancelSafe<T>>` instead of just `Mutex<T>`.
-//!
-//! The `perform`-based API also prevents you from blocking to wait on another
-//! `Mutex` while you have one locked, which on the one hand makes certain
-//! classes of deadlock impossible, but on the other hand can be pretty
-//! limiting. If you need to lock a series of `Mutex`es with blocking, make sure
-//! the contents of all but the innermost are `CancelSafe`!
+//! To assert this, wrap the guarded data in the [`CancelSafe`] wrapper type,
+//! and write the mutex type as `Mutex<CancelSafe<T>>` instead of just
+//! `Mutex<T>`. Then two new operations become available:
+//! [`Mutex::lock_asserting_cancel_safe`] and
+//! [`Mutex::try_lock_asserting_cancel_safe`]. These work in the traditional way
+//! for more complex use cases.
 //!
 //! # Implementation details
 //!
@@ -60,8 +67,8 @@
 //! However, in exchange for this property, mutexes must be pinned, which makes
 //! using them slightly more awkward. See the macros
 //! [`create_mutex!`][crate::create_mutex] and
-//! [`create_static_mutex!`][crate::create_static_mutex] for convenient shorthand (or as examples of how to
-//! do it yourself).
+//! [`create_static_mutex!`][crate::create_static_mutex] for convenient
+//! shorthand (or as examples of how to do it yourself).
 
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
@@ -69,7 +76,6 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use pin_project_lite::pin_project;
-use scopeguard::defer;
 
 use crate::atomic::AtomicArithExt;
 use crate::exec::noop_waker;
@@ -132,19 +138,21 @@ impl<T> Mutex<T> {
         }
     }
 
-    /// Locks this mutex immediately if it is free, and applies the operation
-    /// `op` to its contents before unlocking it. This is a non-blocking version
-    /// of [`Mutex::perform`]; see that function for a more detailed discussion
-    /// of why this takes a closure.
+    /// Attempts to lock this mutex and return an `ActionPermit` if the mutex is
+    /// free, but without blocking if the mutex is not free.
     ///
-    /// If the mutex is free, returns the value returned from `op`, wrapped in
-    /// `Some`.
+    /// If the mutex is free, this returns `Some(permit)`, where `permit` is an
+    /// `ActionPermit` granting the ability to perform a single synchronous
+    /// action against the guarded data.
     ///
     /// If the mutex is _not_ free, returns `None`.
-    pub fn try_perform<R>(self: Pin<&Self>, op: impl FnOnce(&mut T) -> R) -> Option<R> {
+    ///
+    /// This is the cheaper, non-blocking version of [`Mutex::lock`].
+    pub fn try_lock(self: Pin<&Self>) -> Option<ActionPermit<'_, T>> {
         if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
-            defer! { unsafe { self.unlock(); } }
-            Some(op(unsafe { self.contents_mut() }))
+            Some(ActionPermit {
+                mutex: self,
+            })
         } else {
             None
         }
@@ -177,53 +185,41 @@ impl<T> Mutex<T> {
         }
     }
 
-    /// Returns a future that will attempt to obtain the mutex each time it gets
-    /// polled, completing only when it succeeds. When the future resolves, it
-    /// will return the value returned by your closure (`op`).
-    ///
-    /// When the future is first polled after it becomes the owner of the mutex,
-    /// it will immediately apply `op` to the contents of the mutex, unlock the
-    /// mutex, and then resolve to the value returned from `op`. This is
-    /// designed to let you perform state inspection or updates of the contents
-    /// of the mutex, without having the opportunity to `await` (`op` is a
-    /// normal `fn` closure, not an `async` block). This dodges the cancel
-    /// safety implications of the more general `MutexGuard` pattern, which can
-    /// be hard to reason about. (However, that pattern is still available, if
-    /// you opt in; see [`Mutex::lock`].)
+    /// Returns a future that will attempt to lock this mutex, resolving only
+    /// when it succeeds. When it resolves, it will produce an `ActionPermit`,
+    /// granting the ability to perform one synchronous closure to the guarded
+    /// data.
     ///
     /// If the mutex is free at the time of the first `poll`, the future will
-    /// resolve cheaply without blocking, immediately calling `op` without
-    /// messing around with any wait-lists and such. This makes using an
-    /// uncontended `Mutex` very cheap.
+    /// resolve cheaply without blocking. Otherwise, it will join the mutex's
+    /// wait-list to avoid waking its task until its turn comes up.
+    ///
+    /// This is the more expensive, blocking version of [`Mutex::try_lock`].
+    ///
+    /// # This does not return a smart pointer
+    ///
+    /// This operation doesn't return a "smart pointer" mutex guard that can
+    /// `Deref` to `T`, because that style of API acts as a "bug generator" in
+    /// async Rust code that hasn't carefully thought about cancellation. That
+    /// style of API is still available with restrictions, however. See the docs
+    /// on [`Mutex`] for more details.
     ///
     /// # Cancellation
     ///
-    /// **Cancel safety:** Strict, with a caveat about the closure you pass in.
+    /// **Cancel safety:** Strict.
     ///
-    /// Cancellation behavior for the returned future is slightly subtle, but
-    /// does the right thing in almost all circumstances:
+    /// Dropping the future before it resolves loses its place in line. Dropping
+    /// it after the mutex is locked passes ownership to the next waiter.
     ///
-    /// - If dropped before it's polled _at all_ it does essentially nothing.
-    /// - If dropped once it's added itself to the wait list for the mutex, but
-    ///   before it has been given the mutex, it will detach from the wait list.
-    /// - If dropped after it has been given the mutex, but before it's been
-    ///   polled (and thus given a chance to notice that), it will wake the next
-    ///   waiter on the mutex wait list.
-    ///
-    /// This means the only cancel-safety thing to think about here is that
-    /// `op`, the closure you supply, will be dropped on cancellation. If you
-    /// `move` resources into the closure, they will be lost. Depending on
-    /// context this could be just fine, or could imply data loss. If you need
-    /// to add a `Drop` behavior to your closure, you can do it most easily with
-    /// a crate like `scopeguard`.
-    pub async fn perform<R>(self: Pin<&Self>, op: impl FnOnce(&mut T) -> R) -> R {
+    /// This API is designed to make it easy for you to implement further
+    /// strict-cancel-safe operations using `Mutex`.
+    pub async fn lock(self: Pin<&Self>) -> ActionPermit<'_, T> {
         // Complete synchronously if the mutex is uncontended.
         // TODO this is repeated above the loop to avoid the cost of re-setting
         // up the wait node in every loop iteration, and to avoid setting it up
         // in the uncontended case. Is this premature optimization?
-        if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
-            defer! { unsafe { self.unlock(); } }
-            return op(unsafe { self.contents_mut() });
+        if let Some(perm) = self.try_lock() {
+            return perm;
         }
 
         // We'd like to put our name on the wait list, please.
@@ -249,8 +245,9 @@ impl<T> Mutex<T> {
         // `try_lock` which expects to find the flag clear.
         debug_assert_eq!(self.state.load(Ordering::Acquire), 1);
 
-        defer! { unsafe { self.unlock(); } }
-        op(unsafe { self.contents_mut() })
+        ActionPermit {
+            mutex: self,
+        }
     }
 
     unsafe fn contents(&self) -> &T {
@@ -274,12 +271,53 @@ impl<T> Mutex<T> {
     }
 }
 
+/// A token that grants the ability to run one closure against the data guarded
+/// by a [`Mutex`].
+///
+/// This is produced by the `lock` family of operations on [`Mutex`] and is
+/// intended to provide a more robust API than the traditional "smart pointer"
+/// mutex guard.
+#[derive(Debug)]
+pub struct ActionPermit<'a, T> {
+    mutex: Pin<&'a Mutex<T>>,
+}
+
+impl<T> ActionPermit<'_, T> {
+    /// Runs a closure with access to the guarded data, consuming the permit in
+    /// the process.
+    pub fn perform<R>(self, action: impl FnOnce(&mut T) -> R) -> R {
+        // Safety: we are by definition the holder of the mutex, so we can
+        // use the `contents_mut` operation to access the guarded data as
+        // long as we only have one such mutable reference outstanding.
+        action(unsafe { self.mutex.contents_mut() })
+
+        // Note: we're relying on the Drop impl for `self` to unlock the mutex.
+    }
+}
+
+impl<T> Drop for ActionPermit<'_, T> {
+    fn drop(&mut self) {
+        // Safety: we are by definition the holder of the mutex, so we can
+        // use the normally unsafe `unlock` operation to avoid repeating
+        // code.
+        unsafe {
+            self.mutex.unlock();
+        }
+    }
+}
+
 impl<T> Mutex<CancelSafe<T>> {
     /// Locks this mutex immediately if it is free, and returns a guard for
-    /// holding it locked.
+    /// keeping it locked, even across `await` points -- which means you're
+    /// implicitly asserting that whatever you're about to do maintains
+    /// invariants across cancel points.
     ///
     /// If the mutex is _not_ free, returns `None`.
-    pub fn try_lock(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
+    ///
+    /// This API can be error-prone, which is why it's only available if you've
+    /// asserted your guarded data is `CancelSafe`. When possible, see if you
+    /// can do the job using [`Mutex::try_lock`] instead.
+    pub fn try_lock_asserting_cancel_safe(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
         if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
             Some(MutexGuard { mutex: self })
         } else {
@@ -287,39 +325,40 @@ impl<T> Mutex<CancelSafe<T>> {
         }
     }
 
-    /// Returns a future that will attempt to obtain the mutex each time it gets
-    /// polled, completing only when it succeeds. When the future resolves it
-    /// will produce a `MutexGuard`, a resource token that represents
-    /// successfully locking a mutex, and grants its holder access to the
-    /// guarded data.
+    /// Returns a future that will attempt to lock the mutex, resolving only
+    /// when it succeeds. When it resolves, it will a `MutexGuard`, a "smart
+    /// pointer" resource token that represents successfully locking a mutex,
+    /// and grants its holder access to the guarded data -- even across an
+    /// `await` point. This means by using this operation, you're asserting that
+    /// what you're about to do maintains any invariants across cancel points.
     ///
     /// If the mutex is free at the time of the first `poll`, the future will
     /// resolve cheaply without blocking.
     ///
     /// # This operation is opt-in
     ///
-    /// `lock` is not available on mutexes unless you wrap the contents in the
-    /// [`CancelSafe`] marker type. This is because the traditional Rust mutex
-    /// API pattern of returning a guard can introduce surprising problems in
-    /// `async` code. See the docs on [`Mutex`] about `lock` vs `perform` for
-    /// more details.
+    /// `lock_asserting_cancel_safe` is not available on mutexes unless you wrap
+    /// the contents in the [`CancelSafe`] marker type. This is because the
+    /// traditional Rust mutex API pattern of returning a guard can introduce
+    /// surprising problems in `async` code. See the docs on [`Mutex`] about
+    /// `lock` vs `lock_asserting_cancel_safe` for more details.
     ///
-    /// Consider whether you can use the [`Mutex::perform`] operation instead.
+    /// Consider whether you can use the [`Mutex::lock`] operation instead.
     ///
     /// # Cancellation
     ///
     /// **Cancel safety:** Strict. No, really. Even with the warning above.
     ///
-    /// The future returned by `lock`, and the `MutexGuard` it resolves to, can
-    /// both be dropped/cancelled at any time without side effect, and simply
-    /// calling `lock` again works to retry. The reason this API is behind a
-    /// guard rail is that that statement isn't _sufficient:_ yeah, this is
-    /// technically strictly cancel-safe, but it makes it _really easy_ for you
-    /// to write code on top of it that _isn't._ (It would be great if
-    /// cancel-safety were purely compositional, so writing a program in terms
-    /// of all cancel-safe operations is automatically cancel-safe; this is not
-    /// the case.) So, please read the [`Mutex`] docs carefully before deciding
-    /// to use this.
+    /// The future returned by `lock_asserting_cancel_safe`, and the
+    /// `MutexGuard` it resolves to, can both be dropped/cancelled at any time
+    /// without side effect, and simply calling `lock` again works to retry. The
+    /// reason this API is behind a guard rail is that that statement isn't
+    /// _sufficient:_ yeah, this is technically strictly cancel-safe, but it
+    /// makes it _really easy_ for you to write code on top of it that _isn't._
+    /// (It would be great if cancel-safety were purely compositional, so
+    /// writing a program in terms of all cancel-safe operations is
+    /// automatically cancel-safe; this is not the case.) So, please read the
+    /// [`Mutex`] docs carefully before deciding to use this.
     ///
     /// Cancellation behavior for the returned future is slightly subtle, but
     /// does the right thing for all cases.
@@ -330,12 +369,12 @@ impl<T> Mutex<CancelSafe<T>> {
     /// - If dropped after it has been given the mutex, but before it's been
     ///   polled (and thus given a chance to notice that), it will wake the next
     ///   waiter on the mutex wait list.
-    pub async fn lock(self: Pin<&Self>) -> MutexGuard<'_, T> {
+    pub async fn lock_asserting_cancel_safe(self: Pin<&Self>) -> MutexGuard<'_, T> {
         // Complete synchronously if the mutex is uncontended.
         // TODO this is repeated above the loop to avoid the cost of re-setting
         // up the wait node in every loop iteration, and to avoid setting it up
         // in the uncontended case. Is this premature optimization?
-        if let Some(guard) = self.try_lock() {
+        if let Some(guard) = self.try_lock_asserting_cancel_safe() {
             return guard;
         }
 
@@ -370,6 +409,16 @@ impl<T> Mutex<CancelSafe<T>> {
 /// Newtype to wrap the contents of a `Mutex` when you know, in the context of
 /// the current application, that it is okay to unlock this mutex at _any_
 /// cancellation point.
+///
+/// This is a wrapper, rather than a `trait` implemented by certain types,
+/// because the property it asserts is not a property of a type at all -- it's a
+/// property of _context._ For instance, consider `Mutex<Option<T>>`. One
+/// application may be just fine with that mutex containing `None`, while
+/// another may only remove the contents temporarily to act on it, but expect it
+/// to be restored to `Some` before unlocking. Because both these use cases are
+/// valid, we can't universally label `Option` as either "cancellation friendly"
+/// or "not cancellation friendly," and must leave it up to the code that
+/// manages the mutex itself.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Ord, PartialOrd)]
 pub struct CancelSafe<T>(pub T);
 
@@ -470,6 +519,10 @@ macro_rules! create_static_mutex {
 }
 
 /// Smart pointer representing successful locking of a mutex.
+///
+/// This is produced by the `lock_asserting_cancel_safe` family of operations on
+/// [`Mutex`], which are only available if you opt in using the [`CancelSafe`]
+/// type.
 #[derive(Debug)]
 pub struct MutexGuard<'a, T> {
     mutex: Pin<&'a Mutex<CancelSafe<T>>>,
