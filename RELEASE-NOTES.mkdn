@@ -2,6 +2,12 @@
 
 ## Version x.y.z (in progress)
 
+## Version 0.3.6
+
+- Fixed bug that meant `mutex` wouldn't build if you didn't also have `handoff`
+  enabled. Applications relying on default features wouldn't hit this since
+  they're both on by default.
+
 - Added `exec::with_deadline` and `exec::with_timeout`, more convenient methods
   for time-limiting the execution of a future. Compared to the traditional
   method of using `select_biased!`, these functions are significantly less
