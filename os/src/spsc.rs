@@ -267,41 +267,6 @@ impl<'q, T> Push<'q, T> {
         self.q.pushed.notify();
         Ok(())
     }
-
-    /// Produces a future that resolves when `value` has been pushed into the
-    /// queue, and not before. This implies that at least one free slot must
-    /// open in the queue -- either by never having been filled, or by being
-    /// freed up by a pop -- for the future to resolve.
-    ///
-    /// Note that the future maintains an exclusive borrow over `self` until
-    /// that happens -- so just as there can only be one `Push` endpoint for a
-    /// queue at any given time, there can only be one outstanding `push` future
-    /// for that endpoint. This means we don't have to define the order of
-    /// competing pushes, moving concerns about fairness to compile time.
-    ///
-    /// # Cancellation
-    ///
-    /// **Cancel Safety:** Weak.
-    ///
-    /// The future returned by `push` takes ownership of `value` immediately. If
-    /// the future is dropped before `value` makes it into the queue, `value` is
-    /// dropped along with it. While this behavior is well-defined and
-    /// predictable (thus my "weak cancel-safe" label) it is probably not what
-    /// you want, and so this operation is currently deprecated. Please use
-    /// [`Push::reserve`] instead.
-    #[deprecated = "please use Push::reserve to avoid cancellation bugs"]
-    pub async fn push(&mut self, value: T) {
-        let mut value = Some(value);
-        self.q.popped.until(move || {
-            match self.try_push(value.take().unwrap()) {
-                Ok(()) => true,
-                Err(revalue) => {
-                    value = Some(revalue);
-                    false
-                }
-            }
-        }).await
-    }
 }
 
 /// Queue endpoint for popping data. Access to a `Pop` _only_ gives you the

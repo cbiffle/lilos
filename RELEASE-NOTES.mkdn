@@ -12,6 +12,9 @@
     (This operation was named `lock` in all prior versions, but was renamed to
     make it harder to grab by accident and easier to spot in code review.)
 
+- Removed operations that were marked as deprecated during the 0.3.0 series:
+  `spsc::Push::push`.
+
 ## Version 0.3.6
 
 - Fixed bug that meant `mutex` wouldn't build if you didn't also have `handoff`
