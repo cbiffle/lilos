@@ -17,13 +17,13 @@ pub async fn test_static() {
 async fn test_mutex_wherever(mutex: Pin<&Mutex<CancelSafe<usize>>>) {
     futures::join!(
         async {
-            let mut g = mutex.lock_asserting_cancel_safe().await;
+            let mut g = mutex.lock_assuming_cancel_safe().await;
             // Sleep a bit to ensure that the mutex experiences contention.
             lilos::exec::sleep_for(A_BIT).await;
             *g += 1;
         },
         async {
-            let mut g = mutex.lock_asserting_cancel_safe().await;
+            let mut g = mutex.lock_assuming_cancel_safe().await;
             lilos::exec::sleep_for(A_BIT).await;
             *g += 2;
         },

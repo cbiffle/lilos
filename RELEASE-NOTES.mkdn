@@ -8,7 +8,7 @@
     "permit" that can be used to do one synchronous thing to the guarded data.
     (This operation was named `perform`/`try_perform` in 0.3.)
   - If you need to access the guarded data on either side of an `await` point,
-    the `lock_asserting_cancel_safe` operation becomes available if you opt-in.
+    the `lock_assuming_cancel_safe` operation becomes available if you opt-in.
     (This operation was named `lock` in all prior versions, but was renamed to
     make it harder to grab by accident and easier to spot in code review.)
 

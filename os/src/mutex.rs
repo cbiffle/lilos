@@ -7,7 +7,7 @@
 //!
 //! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
 //!
-//! # `lock` vs `lock_asserting_cancel_safe`
+//! # `lock` vs `lock_assuming_cancel_safe`
 //!
 //! This mutex API is subtly different from most other async mutex APIs in that
 //! its default `lock` operation does _not_ return a "smart pointer" style mutex
@@ -53,8 +53,8 @@
 //! To assert this, wrap the guarded data in the [`CancelSafe`] wrapper type,
 //! and write the mutex type as `Mutex<CancelSafe<T>>` instead of just
 //! `Mutex<T>`. Then two new operations become available:
-//! [`Mutex::lock_asserting_cancel_safe`] and
-//! [`Mutex::try_lock_asserting_cancel_safe`]. These work in the traditional way
+//! [`Mutex::lock_assuming_cancel_safe`] and
+//! [`Mutex::try_lock_assuming_cancel_safe`]. These work in the traditional way
 //! for more complex use cases.
 //!
 //! # Implementation details
@@ -310,14 +310,15 @@ impl<T> Mutex<CancelSafe<T>> {
     /// Locks this mutex immediately if it is free, and returns a guard for
     /// keeping it locked, even across `await` points -- which means you're
     /// implicitly asserting that whatever you're about to do maintains
-    /// invariants across cancel points.
+    /// invariants across cancel points. The `Mutex` will assume you're right
+    /// about that.
     ///
     /// If the mutex is _not_ free, returns `None`.
     ///
     /// This API can be error-prone, which is why it's only available if you've
     /// asserted your guarded data is `CancelSafe`. When possible, see if you
     /// can do the job using [`Mutex::try_lock`] instead.
-    pub fn try_lock_asserting_cancel_safe(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
+    pub fn try_lock_assuming_cancel_safe(self: Pin<&Self>) -> Option<MutexGuard<'_, T>> {
         if self.state.fetch_or_polyfill(1, Ordering::Acquire) == 0 {
             Some(MutexGuard { mutex: self })
         } else {
@@ -331,17 +332,18 @@ impl<T> Mutex<CancelSafe<T>> {
     /// and grants its holder access to the guarded data -- even across an
     /// `await` point. This means by using this operation, you're asserting that
     /// what you're about to do maintains any invariants across cancel points.
+    /// The `Mutex` will assume you're right about that.
     ///
     /// If the mutex is free at the time of the first `poll`, the future will
     /// resolve cheaply without blocking.
     ///
     /// # This operation is opt-in
     ///
-    /// `lock_asserting_cancel_safe` is not available on mutexes unless you wrap
+    /// `lock_assuming_cancel_safe` is not available on mutexes unless you wrap
     /// the contents in the [`CancelSafe`] marker type. This is because the
     /// traditional Rust mutex API pattern of returning a guard can introduce
     /// surprising problems in `async` code. See the docs on [`Mutex`] about
-    /// `lock` vs `lock_asserting_cancel_safe` for more details.
+    /// `lock` vs `lock_assuming_cancel_safe` for more details.
     ///
     /// Consider whether you can use the [`Mutex::lock`] operation instead.
     ///
@@ -349,7 +351,7 @@ impl<T> Mutex<CancelSafe<T>> {
     ///
     /// **Cancel safety:** Strict. No, really. Even with the warning above.
     ///
-    /// The future returned by `lock_asserting_cancel_safe`, and the
+    /// The future returned by `lock_assuming_cancel_safe`, and the
     /// `MutexGuard` it resolves to, can both be dropped/cancelled at any time
     /// without side effect, and simply calling `lock` again works to retry. The
     /// reason this API is behind a guard rail is that that statement isn't
@@ -369,12 +371,12 @@ impl<T> Mutex<CancelSafe<T>> {
     /// - If dropped after it has been given the mutex, but before it's been
     ///   polled (and thus given a chance to notice that), it will wake the next
     ///   waiter on the mutex wait list.
-    pub async fn lock_asserting_cancel_safe(self: Pin<&Self>) -> MutexGuard<'_, T> {
+    pub async fn lock_assuming_cancel_safe(self: Pin<&Self>) -> MutexGuard<'_, T> {
         // Complete synchronously if the mutex is uncontended.
         // TODO this is repeated above the loop to avoid the cost of re-setting
         // up the wait node in every loop iteration, and to avoid setting it up
         // in the uncontended case. Is this premature optimization?
-        if let Some(guard) = self.try_lock_asserting_cancel_safe() {
+        if let Some(guard) = self.try_lock_assuming_cancel_safe() {
             return guard;
         }
 
@@ -520,7 +522,7 @@ macro_rules! create_static_mutex {
 
 /// Smart pointer representing successful locking of a mutex.
 ///
-/// This is produced by the `lock_asserting_cancel_safe` family of operations on
+/// This is produced by the `lock_assuming_cancel_safe` family of operations on
 /// [`Mutex`], which are only available if you opt in using the [`CancelSafe`]
 /// type.
 #[derive(Debug)]
