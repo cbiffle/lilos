@@ -218,7 +218,7 @@ fn usart_echo<'usart>(
 /// Echo receive task. Moves bytes from `usart` to `q`.
 async fn echo_rx(
     usart: &device::USART3,
-    mut q: spsc::Push<'_, u8>,
+    mut q: spsc::Pusher<'_, u8>,
 ) -> Infallible {
     loop {
         q.reserve().await.push(recv(usart).await);
@@ -228,7 +228,7 @@ async fn echo_rx(
 /// Echo transmit task. Moves bytes from `q` to `usart`.
 async fn echo_tx(
     usart: &device::USART3,
-    mut q: spsc::Pop<'_, u8>,
+    mut q: spsc::Popper<'_, u8>,
 ) -> Infallible  {
     loop {
         send(usart, q.pop().await).await;

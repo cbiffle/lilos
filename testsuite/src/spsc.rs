@@ -2,7 +2,7 @@ use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use lilos::atomic::AtomicExt;
-use lilos::spsc::{Pop, Push, Queue};
+use lilos::spsc::{Popper, Pusher, Queue};
 
 /// The easy case: a queue and its storage on the stack.
 pub async fn test_stack() {
@@ -55,7 +55,7 @@ async fn test_wherever(q: &mut Queue<'_, u8>) {
 /// This "test" just needs to compile, to verify that Push and Pop are indeed
 /// Send as promised.
 #[allow(dead_code)]
-fn compile_test_send(push: Push<'_, u8>, pop: Pop<'_, u8>) {
+fn compile_test_send(push: Pusher<'_, u8>, pop: Popper<'_, u8>) {
     fn is_send<T: Send>(_: &T) {}
     is_send(&push);
     is_send(&pop);

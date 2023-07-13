@@ -1,25 +1,25 @@
 //! A queue for moving data from one future/task into another.
 //!
 //! This is a "single-producer, single-consumer" queue that splits into separate
-//! `Push` and `Pop` endpoints -- at any given time, there is at most one of
+//! `Pusher` and `Popper` endpoints -- at any given time, there is at most one of
 //! each alive in your program, ensuring that pushes and pops are not coming
 //! from multiple directions.
 //!
 //! You create a queue by calling `Queue::new` and passing it a reference to its
 //! backing storage. To actually use the queue, however, you must call
-//! `Queue::split` to break it into two endpoints, `Push` and `Pop`. As their
-//! names suggest, `Push` can be used to push things into the queue, and `Pop`
-//! can be used to pop things out of it.
+//! `Queue::split` to break it into two endpoints, `Pusher` and `Popper`. As
+//! their names suggest, `Pusher` can be used to push things into the queue, and
+//! `Popper` can be used to pop things out of it.
 //!
-//! The `Push` and `Pop` can then be handed off to separate code paths, so long
-//! as they don't outlive the `Queue` and its storage. (The compiler will ensure
-//! this.)
+//! The `Pusher` and `Popper` can then be handed off to separate code paths, so
+//! long as they don't outlive the `Queue` and its storage. (The compiler will
+//! ensure this.)
 //!
 //! This queue uses the Rust type system to ensure that only one code path is
-//! attempting to push or pop the queue at any given time, because both `Push`
-//! and `Pop` endpoints borrow the central `Queue`, and an `async` operation to
-//! push or pop through an endpoint borrows that endpoint in turn. Neither
-//! `Push` nor `Pop` can be cloned or copied, ensuring the single-producer
+//! attempting to push or pop the queue at any given time, because both `Pusher`
+//! and `Popper` endpoints borrow the central `Queue`, and an `async` operation
+//! to push or pop through an endpoint borrows that endpoint in turn. Neither
+//! `Pusher` nor `Popper` can be cloned or copied, ensuring the single-producer
 //! single-consumer property.
 //!
 //! # Implementation
@@ -28,7 +28,7 @@
 //! implications:
 //! 
 //! 1. If you can arrange the lifetimes correctly (i.e. make the queue static)
-//!    it is actually safe to operate either Push or Pop from an ISR.
+//!    it is actually safe to operate either Pusher or Popper from an ISR.
 //! 2. It fills up at N-1 elements because one empty slot is used as a sentinel
 //!    to distinguish full from empty.
 //!
@@ -103,10 +103,10 @@ impl<'s, T> Queue<'s, T> {
     ///
     /// You can, however, drop the first pair of endpoints and make a new pair
     /// later -- that's fine.
-    pub fn split(&mut self) -> (Push<'_, T>, Pop<'_, T>) {
+    pub fn split(&mut self) -> (Pusher<'_, T>, Popper<'_, T>) {
         (
-            Push { q: self, _marker: NotSyncMarker::default() },
-            Pop { q: self, _marker: NotSyncMarker::default() },
+            Pusher { q: self, _marker: NotSyncMarker::default() },
+            Popper { q: self, _marker: NotSyncMarker::default() },
         )
     }
 
@@ -144,22 +144,22 @@ impl<T> Drop for Queue<'_, T> {
     }
 }
 
-/// Queue endpoint for pushing data. Access to a `Push` _only_ gives you the
+/// Queue endpoint for pushing data. Access to a `Pusher` _only_ gives you the
 /// right to push data and enquire about push-related properties.
 ///
 /// See the module docs for more details.
 #[derive(Debug)]
-pub struct Push<'a, T> {
+pub struct Pusher<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: NotSyncMarker,
 }
 
-impl<'q, T> Push<'q, T> {
-    // Implementation note: Push "owns" the head and does not need to be careful
-    // with its memory ordering, while the tail is "foreign" and must be
+impl<'q, T> Pusher<'q, T> {
+    // Implementation note: Pusher "owns" the head and does not need to be
+    // careful with its memory ordering, while the tail is "foreign" and must be
     // synchronized.
 
-    /// Checks if there is room to push at least one item. Because the `Push`
+    /// Checks if there is room to push at least one item. Because the `Pusher`
     /// endpoint has exclusive control over data movement into the queue, if
     /// this returns `true`, the condition will remain true until a `push` or
     /// `try_push` happens through `self`, or `self` is dropped.
@@ -173,16 +173,11 @@ impl<'q, T> Push<'q, T> {
         self.q.next_index(h) != t
     }
 
-    /// Checks if there is room to push at least one item, and if so, returns a
-    /// `Permit` that entitles its holder to that queue slot.
+    /// Checks if there is room to push at least one item, and if so, returns an
+    /// `Entry` that entitles its holder to that queue slot.
     ///
     /// If the queue is full, returns `None`.
-    ///
-    /// This operation is slightly less useful than [`Push::reserve`] because
-    /// `try_push` is slightly simpler to use, and doesn't risk data loss.
-    /// (Whereas `reserve` is specifically designed to fix a class of data loss
-    /// bugs.)
-    pub fn try_reserve(&mut self) -> Option<Permit<'q, T>> {
+    pub fn try_reserve(&mut self) -> Option<Entry<'q, T>> {
         let h = self.q.head.load(Ordering::Relaxed);
         let t = self.q.tail.load(Ordering::Acquire);
         let h_next = self.q.next_index(h);
@@ -200,7 +195,7 @@ impl<'q, T> Push<'q, T> {
         // this slot.)
         let maybeuninit = unsafe { &mut *unsafecell_ptr };
 
-        Some(Permit {
+        Some(Entry {
             maybeuninit,
             head: &self.q.head,
             h_next,
@@ -209,21 +204,21 @@ impl<'q, T> Push<'q, T> {
     }
 
     /// Produces a future that resolves when there is enough space in the queue
-    /// to push one element. It resolves into a [`Permit`], which entitles the
+    /// to push one element. It resolves into an [`Entry`], which entitles the
     /// holder to pushing an element without needing to check or `await`. This
     /// is a deliberate design choice -- it means you can cancel the future
     /// without losing the element you were trying to push.
     ///
-    /// The returned `Permit` borrows `self` exclusively. This means you must
-    /// use the `Permit`, or drop it, before you can request another. This
+    /// The returned `Entry` borrows `self` exclusively. This means you must
+    /// use the `Entry`, or drop it, before you can request another. This
     /// prevents a deadlock, where you wait for a second permit that will never
     /// emerge.
     ///
     /// The future produced by `reserve` also borrows `self` exclusively. This
     /// means you can't simultaneously have two futures waiting for permits from
-    /// the same `Push`. This wouldn't necessarily be a bad thing, but we need
+    /// the same `Pusher`. This wouldn't necessarily be a bad thing, but we need
     /// to maintain the exclusive borrow in order to pass it through to the
-    /// `Permit`.
+    /// `Entry`.
     ///
     /// # Cancellation
     ///
@@ -231,7 +226,7 @@ impl<'q, T> Push<'q, T> {
     ///
     /// This does basically nothing if cancelled (it is intrinsically
     /// cancel-safe).
-    pub async fn reserve<'s>(&'s mut self) -> Permit<'s, T> {
+    pub async fn reserve<'s>(&'s mut self) -> Entry<'s, T> {
         self.q.popped.until(|| self.try_reserve()).await
     }
 
@@ -262,32 +257,32 @@ impl<'q, T> Push<'q, T> {
         maybeuninit.write(value);
 
         // We can store instead of compare-exchange here because we are the only
-        // Push manipulating this field (see: &mut Self).
+        // Pusher manipulating this field (see: &mut Self).
         self.q.head.store(h_next, Ordering::Release);
         self.q.pushed.notify();
         Ok(())
     }
 }
 
-/// Queue endpoint for popping data. Access to a `Pop` _only_ gives you the
+/// Queue endpoint for popping data. Access to a `Popper` _only_ gives you the
 /// right to pop data and enquire about pop-related properties.
 ///
 /// See the module docs for more details.
 #[derive(Debug)]
-pub struct Pop<'a, T> {
+pub struct Popper<'a, T> {
     q: &'a Queue<'a, T>,
     _marker: NotSyncMarker,
 }
 
-impl<T> Pop<'_, T> {
-    // Implementation note: Pop "owns" the tail and does not need to be careful
-    // with its memory ordering, while the head is "foreign" and must be
+impl<T> Popper<'_, T> {
+    // Implementation note: Popper "owns" the tail and does not need to be
+    // careful with its memory ordering, while the head is "foreign" and must be
     // synchronized.
 
     /// Checks if there is at least one item available to pop from the queue.
     ///
-    /// Because the `Pop` endpoint has exclusive control over data movement out
-    /// of the queue, if this returns `true`, the condition will remain true
+    /// Because the `Popper` endpoint has exclusive control over data movement
+    /// out of the queue, if this returns `true`, the condition will remain true
     /// until a `pop` or `try_pop` happens through `self`, or `self` is dropped.
     ///
     /// If this returns `false`, of course, new items may appear at any time if
@@ -336,7 +331,7 @@ impl<T> Pop<'_, T> {
     /// future is polled after data has been pushed into the queue.
     ///
     /// Note that the future maintains an exclusive borrow over `self` until
-    /// that happens -- so just as there can only be one `Pop` endpoint for a
+    /// that happens -- so just as there can only be one `Popper` endpoint for a
     /// queue at any given time, there can only be one outstanding `pop` future
     /// for that endpoint. This means we don't have to define the order of
     /// competing pops, moving concerns about fairness to compile time.
@@ -353,27 +348,27 @@ impl<T> Pop<'_, T> {
     }
 }
 
-/// A "permit" giving its holder the right to push one element into a queue,
-/// without waiting.
+/// A reference to a free element in a queue, where you can deposit an element
+/// without checking or waiting.
 ///
-/// This is produced by [`Push::try_reserve`]/[`Push::reserve`] when they find
+/// This is produced by [`Pusher::try_reserve`]/[`Pusher::reserve`] when they find
 /// space available in the queue. The key property here is that producing a
-/// `Permit` does not, by itself, change the queue state -- you can turn around
-/// and `Drop` the `Permit` without losing data or pushing anything. This makes
+/// `Entry` does not, by itself, change the queue state -- you can turn around
+/// and `Drop` the `Entry` without losing data or pushing anything. This makes
 /// cancel safety much easier to reason about.
 #[derive(Debug)]
-pub struct Permit<'q, T> {
+pub struct Entry<'q, T> {
     maybeuninit: &'q mut MaybeUninit<T>,
     head: &'q AtomicUsize,
     pushed: &'q Notify,
     h_next: usize,
 }
 
-impl<T> Permit<'_, T> {
-    /// Pushes `value` to the queue, consuming this `Permit`.
+impl<T> Entry<'_, T> {
+    /// Pushes `value` to the queue, consuming this `Entry`.
     ///
     /// The `push` operation is guaranteed to succeed synchronously, since
-    /// holding a `Permit` is proof that the next cell at the head of the queue
+    /// holding a `Entry` is proof that the next cell at the head of the queue
     /// is available for use.
     pub fn push(self, value: T) {
         self.maybeuninit.write(value);
