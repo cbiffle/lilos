@@ -11,13 +11,13 @@
   cancellation.
   - The basic locking operation `lock` (and its friend `try_lock`) now return a
     "permit" that can be used to do one synchronous thing to the guarded data.
-    (This operation was named `perform`/`try_perform` in 0.3.)
+    (This operation was named `perform`/`try_perform` in 0.3.x.)
   - If you need to access the guarded data on either side of an `await` point,
     the `lock_assuming_cancel_safe` operation becomes available if you opt-in.
     (This operation was named `lock` in all prior versions, but was renamed to
     make it harder to grab by accident and easier to spot in code review.)
 
-- Removed operations that were marked as deprecated during the 0.3.0 series:
+- Removed operations that were marked as deprecated during the 0.3.x series:
   `spsc::Push::push`.
 
 - The `handoff` module is no longer available by default. If you want it,
