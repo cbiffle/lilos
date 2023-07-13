@@ -59,9 +59,9 @@ use core::future::Future;
 use stm32h7::stm32h743 as device;
 use device::interrupt;
 
-use lilos::exec::{Notify, PeriodicGate};
+use lilos::exec::Notify;
 use lilos::spsc;
-use lilos::time::Millis;
+use lilos::time::{Millis, PeriodicGate};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Entry point

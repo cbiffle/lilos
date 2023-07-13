@@ -50,7 +50,7 @@ fn main() -> ! {
     let blink = core::pin::pin!(async {
         // PeriodicGate is a `lilos` tool for implementing low-jitter periodic
         // actions. It opens once per PERIOD.
-        let mut gate = lilos::exec::PeriodicGate::from(PERIOD);
+        let mut gate = lilos::time::PeriodicGate::from(PERIOD);
 
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.

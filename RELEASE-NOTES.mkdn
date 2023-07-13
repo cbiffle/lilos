@@ -2,6 +2,11 @@
 
 ## Version 1.0.0 (in progress)
 
+- Time-related public API is now centralized in the `time` module. In earlier
+  versions this was split between `time` and `exec` for historical reasons. For
+  porting existing programs, look for uses of the `sleep_*`, `with_*`, and
+  `PeriodicGate` APIs; they have moved.
+
 - Totally reworked the Mutex API to further improve robustness in the face of
   cancellation.
   - The basic locking operation `lock` (and its friend `try_lock`) now return a

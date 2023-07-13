@@ -1,30 +1,16 @@
-//! A simple `async` RTOS based around Rust `Future`s.
+//! A simple but powerful `async` RTOS based around Rust `Future`s.
 //!
-//! This provides a minimal operating environment for running async Rust code on
-//! ARM Cortex-M microprocessors, plus some useful doodads and gizmos.
+//! This provides a lightweight operating environment for running async Rust
+//! code on ARM Cortex-M microprocessors, plus some useful doodads and gizmos.
 //!
-//! # `lilos` design principles
+//! `lilos` is deliberately designed to be compact, to avoid the use of proc
+//! macros, to be highly portable to different microcontrollers, and to be as
+//! statically predictable as possible with no dynamic resource allocation.
 //!
-//! 1. Be compact. Avoid doing things that increase the minimum size of a useful
-//!    application. In particular, try to avoid designing APIs that need
-//!    internal asserts/panics, because those are quite costly in text size.
+//! These are the API docs for the OS. If you'd like a higher-level introduction
+//! with worked examples, please have a look at [the intro guide]!
 //!
-//! 2. No magic. `lilos` doesn't use proc macros or other tricks to hide what
-//!    it's doing. Some (normal) macros are available, but only as shorthand,
-//!    and we'll explain how to do the thing without the macros. This is
-//!    important, both for transparency, but also because you might need to
-//!    customize what's happening, and you can't do that if we hide it in a box.
-//!
-//! 3. Be portable. `lilos` doesn't depend on any vendor-specific hardware, and
-//!    can run on any ARM Cortex-M processor. This means you don't need to wait
-//!    for `lilos` to be ported to your processor. (`lilos` is also not
-//!    inherently ARM-specific -- I just don't have a lot of non-ARM dev
-//!    hardware. Suggestions welcome!)
-//!
-//! 4. Be predictable. `lilos` doesn't use dynamic memory allocation, and the
-//!    task polling behavior is well-defined in the executor. While you can
-//!    certainly build unpredictable programs on top of `lilos`, we want to give
-//!    you a solid predictable foundation.
+//! [the intro guide]: https://github.com/cbiffle/lilos/blob/main/doc/intro.adoc
 //!
 //! # About the OS
 //!

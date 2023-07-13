@@ -661,7 +661,7 @@ fn exploding_waker() -> Waker {
     }
 }
 
-/// Creates a pinned list on the stack.
+/// Convenience macro for creating a pinned list on the stack.
 ///
 /// `create_list!(ident)` is equivalent to `let ident = ...;` -- it creates a
 /// local variable called `ident`, holding an initialized list.
@@ -683,7 +683,7 @@ macro_rules! create_list {
     };
 }
 
-/// Creates a pinned node on the stack.
+/// Convenience macro for creating a pinned node on the stack.
 ///
 /// `create_node!(ident, val, waker)` is equivalent to `let ident = ...;` -- it
 /// creates a local variable called `ident`, holding an initialized node. The

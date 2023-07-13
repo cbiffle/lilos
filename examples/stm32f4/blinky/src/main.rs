@@ -26,7 +26,7 @@ use core::convert::Infallible;
 use core::pin::pin;
 use core::time::Duration;
 
-use lilos::exec::sleep_for;
+use lilos::time::sleep_for;
 
 // Shorthand for which SoC we're targeting:
 use stm32f4::stm32f407 as device;
