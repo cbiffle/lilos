@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version x.y.z (in progress)
+## Version 1.0.0 (in progress)
 
 - Totally reworked the Mutex API to further improve robustness in the face of
   cancellation.
