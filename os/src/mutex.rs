@@ -254,21 +254,6 @@ impl<T> Mutex<T> {
         let ptr = self.value.get();
         unsafe { &*ptr }
     }
-
-    /// Wraps up the boilerplatey bits of getting a &mut to the Mutex's guarded
-    /// data.
-    ///
-    /// Clippy fires on this function, and for good reason: at its face it's
-    /// wildly dangerous, producing arbitrary numbers of aliasing &mut
-    /// references from a single &self. This is why it's marked `unsafe`.
-    ///
-    /// To use this safely: call at most once on a code path where you are
-    /// confident it will not alias.
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn contents_mut(&self) -> &mut T {
-        let ptr = self.value.get();
-        unsafe { &mut *ptr }
-    }
 }
 
 /// A token that grants the ability to run one closure against the data guarded
@@ -287,9 +272,9 @@ impl<T> ActionPermit<'_, T> {
     /// the process.
     pub fn perform<R>(self, action: impl FnOnce(&mut T) -> R) -> R {
         // Safety: we are by definition the holder of the mutex, so we can
-        // use the `contents_mut` operation to access the guarded data as
-        // long as we only have one such mutable reference outstanding.
-        action(unsafe { self.mutex.contents_mut() })
+        // use the `UnsafeCell` to access the guarded data as long as we only
+        // have one such mutable reference outstanding.
+        action(unsafe { &mut *self.mutex.value.get() })
 
         // Note: we're relying on the Drop impl for `self` to unlock the mutex.
     }
@@ -559,6 +544,6 @@ impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
         // locked. Because the caller was able to call a method on `&mut self`,
         // we further know that no other `&` or `&mut` references to this guard
         // or its contents exist.
-        &mut unsafe { self.mutex.contents_mut() }.0
+        &mut unsafe { &mut *self.mutex.value.get() }.0
     }
 }
