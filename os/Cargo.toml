@@ -11,6 +11,7 @@ categories = ["embedded"]
 readme = "README.mkdn"
 
 [package.metadata.docs.rs]
+all-features = true
 default-target = "thumbv7em-none-eabihf"
 
 [features]

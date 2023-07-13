@@ -36,25 +36,36 @@
 //! writing co-routines to run on this OS looks *very much* like programming
 //! with threads.
 //!
-//! Here is the "hello world" of embedded programming, written as a task for
-//! this OS. This task blinks an LED attached to port D12 of an STM32F4.
+//! For detailed discussion and some cookbook examples, see either [the intro
+//! guide] or [the `examples` directory in the repo][examples].
 //!
-//! ```ignore
-//! async fn blinky(gpio: &GPIOD) -> Infallible {
-//!     const PERIOD: Duration = Duration::from_millis(500);
+//! [examples]: https://github.com/cbiffle/lilos/tree/main/examples
 //!
-//!     loop {
-//!         gpio.bsrr.write(|w| w.bs12().set_bit());
-//!         lilos::exec::sleep_for(PERIOD).await;
-//!         gpio.bsrr.write(|w| w.br12().set_bit());
-//!         lilos::exec::sleep_for(PERIOD).await;
-//!     }
-//! }
-//! ```
 //!
-//! (Note: the natural way to write that function would be with a return type of
-//! `!`, but doing this requires the unstable toolchain, so we rely on
-//! `core::convert::Infallible` instead in this version.)
+//! # Feature flags
+//!
+//! `lilos` currently exposes the following Cargo features for
+//! enabling/disabling portions of the system:
+//!
+//! - `systick` (on by default). Enables reliance on the ARM M-profile SysTick
+//! timer for portable timekeeping. Disabling makes the executor smaller at the
+//! cost of losing all `time` API. On platforms where the SysTick timer stops
+//! during sleep, such as Nordic nRF52, you may want to disable this feature and
+//! use a different timekeeping mechanism.
+//!
+//! - `mutex` (on by default). Enables access to the [`mutex`][crate::mutex]
+//! module for blocking access to shared data. Leaving this feature enabled has
+//! no cost if you're not actually using `mutex`.
+//!
+//! - `spsc` (on by default). Enables access to the [`spsc`][crate::spsc] module
+//! for single-producer single-consumer inter-task queues. Leaving this feature
+//! enabled has no cost if you're not actually using `spsc`.
+//!
+//! - `handoff` (**off** by default). Enables access to the
+//! [`handoff`][crate::handoff`] module for inexpensive synchronous inter-task
+//! rendezvous. `handoff` contains some API that is not strictly cancel-safe, so
+//! you need to request it explicitly.
+//!
 //!
 //! # Composition and dynamic behavior
 //!
