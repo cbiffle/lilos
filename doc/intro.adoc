@@ -344,7 +344,7 @@ async fn task_alice() -> Infallible {
 
 async fn task_bob() -> Infallible {
     loop {
-        sleep_for(Millis(1000).await;
+        sleep_for(Millis(1000)).await;
 
         print(EVENT_COUNTER.load(Ordering::Relaxed));
     }
@@ -365,7 +365,7 @@ buffer to be `static`:
 
 [source]
 ----
-fn get_the_buffer() -> &'static [u8; 1024] { <1>
+fn get_the_buffer() -> &'mut static [u8; 1024] { <1>
     static TAKEN: AtomicBool = AtomicBool::new(false); <2>
 
     if TAKEN.swap(true, Ordering::SeqCst) { <3>
