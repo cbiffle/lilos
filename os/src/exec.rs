@@ -375,7 +375,22 @@ pub fn run_tasks(
             futures,
             initial_mask,
             Interrupts::Masked,
-            cortex_m::asm::wfi,
+            || {
+                cortex_m::asm::wfi();
+                // This works around an undocumented erratum on STM32 processors
+                // when WFI is set to go to "Sleep" level, and a debug agent has
+                // set the DBGMCU bits to cause clocks to continue to run during
+                // sleep. In this situation, it appears that the pipeline state
+                // after the WFI can be corrupted in the specific case where the
+                // WFI happens _without_ an interrupt service routine occurring
+                // (i.e. our default configuration of interrupts masked). An ISB
+                // appears to fix it, independent of alignment etc.
+                //
+                // Hard to tell, though, since this isn't in the errata sheet.
+                //
+                // On non-STM32 Cortex processors this will cost a few cycles.
+                cortex_m::asm::isb();
+            },
         )
     }
 }
