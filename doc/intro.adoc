@@ -49,7 +49,7 @@ write that does some sort of embedded microcontroller thing. {os} itself is a
 library (Rust crate) that you link into your application using Cargo. Once your
 application's `main` function hands control to {os} (using
 `lilos::exec::run_tasks`), {os} takes over the CPU and manages concurrent
-execution of your tasks until reset.
+execution of your code until reset.
 
 Applications are built out of _tasks,_ which are the basic unit of concurrent
 execution in {os} (sort of like a thread). At the outermost layer, an
@@ -75,6 +75,10 @@ let (a_result, b_result) = join! {
 do_something_with(a_result, b_result);
 ----
 
+In the `join!` block, the async functions `work_on_thing_a` and
+`work_on_thing_b` will be _interleaved_, sharing CPU time until they both
+complete.
+
 This is the reason why {os} is so useful: from a set of statically-defined
 top-level tasks, you can create complex patterns of concurrency that change
 dynamically.
@@ -85,18 +89,23 @@ don't get CPU time when they don't.
 
 The executor schedules application tasks _cooperatively_, which means that a
 task has to explicitly give up the CPU (by using, for example, `await`) for
-other tasks to run. This means you don't have to think about preemption, most
-race conditions are made more difficult, since each span of code between `await`
-points is effectively a free critical section. Of course, this has the drawback
-that code entering an infinite loop (which in this case includes panicking) will
-stop the whole executor.
+other tasks to run. This has some advantages:
+
+1. You don't have to think about preemption, and
+2. Most race conditions are made more difficult, since each span of code between
+`await` points is effectively a free critical section.
+
+NOTE: Of course, this has the drawback that code entering an infinite loop
+(which in this case includes panicking) will stop the whole executor. More on
+this later.
 
 To make this "free critical section" idea consistent, the executor also manages
 the CPU's interrupt controller to carefully control when interrupt service
 handlers can run. By default, the executor will postpone any ISR from running
 until the current task completely yields the CPU. This ensures that ISRs run
 between tasks rather than preempting them, and makes ISR-task interaction a lot
-easier to reason about.
+easier to reason about. In the simplest configuration (using `run_tasks`),
+application code using {os} won't be preempted by anything.
 
 TIP: While {os} always schedules _tasks_ cooperatively, it is possible to
 configure the executor to allow certain interrupts (or all interrupts) to
@@ -786,16 +795,6 @@ ownership of, say, a peripheral into an `async fn`, and then you throw that
 general, if there's any chance you'll want to cancel and retry an operation, it
 should take its resources _by reference._
 
-Cases in the current {os} API where you can lose resources that were passed
-by-value into an `async fn` are:
-
-- The value given to the `push` operation on a `handoff` or `spsc` queue.
-  Ownership of the value is being transferred to the queue, and so must be
-  transferred first to the `push` future. Dropping it loses the value, and I'd
-  argue this is inherent.
-
-Any cases where the {os} APIs fail to adhere to this property are bugs, and I
-would very much appreciate it if you'd report them.
 
 == How to do the thing you're trying
 
@@ -821,6 +820,9 @@ this and request individual features a la carte if you like.
 out in a `static` and synchronize task code with events. Those events usually
 come from interrupts, though `Notify` is also used under the hood to implement
 most other inter-task-communication APIs in {os}.
+
+NOTE: `Notify` doesn't _have_ to be in a `static`, it's just often convenient
+for it to be in a `static`.
 
 Here's an example of using `Notify` to synchronize with an interrupt when
 sending a byte out a UART. This is a simplified and platform-generic version of
@@ -906,6 +908,11 @@ condition they're monitoring. In our case, because `tx_empty` is set (we
 checked!), this will cause the suspended `send_byte` routine to wake and finish
 processing.
 
+NOTE: The `send_byte` sketch above is cancel-safe because the type of `byte`
+(`u8`) is `Copy`. It's written so that transmitting the byte happens after all
+`await` points. This means that it either transmits the byte and completes, or
+does not transmit the byte and the caller can retry (using a copy of `byte`).
+
 === Giving other tasks an opportunity to run if ready
 
 If you want to temporarily pause an `async fn` to give any other pending tasks a
@@ -934,6 +941,10 @@ async fn polite_copy(source: &[u8], dest: &mut [u8]) {
 `futures::pending!()` is _more or less_ equivalent to
 `lilos::exec::yield_cpu().await`. I prefer `yield_cpu` because it makes the
 `await` visible to the reader, but do whatever feels best to you!
+
+NOTE: If you need to do a large RAM-to-RAM bulk copy, and are concerned about
+impacting event response times, it's often convenient to do it with DMA --
+freeing the CPU and avoiding the need to `yield_cpu`.
 
 === Doing something periodically
 
@@ -964,7 +975,7 @@ this iteration of the loop. So, this example will call `toggle_a_pin` every 100
 ms, even if it takes 50 ms to run.
 
 If what you actually want is to make sure that a minimum amount of time passes
-between two operations, you're looking for `lilos::exec::sleep_for` instead:
+**between** two operations, you're looking for `lilos::exec::sleep_for` instead:
 
 [source]
 ----
@@ -992,7 +1003,9 @@ SysTick timer from counting,_ so it loses time. The Nordic nRF52 series of
 microcontrollers behave this way.
 
 2. I need timing more precise than milliseconds. The {os} default time unit
-is a compromise choice.
+is a compromise choice: the ARM SysTick timer has the advantage of being very
+portable, but it essentially requires an interrupt per tick to do accurate time
+keeping. So we configure it to tick at 1 kHz to reduce interrupt load.
 
 === Sending something to another task
 
