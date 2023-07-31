@@ -619,7 +619,7 @@ pub const ALL_TASKS: usize = !0;
 ///     // Enable the rx data interrupt so we get notified.
 ///     uart.control.modify(|_, w| w.rx_irq_enabled().set());
 ///     // Listen for data, using a predicate to filter out spurious wakes.
-///     RX_NOT_EMPTY.until(|| uart.status.read().rx_not_empty());
+///     RX_NOT_EMPTY.until(|| uart.status.read().rx_not_empty()).await;
 ///
 ///     UART.data.read()
 /// }
