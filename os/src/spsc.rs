@@ -238,29 +238,12 @@ impl<'q, T> Pusher<'q, T> {
     /// If there is not space, this returns `Err(value)` -- that is, ownership
     /// of `value` is handed back to you.
     pub fn try_push(&mut self, value: T) -> Result<(), T> {
-        let h = self.q.head.load(Ordering::Relaxed);
-        let t = self.q.tail.load(Ordering::Acquire);
-        let h_next = self.q.next_index(h);
-
-        if h_next == t {
-            // We're full.
-            return Err(value);
+        if let Some(entry) = self.try_reserve() {
+            entry.push(value);
+            Ok(())
+        } else {
+            Err(value)
         }
-
-        let unsafecell_ptr = self.q.storage[h].get();
-        // Safety: this is dereferencing a raw pointer into the unsafecell,
-        // which we can do because (1) the cell being between h and t implies
-        // that it is not aliased, and (2) because we have &mut Self we know
-        // we're not racing any other pushes for this slot. (Pops won't touch
-        // this slot.)
-        let maybeuninit = unsafe { &mut *unsafecell_ptr };
-        maybeuninit.write(value);
-
-        // We can store instead of compare-exchange here because we are the only
-        // Pusher manipulating this field (see: &mut Self).
-        self.q.head.store(h_next, Ordering::Release);
-        self.q.pushed.notify();
-        Ok(())
     }
 }
 
