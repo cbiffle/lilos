@@ -96,13 +96,13 @@ static TICK: AtomicU32 = AtomicU32::new(0);
 static EPOCH: AtomicU32 = AtomicU32::new(0);
 
 /// Sets up the tick counter for 1kHz operation, assuming a CPU core clock of
-/// `clock_mhz`.
+/// `clock_hz`.
 ///
 /// If you use this module in your application, call this before
 /// [`run_tasks`][crate::exec::run_tasks] (or a fancier version of `run_tasks`)
 /// to set up the timer for monotonic operation.
-pub fn initialize_sys_tick(syst: &mut SYST, clock_mhz: u32) {
-    let cycles_per_millisecond = clock_mhz / 1000;
+pub fn initialize_sys_tick(syst: &mut SYST, clock_hz: u32) {
+    let cycles_per_millisecond = clock_hz / 1000;
     syst.set_reload(cycles_per_millisecond - 1);
     syst.clear_current();
     syst.set_clock_source(SystClkSource::Core);
