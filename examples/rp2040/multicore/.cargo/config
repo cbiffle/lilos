@@ -1,5 +1,6 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-runner = "elf2uf2-rs -d"
+# runner = "elf2uf2-rs -d"
+runner = "probe-rs run --chip RP2040 --probe 2E8A:000C"
 
 rustflags = [
   "-C", "link-arg=-Tlink.x",
