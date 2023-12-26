@@ -23,6 +23,10 @@
 // because it isn't otherwise referenced in code!
 extern crate panic_halt;
 
+pub mod fifo;
+
+use rp2040_hal as hal;
+
 // For RP2040, we need to include a bootloader. The general Cargo build process
 // doesn't have great support for this, so we included it as a binary constant.
 #[link_section = ".boot_loader"]
@@ -31,6 +35,10 @@ static BOOT: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 // How often our blinky task wakes up (1/2 our blink frequency).
 const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
+
+fn cpu_core_id() -> u16 {
+    hal::Sio::core() as u16
+}
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
