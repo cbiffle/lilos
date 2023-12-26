@@ -92,7 +92,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilos-example-rp2040-minimal"
+name = "lilos-example-rp2040-multicore"
 version = "0.1.0"
 dependencies = [
  "cortex-m",

@@ -1,4 +1,4 @@
-# Minimal LED blinky demo for the Raspberry Pi Pico
+# Multicore LED blinky demo for the Raspberry Pi Pico
 
 Unlike most of the demos, this is not set up to use OpenOCD, because as of this
 writing the Raspberry Pi folks haven't upstreamed their OpenOCD support.
@@ -12,3 +12,5 @@ Once that's installed,
 2. Connect it via USB.
 3. Wait for it to appear as a drive.
 4. `cargo run --release`
+
+You could also use `probe-rs`/`probe-run`.

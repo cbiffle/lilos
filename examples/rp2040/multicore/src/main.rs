@@ -1,15 +1,18 @@
-//! Minimal example of using `lilos` to blink an LED at 1Hz on the
-//! Raspberry Pi Pico board.
+//! Multi-core example of using `lilos` to blink an LED at varying intervals on
+//! the Raspberry Pi Pico board.
 //!
-//! This starts a single task, which uses the scheduler and timer to
-//! periodically toggle a GPIO pin (pin 25, which is an LED on the Pi Pico
-//! board).
+//! This starts a task on each core, one which computes a delay, and sends it to
+//! the other core via the FIFO, which then uses that delay to blink the LED.
+//!
+//! It is an adaptation of the `multicore_fifo_blink` example in `rp2040-hal.
 //!
 //! This demonstrates
 //!
 //! 1. How to start the `lilos` executor and configure timekeeping.
 //! 2. How to perform periodic actions and delays.
-//! 3. How to safely share data on the stack with a task.
+//! 3. How to share data between cores using the multicor FIFO
+//! 4. How to use a custom lilos timer implementation instead of the default
+//!    single-core systick implementation
 
 // We won't be using the standard library.
 #![no_std]
