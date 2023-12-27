@@ -134,12 +134,12 @@ use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use pin_project_lite::pin_project;
 
-use crate::atomic::{AtomicExt, AtomicArithExt};
+use portable_atomic::{AtomicUsize, Ordering};
+
 use crate::util::Captures;
 
 // Despite the untangling of exec and time that happened in the 1.0 release, we
@@ -147,7 +147,7 @@ use crate::util::Captures;
 // other cfg(feature = "systick") lines below.
 cfg_if::cfg_if! {
     if #[cfg(feature = "systick")] {
-        use core::sync::atomic::AtomicBool;
+        use portable_atomic::AtomicBool;
         use core::ptr::{addr_of, addr_of_mut};
 
         use crate::cheap_assert;
@@ -510,7 +510,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
     #[cfg(feature = "systick")]
     {
         let already_initialized =
-            TIMER_LIST_READY.swap_polyfill(true, Ordering::SeqCst);
+            TIMER_LIST_READY.swap(true, Ordering::SeqCst);
         // Catch any attempt to do this twice. Would doing this twice be bad?
         // Not necessarily. But it would be damn suspicious.
         cheap_assert!(!already_initialized);
@@ -558,7 +558,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             // almost certainly be faster to visit the futures corresponding to
             // 1 bits instead. I have avoided this for now because of the
             // increased complexity.
-            let mask = WAKE_BITS.swap_polyfill(0, Ordering::SeqCst);
+            let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
             for (i, f) in futures.iter_mut().enumerate() {
                 if mask & wake_mask_for_index(i) != 0 {
                     poll_task(i, f.as_mut());
@@ -694,7 +694,7 @@ impl Notify {
     /// This is a low-level operation. For using a `Notify` in practice, you
     /// probably want [`until`][Notify::until] instead.
     pub fn subscribe(&self, waker: &Waker) {
-        self.mask.fetch_or_polyfill(extract_mask(waker), Ordering::SeqCst);
+        self.mask.fetch_or(extract_mask(waker), Ordering::SeqCst);
     }
 
     /// Wakes tasks, at least all those whose waiters have been passed to
@@ -704,7 +704,7 @@ impl Notify {
     /// iteration of the executor, and does not cause any code to run
     /// immediately.
     pub fn notify(&self) {
-        wake_tasks_by_mask(self.mask.swap_polyfill(0, Ordering::SeqCst))
+        wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
     }
 
     /// Waits for a condition to become true, checking only when signaled by
@@ -912,7 +912,7 @@ impl<F, T> Future for UntilRacy<'_, F>
 /// `Notify`.
 #[inline(always)]
 pub fn wake_tasks_by_mask(mask: usize) {
-    WAKE_BITS.fetch_or_polyfill(mask, Ordering::SeqCst);
+    WAKE_BITS.fetch_or(mask, Ordering::SeqCst);
 }
 
 /// Notifies the executor that the task with the given `index` should be polled

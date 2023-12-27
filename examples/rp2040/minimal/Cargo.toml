@@ -22,6 +22,7 @@ lilos = { path = "../../../os", default-features = false, features = ["systick"]
 panic-halt = "0.2.0"
 rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"
+portable-atomic = { version = "1.6.0", default-features = false, features = ["unsafe-assume-single-core"] }
 
 [[bin]]
 name = "lilos-example-rp2040-minimal"

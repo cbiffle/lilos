@@ -20,6 +20,7 @@ cortex-m = "0.7.4"
 cortex-m-rt = { version = "0.7.1", default-features = false }
 panic-semihosting = "0.6.0"
 lilos-testsuite = { path = ".." }
+portable-atomic = { version = "1.6.0", default-features = false, features = ["unsafe-assume-single-core"] }
 
 [[bin]]
 name = "lilos-testsuite-stm32g0"
