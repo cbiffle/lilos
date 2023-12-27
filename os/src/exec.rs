@@ -149,6 +149,9 @@ use crate::util::Captures;
 /// atomically checks and clears this at each iteration.
 static WAKE_BITS: AtomicUsize = AtomicUsize::new(0);
 
+/// Wake bits used by a previous/concurrent invocation of run_tasks
+static WAKE_BITS_USED: AtomicUsize = AtomicUsize::new(0);
+
 /// Computes the wake bit mask for the task with the given index, which is
 /// equivalent to `1 << (index % USIZE_BITS)`.
 const fn wake_mask_for_index(index: usize) -> usize {
@@ -176,6 +179,7 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
 /// Technically, this will wake any task `n` where `n % 32 == index % 32`.
 fn waker_for_task(index: usize) -> Waker {
     let mask = wake_mask_for_index(index);
+
     // Safety: Waker::from_raw is unsafe because bad things happen if the
     // combination of this particular pointer and the functions in the vtable
     // don't meet the Waker contract or are incompatible. In our case, our
@@ -359,6 +363,7 @@ pub fn run_tasks<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
     unsafe {
@@ -367,6 +372,8 @@ pub fn run_tasks<#[cfg(feature = "timer")] T: Timer>(
             initial_mask,
             #[cfg(feature = "timer")]
             timer,
+            #[cfg(feature = "2core")]
+            core,
             Interrupts::Masked,
             || {
                 cortex_m::asm::wfi();
@@ -399,6 +406,7 @@ pub fn run_tasks_with_idle<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     idle_hook: impl FnMut(),
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
@@ -408,6 +416,8 @@ pub fn run_tasks_with_idle<#[cfg(feature = "timer")] T: Timer>(
             initial_mask,
             #[cfg(feature = "timer")]
             timer,
+            #[cfg(feature = "2core")]
+            core,
             Interrupts::Masked,
             idle_hook,
         )
@@ -438,6 +448,7 @@ pub unsafe fn run_tasks_with_preemption<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     interrupts: Interrupts,
 ) -> ! {
     // Safety: this is safe if our own contract is upheld.
@@ -447,6 +458,8 @@ pub unsafe fn run_tasks_with_preemption<#[cfg(feature = "timer")] T: Timer>(
             initial_mask,
             #[cfg(feature = "timer")]
             timer,
+            #[cfg(feature = "2core")]
+            core,
             interrupts,
             cortex_m::asm::wfi,
         )
@@ -482,6 +495,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle<
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     interrupts: Interrupts,
     mut idle_hook: impl FnMut(),
 ) -> ! {
@@ -499,15 +513,25 @@ pub unsafe fn run_tasks_with_preemption_and_idle<
         //    be wrong.
         let futures_ptr: *mut [Pin<*mut dyn Future<Output = Infallible>>] = futures_ptr as _;
         // Stash the task future array in a known location.
+        #[cfg(not(feature = "2core"))]
         unsafe {
             TASK_FUTURES = Some(futures_ptr);
         }
+
+        #[cfg(feature = "2core")]
+        unsafe {
+            TASK_FUTURES[core as usize] = Some(futures_ptr);
+        }
     }
 
-    WAKE_BITS.store(initial_mask, Ordering::SeqCst);
+    let this_count = futures.len();
+    let prev_count = WAKE_BITS_USED.fetch_add(this_count, Ordering::SeqCst);
+    let this_mask = ((1usize << this_count) - 1).rotate_left(prev_count as u32);
+
+    WAKE_BITS.fetch_or(initial_mask & this_mask, Ordering::SeqCst);
 
     // Initialize the timer list.
-    #[cfg(all(feature = "timer", feature = "systick"))]
+    #[cfg(all(feature = "timer", feature = "systick", not(feature = "2core")))]
     crate::time::SysTickTimer.init();
 
     #[cfg(feature = "timer")]
@@ -520,13 +544,14 @@ pub unsafe fn run_tasks_with_preemption_and_idle<
                 tl.wake_less_than(timer.now());
             }
 
-            // Capture and reset wake bits, then process any 1s.
+            // Capture and reset wake bits (for the current executor only),
+            // then process any 1s.
             // TODO: this loop visits every future testing for 1 bits; it would
             // almost certainly be faster to visit the futures corresponding to
             // 1 bits instead. I have avoided this for now because of the
             // increased complexity.
-            let mask = WAKE_BITS.swap(0, Ordering::SeqCst);
-            for (i, f) in futures.iter_mut().enumerate() {
+            let mask = WAKE_BITS.fetch_and(!this_mask, Ordering::SeqCst);
+            for (f, i) in futures.iter_mut().zip(prev_count..) {
                 if mask & wake_mask_for_index(i) != 0 {
                     poll_task(i, f.as_mut());
                 }
@@ -534,7 +559,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle<
 
             // If none of the futures woke each other, we're relying on an
             // interrupt to set bits -- so we can sleep waiting for it.
-            if WAKE_BITS.load(Ordering::SeqCst) == 0 {
+            if WAKE_BITS.load(Ordering::SeqCst) & this_mask == 0 {
                 idle_hook();
             }
 
@@ -560,7 +585,16 @@ pub unsafe fn run_tasks_with_preemption_and_idle<
 /// Note that the `#[used]` annotation is load-bearing here -- without it the
 /// compiler will happily throw the variable away, confusing the debugger.
 #[used]
-static mut TASK_FUTURES: Option<*mut [Pin<*mut dyn Future<Output = Infallible>>]> = None;
+#[cfg(not(feature = "2core"))]
+static mut TASK_FUTURES: Option<
+    *mut [Pin<*mut dyn Future<Output = Infallible>>],
+> = None;
+
+#[used]
+#[cfg(feature = "2core")]
+static mut TASK_FUTURES: [Option<
+    *mut [Pin<*mut dyn Future<Output = Infallible>>],
+>; 2] = [None; 2];
 
 /// Constant that can be passed to `run_tasks` and `wake_tasks_by_mask` to mean
 /// "all tasks."

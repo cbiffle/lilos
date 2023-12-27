@@ -21,6 +21,7 @@ mutex = []
 spsc = []
 timer = []
 systick = []
+2core = []
 
 [dependencies]
 cfg-if = "1.0.0"

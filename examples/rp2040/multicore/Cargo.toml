@@ -18,14 +18,14 @@ default-target = "thumbv6m-none-eabi"
 [dependencies]
 cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
-lilos = { path = "../../../os", default-features = false, features = ["timer", "systick"] }
+lilos = { path = "../../../os", default-features = false, features = ["timer", "2core"] }
 panic-halt = "0.2.0"
-rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"
 rp2040-hal = { version = "0.9.1", features = ["critical-section-impl"] }
-portable-atomic = { version = "1.6.0", default-features = false, features = ["unsafe-assume-single-core"] }
+portable-atomic = { version = "1.6.0", default-features = false, features = ["critical-section"] }
 rp-pico = "0.8.0"
 pin-project-lite = "0.2.13"
+embedded-hal = "0.2.7"
 
 [[bin]]
 name = "lilos-example-rp2040-multicore"

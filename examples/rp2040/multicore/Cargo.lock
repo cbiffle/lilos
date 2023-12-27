@@ -187,6 +187,7 @@ version = "0.1.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
+ "embedded-hal",
  "lilos",
  "panic-halt",
  "pin-project-lite",
@@ -194,7 +195,6 @@ dependencies = [
  "rp-pico",
  "rp2040-boot2 0.2.1",
  "rp2040-hal",
- "rp2040-pac 0.3.0",
 ]
 
 [[package]]
@@ -266,6 +266,9 @@ name = "portable-atomic"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7170ef9988bc169ba16dd36a7fa041e5c4cbeb6a35b76d4c03daded371eae7c0"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "proc-macro2"
@@ -340,7 +343,7 @@ dependencies = [
  "pio",
  "rand_core",
  "rp2040-hal-macros",
- "rp2040-pac 0.5.0",
+ "rp2040-pac",
  "usb-device",
  "vcell",
  "void",
@@ -356,17 +359,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "rp2040-pac"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13a6106d5db01c7171a39c1f7696780912db9b42fe7ac722db60069c8904ea7c"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "vcell",
 ]
 
 [[package]]
