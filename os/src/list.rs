@@ -403,6 +403,21 @@ impl<T> List<T> {
     }
 }
 
+impl<T: Copy + PartialOrd> List<T> {
+    /// Gets the smallest element, if there is any. Useful for knowing how long
+    /// to sleep for.
+    pub fn peek(self: Pin<&Self>) -> Option<T> {
+        let candidate = self.root.next.get();
+        // Safety: Link Valid Invariant means we can deref this
+        let cref = unsafe { candidate.as_ref() };
+        if candidate != NonNull::from(&self.root) {
+            Some(cref.contents)
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: PartialOrd> List<T> {
     /// Inserts `node` into this list, maintaining ascending sort order, and
     /// then waits for it to be kicked back out.
