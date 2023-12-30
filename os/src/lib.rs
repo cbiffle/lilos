@@ -164,7 +164,7 @@ pub mod list;
 pub mod exec;
 pub mod util;
 
-#[cfg(feature = "systick")]
+#[cfg(feature = "timer")]
 pub mod time;
 #[cfg(feature = "mutex")]
 pub mod mutex;

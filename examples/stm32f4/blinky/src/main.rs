@@ -71,6 +71,7 @@ fn main() -> ! {
     lilos::exec::run_tasks(
         &mut [fut1, fut2, fut3, fut4],
         lilos::exec::ALL_TASKS,
+        &lilos::time::SysTickTimer,
     )
 }
 
@@ -92,9 +93,9 @@ async fn blinky(pin_mask: u16, interval: Duration, gpiod: &device::GPIOD)
     loop {
         // on
         gpiod.bsrr.write(|w| unsafe { w.bits(pin_mask) });
-        sleep_for(interval).await;
+        sleep_for(&lilos::time::SysTickTimer, interval).await;
         // off (same bits set in top 16 bits)
         gpiod.bsrr.write(|w| unsafe { w.bits(pin_mask << 16) });
-        sleep_for(interval).await;
+        sleep_for(&lilos::time::SysTickTimer, interval).await;
     }
 }

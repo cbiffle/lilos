@@ -18,7 +18,7 @@ default-target = "thumbv6m-none-eabi"
 [dependencies]
 cortex-m = "0.7.4"
 cortex-m-rt = "0.7.1"
-lilos = { path = "../../../os", default-features = false, features = ["systick"] }
+lilos = { path = "../../../os", default-features = false, features = ["timer", "systick"] }
 panic-halt = "0.2.0"
 rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"

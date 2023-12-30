@@ -93,6 +93,7 @@ fn main() -> ! {
     lilos::exec::run_tasks_with_idle(
         &mut [heartbeat, echo],
         lilos::exec::ALL_TASKS,
+        &lilos::time::SysTickTimer,
         || {
             p.GPIOD.bsrr.write(|w| w.br15().set_bit());
             cortex_m::asm::wfi();
@@ -133,9 +134,9 @@ fn heartbeat<'gpio>(
     async move {
         loop {
             gpiod.bsrr.write(|w| w.bs12().set_bit());
-            gate.next_time().await;
+            gate.next_time(&lilos::time::SysTickTimer).await;
             gpiod.bsrr.write(|w| w.br12().set_bit());
-            gate.next_time().await;
+            gate.next_time(&lilos::time::SysTickTimer).await;
         }
     }
 }
