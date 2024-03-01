@@ -6,6 +6,10 @@ For an example of the changes required to port from 0.3.x to 1.0, see [the
 upgrade commit in the Keypad:GO!
 firmware](https://github.com/cbiffle/keypad-go-firmware/commit/fffdf07a6b6a4038b8dd33be396fb16fb0271d58).
 
+Minimum Supported Rust Version is still 1.69, the earliest stable toolchain that
+can build `lilos` and applications. This is getting increasingly painful,
+though, so please let me know if you actually need it.
+
 - Time-related public API is now centralized in the `time` module. In earlier
   versions this was split between `time` and `exec` for historical reasons. For
   porting existing programs, look for uses of the `sleep_*`, `with_*`, and

@@ -9,6 +9,7 @@ repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
+rust-version = "1.69"
 
 [package.metadata.docs.rs]
 all-features = true
