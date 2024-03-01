@@ -7,6 +7,11 @@
   porting existing programs, look for uses of the `sleep_*`, `with_*`, and
   `PeriodicGate` APIs; they have moved.
 
+- Renamed `spsc` and `handoff` split handle types: `Push` is now `Pusher`, `Pop`
+  is now `Popper`. (Because their old names sounded like what you'd name the
+  future type for _completing_ a push or pop, and I felt like that was
+  misleading.)
+
 - Totally reworked the Mutex API to further improve robustness in the face of
   cancellation.
   - The basic locking operation `lock` (and its friend `try_lock`) now return a

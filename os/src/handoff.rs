@@ -16,9 +16,10 @@
 //! # Creating and using a `Handoff`
 //!
 //! Because the `Handoff` itself contains no storage, they're cheap to create on
-//! the stack. You then need to `split` then into their `Push` and `Pop` ends --
-//! these both _borrow_ the `Handoff`, so you need to keep it around. You can
-//! then hand the ends off to other futures. A typical use case looks like this:
+//! the stack. You then need to `split` then into their `Pusher` and `Popper`
+//! ends -- these both _borrow_ the `Handoff`, so you need to keep it around.
+//! You can then hand the ends off to other futures. A typical use case looks
+//! like this:
 //!
 //! ```ignore
 //! let mut handoff = Handoff::new();
@@ -31,9 +32,9 @@
 //!
 //! # Caveats and alternatives
 //!
-//! Only one `Push` and `Pop` can exist at a time -- the compiler ensures this.
-//! This simplifies the implementation quite a bit, but it means that if you
-//! want a multi-party rendezvous this isn't the right tool.
+//! Only one `Pusher` and `Popper` can exist at a time -- the compiler ensures
+//! this.  This simplifies the implementation quite a bit, but it means that if
+//! you want a multi-party rendezvous this isn't the right tool.
 //!
 //! If you would like to be able to push data and go on about your business
 //! without waiting for it to be popped, you want a queue, not a handoff. See
@@ -50,8 +51,8 @@
 //!
 //! This module is currently the only part of `lilos` that has non-deprecated
 //! API that is not strictly cancel-safe. This is often okay, the way handoffs
-//! are used (in my code at least), but please read the docs for [`Push::push`]
-//! carefully.
+//! are used (in my code at least), but please read the docs for
+//! [`Pusher::push`] carefully.
 
 use core::cell::Cell;
 use core::ptr::NonNull;
@@ -77,12 +78,12 @@ impl<T> Handoff<T> {
         }
     }
 
-    /// Borrows `self` exclusively and produces `Push` and `Pop` endpoints. The
-    /// endpoints are guaranteed to be unique, since they can't be cloned and
-    /// you can't call `split` to make new ones until both are
+    /// Borrows `self` exclusively and produces `Pusher` and `Popper` endpoints.
+    /// The endpoints are guaranteed to be unique, since they can't be cloned
+    /// and you can't call `split` to make new ones until both are
     /// dropped/forgotten.
-    pub fn split(&mut self) -> (Push<'_, T>, Pop<'_, T>) {
-        (Push(self), Pop(self))
+    pub fn split(&mut self) -> (Pusher<'_, T>, Popper<'_, T>) {
+        (Pusher(self), Popper(self))
     }
 }
 
@@ -150,14 +151,14 @@ impl<T> Clone for State<T> {
 }
 
 /// Push endpoint for a `Handoff<T>`. Holding this allows you to offer a single
-/// item at a time to whoever's holding the `Pop` side.
-pub struct Push<'a, T>(&'a Handoff<T>);
+/// item at a time to whoever's holding the `Popper` side.
+pub struct Pusher<'a, T>(&'a Handoff<T>);
 
-impl<T> Push<'_, T> {
+impl<T> Pusher<'_, T> {
     /// Offers `value` to our peer, if they are waiting to receive it.
     ///
-    /// If someone is blocked on the `Pop` side, `value` is transferred to them,
-    /// they are unblocked, and this returns `Ok(())`.
+    /// If someone is blocked on the `Popper` side, `value` is transferred to
+    /// them, they are unblocked, and this returns `Ok(())`.
     ///
     /// Otherwise, it returns `Err(value)`, giving `value` back to you.
     pub fn try_push(&mut self, value: T) -> Result<(), T> {
@@ -250,18 +251,18 @@ impl<T> Push<'_, T> {
 }
 
 /// Implement Debug by hand so it doesn't require T: Debug.
-impl<T> core::fmt::Debug for Push<'_, T> {
+impl<T> core::fmt::Debug for Pusher<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("Push").field(&self.0).finish()
+        f.debug_tuple("Pusher").field(&self.0).finish()
     }
 }
 
 /// Pop endpoint for a `Handoff<T>`. Holding this allows you to take a single
-/// item at a time from whoever's holding the `Push` side.
-pub struct Pop<'a, T>(&'a Handoff<T>);
+/// item at a time from whoever's holding the `Pusher` side.
+pub struct Popper<'a, T>(&'a Handoff<T>);
 
-impl<T> Pop<'_, T> {
-    /// Takes data from the `Push` peer if it's waiting.
+impl<T> Popper<'_, T> {
+    /// Takes data from the `Pusher` peer if it's waiting.
     ///
     /// If the peer is blocked offering us data, this unblocks them and returns
     /// `Some(value)`.
@@ -292,7 +293,7 @@ impl<T> Pop<'_, T> {
     /// **Cancel Safety:** Strict.
     ///
     /// If this is dropped before it resolves, no data will be lost: we have
-    /// either taken data from the `Push` side and resolved, or we have not
+    /// either taken data from the `Pusher` side and resolved, or we have not
     /// taken data.
     pub async fn pop(&mut self) -> T {
         let mut guard = scopeguard::guard(None, |v| {
@@ -352,8 +353,8 @@ impl<T> Pop<'_, T> {
 }
 
 /// Implement Debug by hand so it doesn't require T: Debug.
-impl<T> core::fmt::Debug for Pop<'_, T> {
+impl<T> core::fmt::Debug for Popper<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("Pop").field(&self.0).finish()
+        f.debug_tuple("Popper").field(&self.0).finish()
     }
 }
