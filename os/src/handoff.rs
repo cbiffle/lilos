@@ -52,7 +52,13 @@
 //! This module is currently the only part of `lilos` that has non-deprecated
 //! API that is not strictly cancel-safe. This is often okay, the way handoffs
 //! are used (in my code at least), but please read the docs for
-//! [`Pusher::push`] carefully.
+//! [`Pusher::push`] and [`Popper::pop`] carefully or you risk losing data.
+//!
+//! If the push and pop ends of the handoff are "long-lived," held by tasks that
+//! won't be cancelled (such as top-level tasks in `lilos`) and never used in
+//! contexts where the future might be cancelled (such as `with_timeout`), then
+//! you don't need to worry about that. This is not a property you can check
+//! with the compiler, though, so again -- be careful.
 
 use core::cell::Cell;
 use core::ptr::NonNull;
@@ -290,11 +296,15 @@ impl<T> Popper<'_, T> {
     ///
     /// # Cancellation
     ///
-    /// **Cancel Safety:** Strict.
+    /// **Cancel Safety:** Weak.
     ///
     /// If this is dropped before it resolves, no data will be lost: we have
     /// either taken data from the `Pusher` side and resolved, or we have not
     /// taken data.
+    ///
+    /// *However,* if this future is pending when another task successfully
+    /// `push`-es, and _then_ this future is dropped before resolving, the
+    /// pushed data is lost with no feedback to the pusher.
     pub async fn pop(&mut self) -> T {
         let mut guard = scopeguard::guard(None, |v| {
             if v.is_none() {
