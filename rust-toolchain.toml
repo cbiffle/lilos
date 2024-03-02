@@ -1,5 +1,5 @@
 [toolchain]
-channel = "1.69.0"
+channel = "1.75"
 targets = [ "thumbv7em-none-eabihf", "thumbv7m-none-eabi", "thumbv6m-none-eabi" ]
 profile = "minimal"
-components = [ "rustfmt", "rust-analyzer" ]
+components = [ "rustfmt", "rust-analyzer", "clippy" ]

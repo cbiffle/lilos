@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_all:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - nightly
+          - beta
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm rust-toolchain.toml
+      - run: rustup update ${{ matrix.toolchain}} && rustup default ${{ matrix.toolchain }} && rustup target add thumbv7em-none-eabihf thumbv7m-none-eabi thumbv6m-none-eabi
+      - run: ./build-all.sh
+  check_msrv_all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up cargo cache
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+              ~/.cargo/bin/
+              ~/.cargo/registry/index/
+              ~/.cargo/registry/cache/
+              ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - run: ./msrv-all.sh

@@ -13,7 +13,7 @@ publish = false
 rust-version = "1.69"
 
 [package.metadata.docs.rs]
-default-target = "thumbv7em-none-eabihf"
+default-target = "thumbv6m-none-eabi"
 
 [dependencies]
 cortex-m = "0.7.4"

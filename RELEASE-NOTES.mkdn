@@ -7,8 +7,9 @@ upgrade commit in the Keypad:GO!
 firmware](https://github.com/cbiffle/keypad-go-firmware/commit/fffdf07a6b6a4038b8dd33be396fb16fb0271d58).
 
 Minimum Supported Rust Version is still 1.69, the earliest stable toolchain that
-can build `lilos` and applications. This is getting increasingly painful,
-though, so please let me know if you actually need it.
+can build `lilos` and applications. I'm relying on CI to check this and not
+using 1.69 for day-to-day development because it predates Cargo's sparse index
+fix.
 
 - Time-related public API is now centralized in the `time` module. In earlier
   versions this was split between `time` and `exec` for historical reasons. For
