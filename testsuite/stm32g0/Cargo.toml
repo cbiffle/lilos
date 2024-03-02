@@ -10,6 +10,7 @@ keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
 publish = false
+rust-version = "1.69"
 
 [package.metadata.docs.rs]
 default-target = "thumbv7em-none-eabihf"
