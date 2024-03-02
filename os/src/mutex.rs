@@ -474,15 +474,18 @@ macro_rules! create_static_mutex {
 
         assert_eq!(INIT.swap_polyfill(true, Ordering::SeqCst), false);
 
-        // Static mutex storage.
-        static mut M: MaybeUninit<$crate::mutex::Mutex<$t>> = MaybeUninit::uninit();
+        // Safety: we can produce a non-aliased reference to this thanks to the
+        // INIT check above. We can be confident we don't touch it again below
+        // thanks to the block scope.
+        let __m = unsafe {
+            static mut M: MaybeUninit<$crate::mutex::Mutex<$t>> = MaybeUninit::uninit();
+            &mut *core::ptr::addr_of_mut!(M)
+        };
 
-        // Safety: there are two things going on here:
-        // - Discharging the obligations of Mutex::new (which we'll do in a sec)
-        // - Write to a static mut, which is safe because of our INIT check
-        //   above.
+        // Safety: this requires that we discharge the obligations of Mutex::new
+        // (which we'll do in a sec)
         unsafe {
-            M = MaybeUninit::new(
+            __m.write(
                 ManuallyDrop::into_inner($crate::mutex::Mutex::new($contents))
             );
         }
@@ -491,7 +494,7 @@ macro_rules! create_static_mutex {
         // in the program, so we can pin it as long as we don't touch M again
         // below (which we do not).
         let mut m: Pin<&'static mut _> = unsafe {
-            Pin::new_unchecked(&mut *M.as_mut_ptr())
+            Pin::new_unchecked(__m.assume_init_mut())
         };
 
         // Safety: the value has not been operated on since `new` except for

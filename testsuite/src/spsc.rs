@@ -1,4 +1,5 @@
 use core::mem::MaybeUninit;
+use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use lilos::atomic::AtomicExt;
@@ -13,24 +14,35 @@ pub async fn test_stack() {
 
 /// Queue on stack, storage in a static, because maybe the storage is big and
 /// you want to account for it at link time.
+///
+/// NOTE: this will only complete successfully once! The second attempt will
+/// panic. This is a consequence of how I'm managing aliasing of the static
+/// buffer below.
 pub async fn test_static_storage() {
     static ONCE: AtomicBool = AtomicBool::new(false);
     assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
+
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
-    let mut q = Queue::new(unsafe { &mut STORAGE });
+    let mut q = Queue::new(unsafe { &mut *addr_of_mut!(STORAGE) });
     test_wherever(&mut q).await
 }
 
 /// Queue *and* storage in a static, because this makes the resulting Push and
 /// Pop have `'static` life, so they can be shared with an ISR.
+///
+/// NOTE: this will only complete successfully once! The second attempt will
+/// panic. This is a consequence of how I'm managing aliasing of the static
+/// buffer below.
 pub async fn test_static_everything() {
     static ONCE: AtomicBool = AtomicBool::new(false);
     assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
+
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
     static mut Q: MaybeUninit<Queue<u8>> = MaybeUninit::uninit();
     let q = unsafe {
-        Q.as_mut_ptr().write(Queue::new(&mut STORAGE));
-        &mut *Q.as_mut_ptr()
+        let q = &mut *addr_of_mut!(Q);
+        q.as_mut_ptr().write(Queue::new(&mut *addr_of_mut!(STORAGE)));
+        &mut *q.as_mut_ptr()
     };
     test_wherever(q).await
 }
