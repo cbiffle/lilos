@@ -1,5 +1,7 @@
 # `lilos`: A minimal async RTOS
 
+![CI status badge](https://github.com/cbiffle/lilos/actions/workflows/ci.yml/badge.svg)
+
 - [Intro guide](doc/intro.adoc)
 - [API Docs](https://docs.rs/lilos)
 - [crates.io](https://crates.io/crates/lilos)
