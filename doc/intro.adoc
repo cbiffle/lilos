@@ -365,7 +365,7 @@ buffer to be `static`:
 
 [source]
 ----
-fn get_the_buffer() -> &'mut static [u8; 1024] { <1>
+fn get_the_buffer() -> &'static mut [u8; 1024] { <1>
     static TAKEN: AtomicBool = AtomicBool::new(false); <2>
 
     if TAKEN.swap(true, Ordering::SeqCst) { <3>
