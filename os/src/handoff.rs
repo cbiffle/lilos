@@ -200,10 +200,31 @@ impl<T> Pusher<'_, T> {
     /// `value` on cancellation is okay, then this operation _can_ be used
     /// safely.
     ///
-    /// I'm trying to figure out a version of this with strict safety.
-    /// Suggestions welcome.
+    /// If you need strict cancel safety, use [`push_from`].
+    #[inline]
     pub async fn push(&mut self, value: T) {
-        let mut guard = scopeguard::guard(Some(value), |v| {
+        self.push_from(&mut Some(value)).await;
+    }
+
+    /// Produces a future that resolves when `value` can be handed off to our
+    /// peer.
+    ///
+    /// If `*value` is `None`, then the future will resolve immediately because
+    /// there is nothing to send.
+    ///
+    /// # Cancellation
+    ///
+    /// **Cancel Safety:** Strict.
+    ///
+    /// If this future is dropped before it resolves, `value` is not taken from
+    /// the `Option`.
+    pub async fn push_from(&mut self, value: &mut Option<T>) {
+        // If no value is provided, there's nothing to send.
+        if value.is_none() {
+            return;
+        }
+
+        let mut guard = scopeguard::guard(value, |v| {
             if v.is_some() {
                 // Cancelled while waiting to push! We know that...
                 // - We have been polled at least once (or we wouldn't be here)
@@ -224,9 +245,9 @@ impl<T> Pusher<'_, T> {
                 match self.0.state.get() {
                     State::Idle => {
                         // Our peer is not waiting, we must block.
-                        self.0.state.set(State::PushWait(
-                            NonNull::from(&mut *guard)
-                        ));
+                        self.0
+                            .state
+                            .set(State::PushWait(NonNull::from(&mut **guard)));
                         self.0.ping.until_next().await;
                         continue;
                     }
@@ -237,9 +258,10 @@ impl<T> Pusher<'_, T> {
                     }
                     State::PopWait(dest_ptr) => {
                         // Our peer is waiting. We can do the handoff
-                        // immediately. Defuse the guard.
+                        // immediately. Defuse the guard and take the value.
+                        let value = ScopeGuard::into_inner(guard).take();
                         unsafe {
-                            dest_ptr.as_ptr().write(ScopeGuard::into_inner(guard));
+                            dest_ptr.as_ptr().write(value);
                         }
                         self.0.state.set(State::Idle);
                         self.0.ping.notify();
@@ -278,10 +300,7 @@ impl<T> Popper<'_, T> {
         match self.0.state.get() {
             State::PushWait(src_ptr) => {
                 // Our peer is waiting.
-                let value = core::mem::replace(
-                    unsafe { &mut *src_ptr.as_ptr() },
-                    None,
-                );
+                let value = unsafe { &mut *src_ptr.as_ptr() }.take();
                 self.0.state.set(State::Idle);
                 self.0.ping.notify();
                 value
