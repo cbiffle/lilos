@@ -39,6 +39,18 @@ fix.
   useful, but has some gotchas, so I wanted to make it a little harder to
   reach.)
 
+- The codebase should be ready for the `static_mut_refs` lint in Rust 1.77,
+  which will become a hard error in the eagerly-awaited 2024 edition.
+
+- @helixbass contributed a build of the OS testsuite for STM32F3. While the
+  testsuite itself is processor-independent, this will make it easier for people
+  to use the testsuite on the popular STM32F3-DISCOVERY board.
+
+- @kovirobi fixed the units on `initialize_sys_tick`, which incorrectly claimed
+  to be in megahertz instead of hertz.
+
+- Code simplifications and cleanup from @mattfbacon.
+
 ## Version 0.3.6
 
 - Fixed bug that meant `mutex` wouldn't build if you didn't also have `handoff`
