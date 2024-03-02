@@ -6,10 +6,6 @@ jq --version
 
 DIRS="os testsuite/stm32f4 testsuite/stm32g0 examples/*/*"
 
-# Collect the MSRV from the OS package. We'll just assume the others match it.
-pushd os > /dev/null
-popd > /dev/null
-
 for d in $DIRS; do
     pushd $d > /dev/null
     VERSION=$(cargo metadata --format-version 1 \
