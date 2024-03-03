@@ -20,14 +20,12 @@ default = ["mutex", "spsc", "systick"]
 mutex = []
 spsc = []
 systick = []
-handoff = ["scopeguard"]
 
 [dependencies]
 cfg-if = "1.0.0"
 cortex-m = {version = "0.7.4", features = ["inline-asm"]}
 cortex-m-rt = "0.7.1"
 pin-project-lite = "0.2.10"
-scopeguard = { version = "1.1.0", default-features = false, optional = true }
 
 [lib]
 test = false

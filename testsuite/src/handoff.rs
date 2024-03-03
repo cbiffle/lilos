@@ -1,4 +1,4 @@
-use lilos::handoff::Handoff;
+use lilos_handoff::Handoff;
 
 pub async fn test_create_drop() {
     let handoff = Handoff::<usize>::new(); 

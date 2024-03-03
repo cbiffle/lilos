@@ -61,11 +61,6 @@
 //! for single-producer single-consumer inter-task queues. Leaving this feature
 //! enabled has no cost if you're not actually using `spsc`.
 //!
-//! - `handoff` (**off** by default). Enables access to the
-//! [`handoff`][crate::handoff`] module for inexpensive synchronous inter-task
-//! rendezvous. `handoff` contains some API that is not strictly cancel-safe, so
-//! you need to request it explicitly.
-//!
 //!
 //! # Composition and dynamic behavior
 //!
@@ -177,5 +172,3 @@ pub mod time;
 pub mod mutex;
 #[cfg(feature = "spsc")]
 pub mod spsc;
-#[cfg(feature = "handoff")]
-pub mod handoff;

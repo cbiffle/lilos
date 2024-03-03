@@ -1,0 +1,23 @@
+[package]
+name = "lilos-handoff"
+version = "1.0.0-pre.0"
+authors = ["Cliff L. Biffle <code@cliffle.com>"]
+edition = "2021"
+license = "MPL-2.0"
+description = "Synchronous rendezvous structure for lilos"
+repository = "https://github.com/cbiffle/lilos/"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+rust-version = "1.69"
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eabihf"
+
+[dependencies]
+lilos = { path = "../os", version = "1.0.0-pre.0" }
+scopeguard = { version = "1.2.0", default-features = false }
+
+[lib]
+test = false
+bench = false

@@ -1,5 +1,7 @@
 //! Mechanism for handing data from one task to another, minimizing copies.
 //!
+//! This crate provides the `Handoff` abstraction for `lilos`.
+//!
 //! There are two sides to a `Handoff<T>`, the sender and the receiver. When both
 //! the sender and receiver are ready, a single `T` gets transferred from the
 //! sender's ownership to the receiver's. In this case, "ready" means that
@@ -38,7 +40,7 @@
 //!
 //! If you would like to be able to push data and go on about your business
 //! without waiting for it to be popped, you want a queue, not a handoff. See
-//! the `spsc` module.
+//! the `lilos::spsc` module.
 //!
 //! Note that none of these types are `Send` or `Sync` -- they are very much not
 //! thread safe, so they can be freely used across `async` tasks but cannot be
@@ -49,10 +51,13 @@
 //!
 //! # Cancel safety
 //!
-//! This module is currently the only part of `lilos` that has non-deprecated
-//! API that is not strictly cancel-safe. This is often okay, the way handoffs
-//! are used (in my code at least), but please read the docs for
-//! [`Pusher::push`] and [`Popper::pop`] carefully or you risk losing data.
+//! `Handoff` is not strictly cancel-safe, unlike most of `lilos`. Concretely,
+//! dropping a `push` or `pop` future before it resolves can cause the loss of
+//! at most one data item.
+//!
+//! While technically cancel-unsafe, this is usually okay given the way handoffs
+//! are used in practice. Please read the docs for [`Pusher::push`] and
+//! [`Popper::pop`] carefully or you risk losing data.
 //!
 //! If the push and pop ends of the handoff are "long-lived," held by tasks that
 //! won't be cancelled (such as top-level tasks in `lilos`) and never used in
@@ -60,12 +65,14 @@
 //! you don't need to worry about that. This is not a property you can check
 //! with the compiler, though, so again -- be careful.
 
+#![no_std]
+
 use core::cell::Cell;
 use core::ptr::NonNull;
 
 use scopeguard::ScopeGuard;
 
-use crate::exec::Notify;
+use lilos::exec::Notify;
 
 /// Shared control block for a `Handoff`. See the module docs for more
 /// information.
@@ -148,11 +155,7 @@ impl<T> core::fmt::Debug for State<T> {
 impl<T> Copy for State<T> {}
 impl<T> Clone for State<T> {
     fn clone(&self) -> Self {
-        match self {
-            Self::Idle => Self::Idle,
-            Self::PushWait(p) => Self::PushWait(*p),
-            Self::PopWait(p) => Self::PopWait(*p),
-        }
+        *self  // thanks, Copy impl!
     }
 }
 
@@ -277,11 +280,13 @@ impl<T> Popper<'_, T> {
     pub fn try_pop(&mut self) -> Option<T> {
         match self.0.state.get() {
             State::PushWait(src_ptr) => {
-                // Our peer is waiting.
-                let value = core::mem::replace(
-                    unsafe { &mut *src_ptr.as_ptr() },
-                    None,
-                );
+                // Our peer is waiting. Take the thingy.
+                //
+                // Safety: if we're in this state the source pointer is valid
+                // and the backing memory is not being used -- since if the peer
+                // had resumed, it would have knocked us out of this state.
+                let value = unsafe { &mut *src_ptr.as_ptr() }.take();
+
                 self.0.state.set(State::Idle);
                 self.0.ping.notify();
                 value

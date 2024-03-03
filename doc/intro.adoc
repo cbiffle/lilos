@@ -1030,17 +1030,17 @@ which is on by default.
 === Sending something to another task, but synchronously
 
 If you need to send things from task A to task B, and it's okay to make the two
-tasks synchronize each time they want to exchange data, then `lilos::handoff` is
-your new best friend. Creating a `Handoff` doesn't require any storage, and
-exchanging data using a `Handoff` guarantees to only copy your data in memory
-once -- unlike `spsc`, which copies data at least twice: once on the way in,
-once on the way out.
+tasks synchronize each time they want to exchange data, then the
+`lilos-handoff` crate is your new best friend. Creating a `Handoff` doesn't
+require any storage, and exchanging data using a `Handoff` guarantees to only
+copy your data in memory once -- unlike `spsc`, which copies data at least
+twice: once on the way in, once on the way out.
 
 If you just want the _sender_ to wait while the receiver goes on doing its work,
-have a look at the `try_pop` operation on `lilos::handoff::Pop`.
+have a look at the `try_pop` operation on `lilos_handoff::Pop`.
 
-TIP: `lilos::handoff` is available if {os} is built with the `handoff`
-feature, which is on by default.
+TIP: `lilos_handoff` is not part of the core API. Use `cargo add lilos-handoff`
+to add it to your project.
 
 === Sharing a read-write resource between two or more tasks
 

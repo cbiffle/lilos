@@ -1,0 +1,11 @@
+# Handoff structure for `lilos`
+
+This implements a synchronous rendezvous structure, which lets a task pass a
+value to another task without extra copies or reserving storage space.
+
+This used to be part of the core `lilos` API, but was extracted during the
+process of finalizing the `lilos` 1.0 version. It is currently separate from
+`lilos` because its API is not cancel-safe.
+
+Despite not being cancel-safe, it's still quite useful. See the module docs for
+more details.
