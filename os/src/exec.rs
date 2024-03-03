@@ -711,15 +711,14 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until<'a, 'b, T: TestResult>(
+    pub fn until<'a, 'b, F, T: TestResult>(
         &'a self,
-        cond: impl (FnMut() -> T) + 'b,
-    ) -> impl Future<Output = T::Output> + 'a
+        cond: F,
+    ) -> Until<'a, F>
     where
         'b: 'a,
+        F: FnMut() -> T + 'b,
     {
-        // TODO: in a future breaking revision, change the public type of until
-        // to expose the concrete Until type, in case that's useful to someone.
         Until {
             cond,
             notify: self,
@@ -757,16 +756,14 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until_racy<'a, 'b, T: TestResult>(
+    pub fn until_racy<'a, 'b, F, T: TestResult>(
         &'a self,
-        cond: impl (FnMut() -> T) + 'b,
-    ) -> impl Future<Output = T::Output> + 'a
+        cond: F,
+    ) -> UntilRacy<'a, F>
     where
         'b: 'a,
+        F: FnMut() -> T + 'b,
     {
-        // TODO: in a future breaking revision, change the public type of
-        // until_racy to expose the concrete UntilRacy type, in case that's
-        // useful to someone.
         UntilRacy {
             cond,
             notify: self,
@@ -828,7 +825,7 @@ impl<T> TestResult for Option<T> {
 pin_project! {
     /// Internal future type used to implement `Notify::until`. This makes it
     /// much easier to recognize the future in a debugger.
-    struct Until<'n, F> {
+    pub struct Until<'n, F> {
         cond: F,
         notify: &'n Notify,
     }
@@ -854,7 +851,7 @@ impl<F, T> Future for Until<'_, F>
 pin_project! {
     /// Internal future type used to implement `Notify::until_racy`. This makes
     /// it much easier to recognize the future in a debugger.
-    struct UntilRacy<'n, F> {
+    pub struct UntilRacy<'n, F> {
         cond: F,
         notify: &'n Notify,
     }
