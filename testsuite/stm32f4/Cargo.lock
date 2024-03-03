@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "lilos"
-version = "1.0.0-pre.0"
+version = "1.0.0-pre.1"
 dependencies = [
  "cfg-if",
  "cortex-m",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "lilos-handoff"
-version = "1.0.0-pre.0"
+version = "1.0.0-pre.1"
 dependencies = [
  "lilos",
  "scopeguard",
