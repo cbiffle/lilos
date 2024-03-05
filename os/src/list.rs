@@ -134,6 +134,52 @@ use core::ptr::NonNull;
 use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
 use crate::util::NotSendMarker;
 
+/// A cell specialized for holding `Waker`s. This is functionally equivalent to
+/// `Cell` except that it will allow one operation to be performed on its
+/// contents by reference: `wake_by_ref`.
+///
+/// # Why we can do this
+///
+/// We satisfy a narrow form of `UnsafeCell`'s safety contract:
+///
+/// - This type is not `Sync` and can't be accessed from multiple threads. This
+/// means at most once of its operations (below) is executing at a time.
+///
+/// - The operations will produce temporary references (both `&` and `&mut`)
+/// into the `UnsafeCell`, but will only produce one such reference at a time,
+/// and won't let it escape the function. This prevents aliasing in both
+/// directions, and deallocation of data while a reference exists.
+///
+/// This puts us into the corner of `UnsafeCell`'s contract that, at the time of
+/// this writing, reads "explicitly declared legal for single-threaded code."
+struct WakerCell(UnsafeCell<Waker>);
+
+impl WakerCell {
+    fn new(waker: Waker) -> Self {
+        Self(UnsafeCell::new(waker))
+    }
+
+    fn update(&self, waker: Waker) {
+        // Safety: this is unsafe because we're generating a &mut to the
+        // contents of the UnsafeCell. We can do this thanks to our type-level
+        // invariant that we don't generate more than one reference into the
+        // cell at a time.
+        //
+        // Note: as tempting as it might be to use `ptr::write` directly on the
+        // pointer returned from `get`, this would leak the previous waker
+        // without calling its destructor. This happens to be just fine on
+        // current versions of this executor, but is wrong in the general case.
+        *unsafe { &mut *self.0.get() } = waker;
+    }
+
+    fn wake_by_ref(&self) {
+        // Safety: this is unsafe because we're creating a shared reference into
+        // the UnsafCell. We can do this thanks to our type-level invariant that
+        // we don't generate more than one reference into the cell at a time.
+        unsafe { &*self.0.get() }.wake_by_ref()
+    }
+}
+
 /// A member of a list.
 ///
 /// A node is either *detached* (not in a list) or *attached* (in a list). After
@@ -156,7 +202,7 @@ use crate::util::NotSendMarker;
 pub struct Node<T> {
     prev: Cell<NonNull<Self>>,
     next: Cell<NonNull<Self>>,
-    waker: UnsafeCell<Waker>,
+    waker: WakerCell,
     contents: T,
     _marker: NotSendMarker,
 }
@@ -172,7 +218,7 @@ impl<T> Node<T> {
         ManuallyDrop::new(Node {
             prev: Cell::new(NonNull::dangling()),
             next: Cell::new(NonNull::dangling()),
-            waker: UnsafeCell::new(waker),
+            waker: WakerCell::new(waker),
             contents,
             _marker: NotSendMarker::default(),
         })
@@ -218,13 +264,6 @@ impl<T> Node<T> {
         // node would violate our invariants.
         self.prev.get() == NonNull::from(self)
     }
-
-    /// Replaces the node's waker in case its context has changed.
-    pub fn update_waker(self: Pin<&mut Self>, waker: Waker) {
-        unsafe {
-            *self.waker.get() = waker;
-        }
-    }
 }
 
 /// A `Node` will detach itself from any list on drop.
@@ -234,9 +273,6 @@ impl<T> Drop for Node<T> {
         inner_drop(unsafe { Pin::new_unchecked(self) });
 
         fn inner_drop<T>(this: Pin<&mut Node<T>>) {
-            unsafe {
-                core::ptr::drop_in_place(this.waker.get());
-            }
             this.as_ref().detach();
         }
     }
@@ -480,9 +516,7 @@ impl<T: PartialOrd> List<T> {
             // Copy the next pointer before detaching.
             let next = cref.next.get();
             cref.detach();
-            unsafe {
-                (*cref.waker.get()).wake_by_ref();
-            }
+            cref.waker.wake_by_ref();
 
             candidate = next;
         }
@@ -506,9 +540,7 @@ impl List<()> {
             // Safety: Link Valid Invariant
             let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
             cref.detach();
-            unsafe {
-                (*cref.waker.get()).wake_by_ref();
-            }
+            cref.waker.wake_by_ref();
             true
         } else {
             false
@@ -611,9 +643,7 @@ impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
                 }
 
                 self.state.set(WaitState::Attached);
-                unsafe {
-                    *self.node.waker.get() = cx.waker().clone();
-                }
+                self.node.waker.update(cx.waker().clone());
                 Poll::Pending
             }
             WaitState::Attached => {
@@ -627,9 +657,7 @@ impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
                 } else {
                     // The node remains attached to the list. While unlikely, it's
                     // possible that the waker has changed. Update it.
-                    unsafe {
-                        *self.node.waker.get() = cx.waker().clone();
-                    }
+                    self.node.waker.update(cx.waker().clone());
                     Poll::Pending
                 }
             }
