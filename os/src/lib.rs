@@ -53,12 +53,12 @@
 //! during sleep, such as Nordic nRF52, you may want to disable this feature and
 //! use a different timekeeping mechanism.
 //!
-//! - `mutex` (on by default). Enables access to the [`mutex`][crate::mutex]
-//! module for blocking access to shared data. Leaving this feature enabled has
-//! no cost if you're not actually using `mutex`.
+//! - `mutex` (on by default). Enables access to the [`mutex`] module for
+//! blocking access to shared data. Leaving this feature enabled has no cost if
+//! you're not actually using `mutex`.
 //!
-//! - `spsc` (on by default). Enables access to the [`spsc`][crate::spsc] module
-//! for single-producer single-consumer inter-task queues. Leaving this feature
+//! - `spsc` (on by default). Enables access to the [`spsc`] module for
+//! single-producer single-consumer inter-task queues. Leaving this feature
 //! enabled has no cost if you're not actually using `spsc`.
 //!
 //!
@@ -90,8 +90,7 @@
 //! If your application requires tighter interrupt response time, you can
 //! configure the OS at startup to permit preemption of various kinds --
 //! including allowing preemption by only a subset of your interrupts. See the
-//! [`exec`][crate::exec] module for more details and some customization
-//! options.
+//! [`exec`] module for more details and some customization options.
 //!
 //! # Cancellation
 //!

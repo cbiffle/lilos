@@ -351,8 +351,7 @@ impl Interrupts {
 ///
 /// Task futures must not ever resolve/complete -- they need to be infinite
 /// loops or equivalent. Due to limitations in the language, this requires their
-/// return type to be [`Infallible`][core::convert::Infallible], which is an
-/// awkward way of writing `!`.
+/// return type to be [`Infallible`], which is an awkward way of writing `!`.
 ///
 /// Not all tasks are polled every time through the loop. On the first
 /// iteration, only the tasks with a corresponding bit set in `initial_mask` are
