@@ -278,8 +278,6 @@ impl From<u64> for Millis {
 ///
 /// Dropping this future does nothing in particular.
 pub async fn sleep_until(deadline: TickTime) {
-    // TODO: this early return means we can't simply return the insert_and_wait
-    // future below, which is costing us some bytes of text.
     if TickTime::now() >= deadline {
         return;
     }
@@ -288,7 +286,7 @@ pub async fn sleep_until(deadline: TickTime) {
 
     // Insert our node into the pending timer list. If we get cancelled, the
     // node will detach itself as it's being dropped.
-    crate::exec::with_timer_list(|tl| tl.insert_and_wait(node.as_mut())).await
+    crate::exec::get_timer_list().insert_and_wait(node.as_mut()).await
 }
 
 /// Sleeps until the system time has increased by `d`.

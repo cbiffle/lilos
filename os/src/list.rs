@@ -387,10 +387,12 @@ impl<T: PartialOrd> List<T> {
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
     /// This should be pretty difficult to achieve in practice.
-    pub fn insert_and_wait<'a>(
-        self: Pin<&Self>,
-        node: Pin<&'a mut Node<T>>,
-    ) -> impl Future<Output = ()> + 'a {
+    pub fn insert_and_wait<'list, 'node>(
+        self: Pin<&'list Self>,
+        node: Pin<&'node mut Node<T>>,
+    ) -> impl Future<Output = ()> + 'node
+        where 'list: 'node
+    {
         self.insert_and_wait_with_cleanup(
             node,
             || (),
@@ -436,55 +438,22 @@ impl<T: PartialOrd> List<T> {
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
     /// This should be pretty difficult to achieve in practice.
-    pub fn insert_and_wait_with_cleanup<'node, F: 'node + FnOnce()>(
-        self: Pin<&Self>,
+    pub fn insert_and_wait_with_cleanup<'list, 'node, F: 'node + FnOnce()>(
+        self: Pin<&'list Self>,
         node: Pin<&'node mut Node<T>>,
         cleanup: F,
-    ) -> impl Future<Output = ()> + 'node {
+    ) -> impl Future<Output = ()> + 'node
+        where 'list: 'node
+    {
         // We required `node` to be `mut` to prove exclusive ownership, but we
         // don't actually need to mutate it -- and we're going to alias it. So,
         // downgrade.
         let node = node.into_ref();
-        // Do the insertion part. This used to be a separate `insert` function,
-        // but that function had soundness risks and so I've inlined it.
-        let nnn = NonNull::from(&*node);
-        {
-            // Node should not already belong to a list. This is a debug_assert
-            // because this property _should be_ handled at compile time by
-            // taking ownership of the &mut Node while it's in a list.
-            debug_assert!(node.prev.get() == nnn);
-            debug_assert!(node.next.get() == nnn); // technically redundant
-
-            // Work through the nodes starting at the head, looking for the
-            // future `next` of `node`. Use the root as a sentinel to stop
-            // iteration.
-            let mut candidate = self.root.next.get();
-            while candidate != NonNull::from(&self.root) {
-                // Safety: Link Valid Invariant means we can deref this
-                let cref = unsafe { candidate.as_ref() };
-
-                if cref.contents >= node.contents {
-                    break;
-                }
-                candidate = cref.next.get();
-            }
-
-            // `candidate` is either a neighbor node, or the root; in the latter
-            // case, `node` is becoming the new head of the list.
-            node.next.set(candidate);
-            // Safety: Link Valid Invariant
-            let cref = unsafe { candidate.as_ref() };
-            node.prev.set(cref.prev.get());
-            // Safety: Link Valid Invariant
-            unsafe {
-                cref.prev.get().as_ref().next.set(nnn);
-            }
-            cref.prev.set(nnn);
-        }
 
         WaitForDetach {
             node,
-            polled_since_detach: Cell::new(false),
+            list: self,
+            state: Cell::new(WaitState::NotYetAttached),
             cleanup: Some(cleanup),
         }
     }
@@ -580,46 +549,118 @@ impl<T: core::fmt::Debug> core::fmt::Debug for List<T> {
 /// named type because it needs a custom `Drop` impl.
 struct WaitForDetach<'a, T, F: FnOnce()> {
     node: Pin<&'a Node<T>>,
-    polled_since_detach: Cell<bool>,
+    list: Pin<&'a List<T>>,
+    state: Cell<WaitState>,
     cleanup: Option<F>,
 }
 
-impl<T, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
+#[derive(Copy, Clone, Debug)]
+enum WaitState {
+    NotYetAttached,
+    Attached,
+    DetachedAndPolled,
+}
+
+impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
         -> Poll<Self::Output>
     {
-        if self.node.is_detached() {
-            // The node is not attached to any list, but we're still borrowing
-            // it until we're dropped, so we don't need to replace the node
-            // field contents -- just set a flag to skip work in the Drop impl.
-            self.polled_since_detach.set(true);
-            Poll::Ready(())
-        } else {
-            // The node remains attached to the list. While unlikely, it's
-            // possible that the waker has changed. Update it.
-            unsafe {
-                *self.node.waker.get() = cx.waker().clone();
+        match self.state.get() {
+            WaitState::NotYetAttached => {
+                // Do the insertion part. This used to be a separate `insert`
+                // function, but that function had soundness risks and so I've
+                // inlined it.
+                let node = self.node;
+                let nnn = NonNull::from(&*node);
+                {
+                    // Node should not already belong to a list. This is a
+                    // debug_assert because this property _should be_ handled at
+                    // compile time by taking ownership of the &mut Node while
+                    // it's in a list.
+                    debug_assert!(node.prev.get() == nnn);
+                    debug_assert!(node.next.get() == nnn); // technically redundant
+
+                    // Work through the nodes starting at the head, looking for
+                    // the soon-to-be `next` of `node`. Use the root as a
+                    // sentinel to stop iteration.
+                    let mut candidate = self.list.root.next.get();
+                    while candidate != NonNull::from(&self.list.root) {
+                        // Safety: Link Valid Invariant means we can deref this
+                        let cref = unsafe { candidate.as_ref() };
+
+                        if cref.contents >= node.contents {
+                            break;
+                        }
+                        candidate = cref.next.get();
+                    }
+
+                    // `candidate` is either a neighbor node, or the root; in
+                    // the latter case, `node` is becoming the new head of the
+                    // list.
+                    node.next.set(candidate);
+                    // Safety: Link Valid Invariant
+                    let cref = unsafe { candidate.as_ref() };
+                    node.prev.set(cref.prev.get());
+                    // Safety: Link Valid Invariant
+                    unsafe {
+                        cref.prev.get().as_ref().next.set(nnn);
+                    }
+                    cref.prev.set(nnn);
+                }
+
+                self.state.set(WaitState::Attached);
+                unsafe {
+                    *self.node.waker.get() = cx.waker().clone();
+                }
+                Poll::Pending
             }
-            Poll::Pending
+            WaitState::Attached => {
+                // See if we've detached.
+                if self.node.is_detached() {
+                    // The node is not attached to any list, but we're still borrowing
+                    // it until we're dropped, so we don't need to replace the node
+                    // field contents -- just set a flag to skip work in the Drop impl.
+                    self.state.set(WaitState::DetachedAndPolled);
+                    Poll::Ready(())
+                } else {
+                    // The node remains attached to the list. While unlikely, it's
+                    // possible that the waker has changed. Update it.
+                    unsafe {
+                        *self.node.waker.get() = cx.waker().clone();
+                    }
+                    Poll::Pending
+                }
+            }
+            // This effectively "fuses" the future.
+            WaitState::DetachedAndPolled => Poll::Ready(()),
         }
     }
 }
 
 impl<T, F: FnOnce()> Drop for WaitForDetach<'_, T, F> {
     fn drop(&mut self) {
-        if self.node.is_detached() {
-            if self.polled_since_detach.get() {
-                // No action necessary.
-            } else {
-                // Uh oh, we have not had a chance to handle the detach.
-                if let Some(cleanup) = self.cleanup.take() {
-                    cleanup();
-                }
+        match self.state.get() {
+            WaitState::NotYetAttached => {
+                // No work to do here.
             }
-        } else {
-            self.node.detach();
+            WaitState::Attached => {
+                if self.node.is_detached() {
+                    // Uh oh, we have not had a chance to handle the detach.
+                    if let Some(cleanup) = self.cleanup.take() {
+                        cleanup();
+                    }
+                } else {
+                    // If _we_ detach ourselves, we don't run the cleanup
+                    // action.
+                    self.node.detach();
+                }
+
+            }
+            WaitState::DetachedAndPolled => {
+                // No work to do here either.
+            }
         }
     }
 }

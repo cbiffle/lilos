@@ -146,10 +146,12 @@ use crate::atomic::{AtomicExt, AtomicArithExt};
 // other cfg(feature = "systick") lines below.
 cfg_if::cfg_if! {
     if #[cfg(feature = "systick")] {
-        use core::sync::atomic::AtomicPtr;
+        use core::sync::atomic::AtomicBool;
+        use core::ptr::{addr_of, addr_of_mut};
 
         use crate::cheap_assert;
         use crate::list::List;
+        use core::mem::{MaybeUninit, ManuallyDrop};
         use crate::time::TickTime;
     }
 }
@@ -503,19 +505,51 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
 
     WAKE_BITS.store(initial_mask, Ordering::SeqCst);
 
-    // TODO make this list static for more predictable memory usage
+    // Initialize the timer list.
     #[cfg(feature = "systick")]
-    create_list!(timer_list);
+    {
+        let already_initialized =
+            TIMER_LIST_READY.swap_polyfill(true, Ordering::SeqCst);
+        // Catch any attempt to do this twice. Would doing this twice be bad?
+        // Not necessarily. But it would be damn suspicious.
+        cheap_assert!(!already_initialized);
 
-    #[cfg(not(feature = "systick"))]
-    let timer_list = ();
+        // Safety: by successfully flipping the initialization flag, we know
+        // we can do this without aliasing; being in a single-threaded context
+        // right now means we can do it without racing.
+        let timer_list = unsafe {
+            &mut *addr_of_mut!(TIMER_LIST)
+        };
+        // Initialize the list node itself.
+        //
+        // Safety: we discharge the obligations of `new` here by continuing,
+        // below, to pin and finish initialization of the list.
+        timer_list.write(ManuallyDrop::into_inner(unsafe {
+            List::new()
+        }));
+        // Safety: we're not going to overwrite or drop this static list, so we
+        // have trivially fulfilled the pin requirements.
+        let mut timer_list = unsafe {
+            Pin::new_unchecked(timer_list.assume_init_mut())
+        };
+        // Safety: finish_init requires that we haven't done anything to the
+        // List since `new` except for pinning it, which is the case here.
+        unsafe {
+            List::finish_init(timer_list.as_mut());
+        }
 
-    set_timer_list(timer_list, || loop {
+        // The list is initialized; we can now produce _shared_ references to
+        // it. Our one and only Pin<&mut List> ends here.
+    }
+
+    #[cfg(feature = "systick")]
+    let tl = get_timer_list();
+    loop {
         interrupts.scope(|| {
             #[cfg(feature = "systick")]
             {
                 // Scan for any expired timers.
-                with_timer_list(|tl| tl.wake_less_than(TickTime::now()));
+                tl.wake_less_than(TickTime::now());
             }
 
             // Capture and reset wake bits, then process any 1s.
@@ -541,7 +575,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
         // Now interrupts are enabled for a brief period before diving back in.
         // Note that we allow interrupt-wake even when some wake bits are set;
         // this prevents ISR starvation by polling tasks.
-    })
+    }
 }
 
 /// This `static` variable is only written by the OS, and never read. It exists
@@ -893,10 +927,13 @@ pub fn wake_task_by_index(index: usize) {
     wake_tasks_by_mask(wake_mask_for_index(index));
 }
 
-/// Tracks the timer list currently in scope.
+/// Tracks whether the timer list has been initialized.
 #[cfg(feature = "systick")]
-static TIMER_LIST: AtomicPtr<List<TickTime>> =
-    AtomicPtr::new(core::ptr::null_mut());
+static TIMER_LIST_READY: AtomicBool = AtomicBool::new(false);
+
+/// Storage for the timer list.
+#[cfg(feature = "systick")]
+static mut TIMER_LIST: MaybeUninit<List<TickTime>> = MaybeUninit::uninit();
 
 /// Panics if called from an interrupt service routine (ISR). This is used to
 /// prevent OS features that are unavailable to ISRs from being used in ISRs.
@@ -909,82 +946,36 @@ fn assert_not_in_isr() {
     }
 }
 
-/// Sets the timer list for the duration of `body`.
-///
-/// This doesn't nest, and will assert if you try.
-#[cfg(feature = "systick")]
-#[inline(always)]
-fn set_timer_list<R>(
-    list: Pin<&mut List<TickTime>>,
-    body: impl FnOnce() -> R,
-) -> R {
-    // Prevent this from being used from interrupt context.
-    assert_not_in_isr();
-
-    let old_list = TIMER_LIST.swap_polyfill(
-        // Safety: since we've gotten a &mut, we hold the only reference, so
-        // it's safe for us to smuggle it through a pointer and reborrow it as
-        // shared.
-        unsafe { Pin::get_unchecked_mut(list) },
-        Ordering::Acquire,
-    );
-
-    // Detect weird reentrant uses of this function. This would indicate an
-    // internal error, or possibly an application being cheeky and calling
-    // `run_tasks` from within a task. Since this assert should only be checked
-    // on executor startup, there is no need to optimize it away in release
-    // builds.
-    cheap_assert!(old_list.is_null());
-
-    let r = body();
-
-    // Give up our scoped reference so the caller's &mut has no risk of
-    // aliasing.
-    TIMER_LIST.store(core::ptr::null_mut(), Ordering::Release);
-
-    r
-}
-
-/// No-op definition of `set_timer_list` if the OS has no actual timer list.
-#[cfg(not(feature = "systick"))]
-#[inline(always)]
-fn set_timer_list<X, R>(
-    _list: X,
-    body: impl FnOnce() -> R,
-) -> R {
-    body()
-}
-
-/// Nabs a reference to the current timer list and executes `body`.
-///
-/// This provides a safe way to access the timer thread local.
+/// Nabs a reference to the global timer list.
 ///
 /// # Preconditions
 ///
 /// - Must not be called from an interrupt.
-/// - Must only be called with a timer list available, which is to say, from
-///   within a task.
+/// - Must only be called once the timer list has been initialized, which is to
+///   say, from within a task.
 #[cfg(feature = "systick")]
-pub(crate) fn with_timer_list<R>(body: impl FnOnce(Pin<&List<TickTime>>) -> R) -> R {
+pub(crate) fn get_timer_list() -> Pin<&'static List<TickTime>> {
     // Prevent this from being used from interrupt context.
+
     assert_not_in_isr();
 
-    let list_ref = {
-        let tlptr = TIMER_LIST.load(Ordering::Acquire);
-        // If this assertion fails, it's a sign that one of the timer-aware OS
-        // primitives (likely a `sleep_*`) has been used without the OS actually
-        // running.
-        cheap_assert!(!tlptr.is_null());
+    // Ensure that the timer list has been initialized.
+    cheap_assert!(TIMER_LIST_READY.load(Ordering::Acquire));
 
-        // Safety: if it's not null, then it came from a `Pin<&mut>` that we
-        // have been loaned. We do not treat it as a &mut anywhere, so we can
-        // safely reborrow it as shared.
-        unsafe {
-            Pin::new_unchecked(&*tlptr)
-        }
+    // Since we know we're not running concurrently with the scheduler setup, we
+    // can freely vend pin references to the now-immortal timer list.
+    //
+    // Safety: &mut references to TIMER_LIST have stopped after initialization.
+    let list_ref = unsafe {
+        &*addr_of!(TIMER_LIST)
     };
-
-    body(list_ref)
+    // Safety: we know the list has been initialized because we checked
+    // TIMER_LIST_READY, above. We also know that the list trivially meets the
+    // pin criterion, since it's immortal and always referenced by shared
+    // reference at this point.
+    unsafe {
+        Pin::new_unchecked(list_ref.assume_init_ref())
+    }
 }
 
 /// Returns a future that will be pending exactly once before resolving.
