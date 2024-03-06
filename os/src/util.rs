@@ -22,6 +22,15 @@ pub struct NotSyncMarker(PhantomData<core::cell::Cell<()>>);
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct NotSendMarker(PhantomData<*const ()>);
 
+/// Marker trait implementing the "Captures Trick" from Rust RFC 3498, ensuring
+/// that we do lifetime capturing right in the 2021 edition.
+///
+/// TODO: revisit this when we can switch to the 2024 edition, where the default
+/// behavior makes this less necessary.
+pub trait Captures<T> {}
+
+impl<U: ?Sized, T> Captures<T> for U {}
+
 /// Extension trait for `Future` that adds common utility operations.
 ///
 /// This is intended to complement the `futures` crate and reduce the number of

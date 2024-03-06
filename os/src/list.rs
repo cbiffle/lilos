@@ -132,7 +132,7 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
-use crate::util::NotSendMarker;
+use crate::util::{NotSendMarker, Captures};
 
 /// A cell specialized for holding `Waker`s. This is functionally equivalent to
 /// `Cell` except that it will allow one operation to be performed on its
@@ -426,9 +426,7 @@ impl<T: PartialOrd> List<T> {
     pub fn insert_and_wait<'list, 'node>(
         self: Pin<&'list Self>,
         node: Pin<&'node mut Node<T>>,
-    ) -> impl Future<Output = ()> + 'node
-        where 'list: 'node
-    {
+    ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
         self.insert_and_wait_with_cleanup(
             node,
             || (),
@@ -478,9 +476,7 @@ impl<T: PartialOrd> List<T> {
         self: Pin<&'list Self>,
         node: Pin<&'node mut Node<T>>,
         cleanup: F,
-    ) -> impl Future<Output = ()> + 'node
-        where 'list: 'node
-    {
+    ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
         // We required `node` to be `mut` to prove exclusive ownership, but we
         // don't actually need to mutate it -- and we're going to alias it. So,
         // downgrade.
@@ -579,9 +575,9 @@ impl<T: core::fmt::Debug> core::fmt::Debug for List<T> {
 }
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
-struct WaitForDetach<'a, T, F: FnOnce()> {
-    node: Pin<&'a Node<T>>,
-    list: Pin<&'a List<T>>,
+struct WaitForDetach<'node, 'list, T, F: FnOnce()> {
+    node: Pin<&'node Node<T>>,
+    list: Pin<&'list List<T>>,
     state: Cell<WaitState>,
     cleanup: Option<F>,
 }
@@ -593,7 +589,7 @@ enum WaitState {
     DetachedAndPolled,
 }
 
-impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
+impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, '_, T, F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
@@ -667,7 +663,7 @@ impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, T, F> {
     }
 }
 
-impl<T, F: FnOnce()> Drop for WaitForDetach<'_, T, F> {
+impl<T, F: FnOnce()> Drop for WaitForDetach<'_, '_, T, F> {
     fn drop(&mut self) {
         match self.state.get() {
             WaitState::NotYetAttached => {

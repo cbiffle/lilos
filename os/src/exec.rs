@@ -140,6 +140,7 @@ use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use pin_project_lite::pin_project;
 
 use crate::atomic::{AtomicExt, AtomicArithExt};
+use crate::util::Captures;
 
 // Despite the untangling of exec and time that happened in the 1.0 release, we
 // still have some intimate dependencies between the modules. You'll see a few
@@ -744,13 +745,12 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until<'a, 'b, F, T: TestResult>(
+    pub fn until<'a, F, T: TestResult>(
         &'a self,
         cond: F,
     ) -> Until<'a, F>
     where
-        'b: 'a,
-        F: FnMut() -> T + 'b,
+        F: FnMut() -> T,
     {
         Until {
             cond,
@@ -789,13 +789,12 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until_racy<'a, 'b, F, T: TestResult>(
+    pub fn until_racy<'a, F, T: TestResult>(
         &'a self,
         cond: F,
     ) -> UntilRacy<'a, F>
     where
-        'b: 'a,
-        F: FnMut() -> T + 'b,
+        F: FnMut() -> T,
     {
         UntilRacy {
             cond,
@@ -815,8 +814,7 @@ impl Notify {
     /// (meaning one potential spurious wakeup in the future is possible).
     pub fn until_next(
         &self,
-    ) -> impl Future<Output = ()> + '_
-    {
+    ) -> impl Future<Output = ()> + Captures<&'_ Self> {
         let mut setup = false;
         self.until(move || core::mem::replace(&mut setup, true))
     }
