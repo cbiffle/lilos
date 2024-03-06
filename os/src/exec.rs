@@ -816,7 +816,7 @@ impl Notify {
         &self,
     ) -> impl Future<Output = ()> + Captures<&'_ Self> {
         let mut setup = false;
-        self.until(move || core::mem::replace(&mut setup, true))
+        self.until(move || mem::replace(&mut setup, true))
     }
 }
 
@@ -998,7 +998,7 @@ impl Future for YieldCpu {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if core::mem::replace(&mut self.polled, true) {
+        if mem::replace(&mut self.polled, true) {
             Poll::Ready(())
         } else {
             // Ensure that we get called next round.
