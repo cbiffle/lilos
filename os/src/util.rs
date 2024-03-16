@@ -63,6 +63,7 @@ pub trait FutureExt {
 impl<F: Future> FutureExt for F {}
 
 /// Future wrapper that adds a cancel action (result of [`FutureExt::on_cancel`]).
+#[must_use = "futures do nothing unless you `.await` or poll them"]
 #[derive(Debug)]
 pub struct OnCancel<F, A>
     where A: FnOnce(),

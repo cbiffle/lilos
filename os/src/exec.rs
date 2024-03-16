@@ -856,6 +856,7 @@ impl<T> TestResult for Option<T> {
 pin_project! {
     /// Internal future type used to implement `Notify::until`. This makes it
     /// much easier to recognize the future in a debugger.
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct Until<'n, F> {
         cond: F,
         notify: &'n Notify,
@@ -882,6 +883,7 @@ impl<F, T> Future for Until<'_, F>
 pin_project! {
     /// Internal future type used to implement `Notify::until_racy`. This makes
     /// it much easier to recognize the future in a debugger.
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct UntilRacy<'n, F> {
         cond: F,
         notify: &'n Notify,
@@ -990,6 +992,7 @@ pub fn yield_cpu() -> impl Future<Output = ()> {
     YieldCpu { polled: false }
 }
 
+#[must_use = "futures do nothing unless you `.await` or poll them"]
 struct YieldCpu {
     polled: bool,
 }
