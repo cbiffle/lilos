@@ -20,7 +20,7 @@ for k in ${!MODES[@]}; do
     popd > /dev/null
 done
 
-DIRS="handoff testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 examples/*/*"
+DIRS="handoff testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 testsuite/lm3s6965 examples/*/*"
 
 for d in $DIRS; do
     echo "---- building in $d"
