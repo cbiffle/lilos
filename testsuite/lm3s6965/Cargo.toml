@@ -1,0 +1,38 @@
+[package]
+name = "lilos-testsuite-lm3s6965"
+authors = ["Kovacsics Robert <kovirobi@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "Operating system tests for LM3S6965 (can be run with QEMU)."
+repository = "https://github.com/cbiffle/lilos/"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+publish = false
+rust-version = "1.69"
+
+[package.metadata.docs.rs]
+default-target = "thumbv7m-none-eabi"
+
+[dependencies]
+cortex-m = "0.7.4"
+cortex-m-rt = { version = "0.7.1", default-features = false }
+panic-semihosting = "0.6.0"
+lilos-testsuite = { path = ".." }
+
+[features]
+default = ["exit"]
+exit = ["panic-semihosting/exit"]
+
+[[bin]]
+name = "lilos-testsuite-lm3s6965"
+test = false
+bench = false
+
+[profile.release]
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+lto = true # better optimizations
+opt-level = "z"
+overflow-checks = true

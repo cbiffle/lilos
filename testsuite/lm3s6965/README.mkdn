@@ -1,0 +1,22 @@
+# `lilos` test suite for LM3S6965 (can be emulated with QEMU)
+
+This crate customizes the test suite for LM3S6965. To use:
+
+Install the prerequisites described in the root of this repo, plus `qemu`.
+
+Run `run.sh` from this directory. It should call out to `qemu`, verify, run the
+tests, and print the results, before exiting.  If the tests passed it will exit
+with status 0.
+
+Note: you can send commands to QEMU via `Ctrl-a ...`, e.g. `Ctrl-a h` for
+printing help.
+
+If you would like to run the tests in GDB (i.e. they are not passing), run the
+following command:
+`gdb target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965 -ex 'tar ext :1234'`.
+
+Note: `tar ext :1234` is short for `target extended-remote localhost:1234`.
+
+Note: If you want to halt the CPU at startup (e.g. to set breakpoints), pass
+the `-S` argument to QEMU, e.g. `cargo run -- -S`. Then you can set a
+breakpoint in GDB then use `continue/fg/c` to start the tests.
