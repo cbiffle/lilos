@@ -368,6 +368,22 @@ impl<T: Default> List<T> {
 }
 
 impl<T> List<T> {
+    /// Same as `List::new()` except doesn't require the type `T` to implement
+    /// `default`.
+    ///
+    /// # Safety
+    /// See `List::new()`
+    pub unsafe fn new_with(dummy: T) -> ManuallyDrop<List<T>> {
+        // Safety: Node::new is unsafe because it produces a node that cannot be
+        // safely dropped. We punt its obligations down the road by re-wrapping
+        // it in our _own_ unsafe ManuallyDrop structure.
+        let node = unsafe { Node::new(dummy, exploding_waker()) };
+        ManuallyDrop::new(List {
+            root: ManuallyDrop::into_inner(node),
+            _marker: NotSendMarker::default(),
+        })
+    }
+
     /// Completes the initialization process, discharging the obligations put in
     /// place by `new`.
     ///
@@ -384,6 +400,21 @@ impl<T> List<T> {
 
     fn root_mut(self: Pin<&mut Self>) -> Pin<&mut Node<T>> {
         unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).root) }
+    }
+}
+
+impl<T: Copy + PartialOrd> List<T> {
+    /// Gets the smallest element, if there is any. Useful for knowing how long
+    /// to sleep for.
+    pub fn peek(self: Pin<&Self>) -> Option<T> {
+        let candidate = self.root.next.get();
+        // Safety: Link Valid Invariant means we can deref this
+        let cref = unsafe { candidate.as_ref() };
+        if candidate != NonNull::from(&self.root) {
+            Some(cref.contents)
+        } else {
+            None
+        }
     }
 }
 
@@ -738,6 +769,22 @@ macro_rules! create_list {
         #[allow(unused_unsafe)]
         let mut $var = core::pin::pin!(unsafe {
             core::mem::ManuallyDrop::into_inner($crate::list::List::new())
+        });
+        // Safety: the value has not been operated on since `new` except for
+        // being pinned, so this operation causes it to become valid and safe.
+        #[allow(unused_unsafe)]
+        unsafe {
+            $crate::list::List::finish_init($var.as_mut());
+        }
+    };
+    ($var:ident, $default:expr) => {
+        // Safety: we discharge the obligations of `new` by pinning and
+        // finishing the value, below, before it can be dropped.
+        #[allow(unused_unsafe)]
+        let mut $var = core::pin::pin!(unsafe {
+            core::mem::ManuallyDrop::into_inner($crate::list::List::new_with(
+                $default,
+            ))
         });
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.

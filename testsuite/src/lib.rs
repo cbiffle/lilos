@@ -47,6 +47,7 @@ pub fn run_test_suite(hz: u32) -> ! {
             waiting_for_notify, // 4
         ],
         start_mask,
+        &lilos::time::SysTickTimer,
     )
 }
 
@@ -115,7 +116,7 @@ async fn task_coordinator() -> Infallible {
     // "sys".
     const TEST_TIMEOUT: core::time::Duration = core::time::Duration::from_millis(1000);
 
-    match time::with_timeout(TEST_TIMEOUT, tests).await {
+    match time::with_timeout(&lilos::time::SysTickTimer, TEST_TIMEOUT, tests).await {
         Some(()) => {
             hprintln!("tests complete.");
             cortex_m_semihosting::debug::exit(Ok(()));
@@ -151,7 +152,7 @@ async fn test_other_tasks_started() {
 
 async fn test_clock_advancing() {
     let t1 = time::TickTime::now();
-    time::sleep_for(A_BIT).await;
+    time::sleep_for(&lilos::time::SysTickTimer, A_BIT).await;
     let t2 = time::TickTime::now();
     assert!(t2 > t1);
 }
@@ -159,15 +160,15 @@ async fn test_clock_advancing() {
 async fn test_sleep_until_basic() {
     let t1 = time::TickTime::now();
     let target = t1 + core::time::Duration::from_millis(10);
-    time::sleep_until(target).await;
+    time::sleep_until(&lilos::time::SysTickTimer, target).await;
     let t2 = time::TickTime::now();
     assert!(t2 == target);
 }
 
 async fn test_sleep_until_multi() {
     futures::select_biased! {
-        _ = time::sleep_for(A_BIT).fuse() => (),
-        _ = time::sleep_for(A_BIT + A_BIT).fuse() => {
+        _ = time::sleep_for(&lilos::time::SysTickTimer, A_BIT).fuse() => (),
+        _ = time::sleep_for(&lilos::time::SysTickTimer, A_BIT + A_BIT).fuse() => {
             panic!("longer sleep should not wake first")
         }
     }
@@ -181,7 +182,7 @@ async fn test_with_deadline_actively_polled() {
     let start = TickTime::now();
     let mut last_poll = start;
     let deadline = last_poll + time::Millis(10);
-    with_deadline(deadline, async {
+    with_deadline(&lilos::time::SysTickTimer, deadline, async {
         loop {
             last_poll = TickTime::now();
             yield_cpu().await;
@@ -200,10 +201,10 @@ async fn test_with_deadline_blocking() {
     let start = TickTime::now();
     let mut last_poll = start;
     let deadline = last_poll + time::Millis(10);
-    with_deadline(deadline, async {
+    with_deadline(&lilos::time::SysTickTimer, deadline, async {
         loop {
             last_poll = TickTime::now();
-            time::sleep_for(time::Millis(100)).await;
+            time::sleep_for(&lilos::time::SysTickTimer, time::Millis(100)).await;
         }
     }).await;
     let end_time = TickTime::now();

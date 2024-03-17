@@ -48,9 +48,9 @@ fn main() -> ! {
         // peripherals `p` from the enclosing stack frame.
         loop {
             p.GPIOB.bsrr.write(|w| w.bs0().set_bit());
-            gate.next_time().await;
+            gate.next_time(&lilos::time::SysTickTimer).await;
             p.GPIOB.bsrr.write(|w| w.br0().set_bit());
-            gate.next_time().await;
+            gate.next_time(&lilos::time::SysTickTimer).await;
         }
     });
 
@@ -61,5 +61,6 @@ fn main() -> ! {
     lilos::exec::run_tasks(
         &mut [blink],  // <-- array of tasks
         lilos::exec::ALL_TASKS,  // <-- which to start initially
+        &lilos::time::SysTickTimer,
     )
 }

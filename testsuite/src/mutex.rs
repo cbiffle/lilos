@@ -19,12 +19,12 @@ async fn test_mutex_wherever(mutex: Pin<&Mutex<CancelSafe<usize>>>) {
         async {
             let mut g = mutex.lock_assuming_cancel_safe().await;
             // Sleep a bit to ensure that the mutex experiences contention.
-            lilos::time::sleep_for(A_BIT).await;
+            lilos::time::sleep_for(&lilos::time::SysTickTimer, A_BIT).await;
             *g += 1;
         },
         async {
             let mut g = mutex.lock_assuming_cancel_safe().await;
-            lilos::time::sleep_for(A_BIT).await;
+            lilos::time::sleep_for(&lilos::time::SysTickTimer, A_BIT).await;
             *g += 2;
         },
         async {

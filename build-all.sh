@@ -10,3 +10,9 @@ for d in $DIRS; do
     cargo build
     popd > /dev/null
 done
+
+d=testsuite/lm3s6965
+echo "---- running in $d"
+pushd $d > /dev/null
+cargo build -F exit
+popd > /dev/null

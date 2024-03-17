@@ -56,7 +56,7 @@ fn main() -> ! {
         // peripherals `p` from the enclosing stack frame.
         loop {
             p.SIO.gpio_out_xor.write(|w| unsafe { w.bits(1 << 25) });
-            gate.next_time().await;
+            gate.next_time(&lilos::time::SysTickTimer).await;
         }
     });
 
@@ -65,7 +65,8 @@ fn main() -> ! {
     lilos::time::initialize_sys_tick(&mut cp.SYST, 6_000_000);
     // Set up and run the scheduler with a single task.
     lilos::exec::run_tasks(
-        &mut [blink],  // <-- array of tasks
-        lilos::exec::ALL_TASKS,  // <-- which to start initially
+        &mut [blink],           // <-- array of tasks
+        lilos::exec::ALL_TASKS, // <-- which to start initially
+        &lilos::time::SysTickTimer,
     )
 }

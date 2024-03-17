@@ -130,36 +130,27 @@
 //! convert your use of `run_tasks` to the more complex form, start by copying
 //! the code from `run_tasks`.
 
+#[cfg(feature = "timer")]
+use crate::time::Timer;
+
 use core::convert::Infallible;
 use core::future::Future;
 use core::mem;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use pin_project_lite::pin_project;
 
-use crate::atomic::{AtomicExt, AtomicArithExt};
+use portable_atomic::{AtomicUsize, Ordering};
+
 use crate::util::Captures;
-
-// Despite the untangling of exec and time that happened in the 1.0 release, we
-// still have some intimate dependencies between the modules. You'll see a few
-// other cfg(feature = "systick") lines below.
-cfg_if::cfg_if! {
-    if #[cfg(feature = "systick")] {
-        use core::sync::atomic::AtomicBool;
-        use core::ptr::{addr_of, addr_of_mut};
-
-        use crate::cheap_assert;
-        use crate::list::List;
-        use core::mem::{MaybeUninit, ManuallyDrop};
-        use crate::time::TickTime;
-    }
-}
 
 /// Accumulates bitmasks from wakers as they are invoked. The executor
 /// atomically checks and clears this at each iteration.
 static WAKE_BITS: AtomicUsize = AtomicUsize::new(0);
+
+/// Wake bits used by a previous/concurrent invocation of run_tasks
+static WAKE_BITS_USED: AtomicUsize = AtomicUsize::new(0);
 
 /// Computes the wake bit mask for the task with the given index, which is
 /// equivalent to `1 << (index % USIZE_BITS)`.
@@ -188,6 +179,7 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(
 /// Technically, this will wake any task `n` where `n % 32 == index % 32`.
 fn waker_for_task(index: usize) -> Waker {
     let mask = wake_mask_for_index(index);
+
     // Safety: Waker::from_raw is unsafe because bad things happen if the
     // combination of this particular pointer and the functions in the vtable
     // don't meet the Waker contract or are incompatible. In our case, our
@@ -367,15 +359,21 @@ impl Interrupts {
 /// until an interrupt arrives. This has the advantages of using less power and
 /// having more predictable response latency than spinning. If you'd like to
 /// override this behavior, see [`run_tasks_with_idle`].
-pub fn run_tasks(
+pub fn run_tasks<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
+    #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
     unsafe {
         run_tasks_with_preemption_and_idle(
             futures,
             initial_mask,
+            #[cfg(feature = "timer")]
+            timer,
+            #[cfg(feature = "2core")]
+            core,
             Interrupts::Masked,
             || {
                 cortex_m::asm::wfi();
@@ -404,9 +402,11 @@ pub fn run_tasks(
 /// WFI yourself from within the implementation of `idle_hook`.
 ///
 /// See [`run_tasks`] for more details.
-pub fn run_tasks_with_idle(
+pub fn run_tasks_with_idle<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
+    #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     idle_hook: impl FnMut(),
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
@@ -414,6 +414,10 @@ pub fn run_tasks_with_idle(
         run_tasks_with_preemption_and_idle(
             futures,
             initial_mask,
+            #[cfg(feature = "timer")]
+            timer,
+            #[cfg(feature = "2core")]
+            core,
             Interrupts::Masked,
             idle_hook,
         )
@@ -440,9 +444,11 @@ pub fn run_tasks_with_idle(
 /// Note that none of the top-level functions in this module are safe to use
 /// from a custom ISR. Only operations on types that are specifically described
 /// as being ISR safe, such as `Notify::notify`, can be used from ISRs.
-pub unsafe fn run_tasks_with_preemption(
+pub unsafe fn run_tasks_with_preemption<#[cfg(feature = "timer")] T: Timer>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
+    #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     interrupts: Interrupts,
 ) -> ! {
     // Safety: this is safe if our own contract is upheld.
@@ -450,6 +456,10 @@ pub unsafe fn run_tasks_with_preemption(
         run_tasks_with_preemption_and_idle(
             futures,
             initial_mask,
+            #[cfg(feature = "timer")]
+            timer,
+            #[cfg(feature = "2core")]
+            core,
             interrupts,
             cortex_m::asm::wfi,
         )
@@ -479,9 +489,13 @@ pub unsafe fn run_tasks_with_preemption(
 /// Note that none of the top-level functions in this module are safe to use
 /// from a custom ISR. Only operations on types that are specifically described
 /// as being ISR safe, such as `Notify::notify`, can be used from ISRs.
-pub unsafe fn run_tasks_with_preemption_and_idle(
+pub unsafe fn run_tasks_with_preemption_and_idle<
+    #[cfg(feature = "timer")] T: Timer,
+>(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
+    #[cfg(feature = "timer")] timer: &T,
+    #[cfg(feature = "2core")] core: u8,
     interrupts: Interrupts,
     mut idle_hook: impl FnMut(),
 ) -> ! {
@@ -499,67 +513,45 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
         //    be wrong.
         let futures_ptr: *mut [Pin<*mut dyn Future<Output = Infallible>>] = futures_ptr as _;
         // Stash the task future array in a known location.
+        #[cfg(not(feature = "2core"))]
         unsafe {
             TASK_FUTURES = Some(futures_ptr);
         }
+
+        #[cfg(feature = "2core")]
+        unsafe {
+            TASK_FUTURES[core as usize] = Some(futures_ptr);
+        }
     }
 
-    WAKE_BITS.store(initial_mask, Ordering::SeqCst);
+    let this_count = futures.len();
+    let prev_count = WAKE_BITS_USED.fetch_add(this_count, Ordering::SeqCst);
+    let this_mask = ((1usize << this_count) - 1).rotate_left(prev_count as u32);
+
+    WAKE_BITS.fetch_or(initial_mask & this_mask, Ordering::SeqCst);
 
     // Initialize the timer list.
-    #[cfg(feature = "systick")]
-    {
-        let already_initialized =
-            TIMER_LIST_READY.swap_polyfill(true, Ordering::SeqCst);
-        // Catch any attempt to do this twice. Would doing this twice be bad?
-        // Not necessarily. But it would be damn suspicious.
-        cheap_assert!(!already_initialized);
+    #[cfg(all(feature = "timer", feature = "systick", not(feature = "2core")))]
+    crate::time::SysTickTimer.init();
 
-        // Safety: by successfully flipping the initialization flag, we know
-        // we can do this without aliasing; being in a single-threaded context
-        // right now means we can do it without racing.
-        let timer_list = unsafe {
-            &mut *addr_of_mut!(TIMER_LIST)
-        };
-        // Initialize the list node itself.
-        //
-        // Safety: we discharge the obligations of `new` here by continuing,
-        // below, to pin and finish initialization of the list.
-        timer_list.write(ManuallyDrop::into_inner(unsafe {
-            List::new()
-        }));
-        // Safety: we're not going to overwrite or drop this static list, so we
-        // have trivially fulfilled the pin requirements.
-        let mut timer_list = unsafe {
-            Pin::new_unchecked(timer_list.assume_init_mut())
-        };
-        // Safety: finish_init requires that we haven't done anything to the
-        // List since `new` except for pinning it, which is the case here.
-        unsafe {
-            List::finish_init(timer_list.as_mut());
-        }
-
-        // The list is initialized; we can now produce _shared_ references to
-        // it. Our one and only Pin<&mut List> ends here.
-    }
-
-    #[cfg(feature = "systick")]
-    let tl = get_timer_list();
+    #[cfg(feature = "timer")]
+    let tl = timer.timer_list();
     loop {
         interrupts.scope(|| {
-            #[cfg(feature = "systick")]
+            #[cfg(feature = "timer")]
             {
                 // Scan for any expired timers.
-                tl.wake_less_than(TickTime::now());
+                tl.wake_less_than(timer.now());
             }
 
-            // Capture and reset wake bits, then process any 1s.
+            // Capture and reset wake bits (for the current executor only),
+            // then process any 1s.
             // TODO: this loop visits every future testing for 1 bits; it would
             // almost certainly be faster to visit the futures corresponding to
             // 1 bits instead. I have avoided this for now because of the
             // increased complexity.
-            let mask = WAKE_BITS.swap_polyfill(0, Ordering::SeqCst);
-            for (i, f) in futures.iter_mut().enumerate() {
+            let mask = WAKE_BITS.fetch_and(!this_mask, Ordering::SeqCst);
+            for (f, i) in futures.iter_mut().zip(prev_count..) {
                 if mask & wake_mask_for_index(i) != 0 {
                     poll_task(i, f.as_mut());
                 }
@@ -567,7 +559,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
 
             // If none of the futures woke each other, we're relying on an
             // interrupt to set bits -- so we can sleep waiting for it.
-            if WAKE_BITS.load(Ordering::SeqCst) == 0 {
+            if WAKE_BITS.load(Ordering::SeqCst) & this_mask == 0 {
                 idle_hook();
             }
 
@@ -593,7 +585,16 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
 /// Note that the `#[used]` annotation is load-bearing here -- without it the
 /// compiler will happily throw the variable away, confusing the debugger.
 #[used]
-static mut TASK_FUTURES: Option<*mut [Pin<*mut dyn Future<Output = Infallible>>]> = None;
+#[cfg(not(feature = "2core"))]
+static mut TASK_FUTURES: Option<
+    *mut [Pin<*mut dyn Future<Output = Infallible>>],
+> = None;
+
+#[used]
+#[cfg(feature = "2core")]
+static mut TASK_FUTURES: [Option<
+    *mut [Pin<*mut dyn Future<Output = Infallible>>],
+>; 2] = [None; 2];
 
 /// Constant that can be passed to `run_tasks` and `wake_tasks_by_mask` to mean
 /// "all tasks."
@@ -694,7 +695,7 @@ impl Notify {
     /// This is a low-level operation. For using a `Notify` in practice, you
     /// probably want [`until`][Notify::until] instead.
     pub fn subscribe(&self, waker: &Waker) {
-        self.mask.fetch_or_polyfill(extract_mask(waker), Ordering::SeqCst);
+        self.mask.fetch_or(extract_mask(waker), Ordering::SeqCst);
     }
 
     /// Wakes tasks, at least all those whose waiters have been passed to
@@ -704,7 +705,7 @@ impl Notify {
     /// iteration of the executor, and does not cause any code to run
     /// immediately.
     pub fn notify(&self) {
-        wake_tasks_by_mask(self.mask.swap_polyfill(0, Ordering::SeqCst))
+        wake_tasks_by_mask(self.mask.swap(0, Ordering::SeqCst))
     }
 
     /// Waits for a condition to become true, checking only when signaled by
@@ -912,7 +913,7 @@ impl<F, T> Future for UntilRacy<'_, F>
 /// `Notify`.
 #[inline(always)]
 pub fn wake_tasks_by_mask(mask: usize) {
-    WAKE_BITS.fetch_or_polyfill(mask, Ordering::SeqCst);
+    WAKE_BITS.fetch_or(mask, Ordering::SeqCst);
 }
 
 /// Notifies the executor that the task with the given `index` should be polled
@@ -925,54 +926,13 @@ pub fn wake_task_by_index(index: usize) {
     wake_tasks_by_mask(wake_mask_for_index(index));
 }
 
-/// Tracks whether the timer list has been initialized.
-#[cfg(feature = "systick")]
-static TIMER_LIST_READY: AtomicBool = AtomicBool::new(false);
-
-/// Storage for the timer list.
-#[cfg(feature = "systick")]
-static mut TIMER_LIST: MaybeUninit<List<TickTime>> = MaybeUninit::uninit();
-
 /// Panics if called from an interrupt service routine (ISR). This is used to
 /// prevent OS features that are unavailable to ISRs from being used in ISRs.
-#[cfg(feature = "systick")]
-fn assert_not_in_isr() {
+pub fn assert_not_in_isr() {
     let psr_value = cortex_m::register::apsr::read().bits();
     // Bottom 9 bits are the exception number, which are 0 in Thread mode.
     if psr_value & 0x1FF != 0 {
         panic!();
-    }
-}
-
-/// Nabs a reference to the global timer list.
-///
-/// # Preconditions
-///
-/// - Must not be called from an interrupt.
-/// - Must only be called once the timer list has been initialized, which is to
-///   say, from within a task.
-#[cfg(feature = "systick")]
-pub(crate) fn get_timer_list() -> Pin<&'static List<TickTime>> {
-    // Prevent this from being used from interrupt context.
-
-    assert_not_in_isr();
-
-    // Ensure that the timer list has been initialized.
-    cheap_assert!(TIMER_LIST_READY.load(Ordering::Acquire));
-
-    // Since we know we're not running concurrently with the scheduler setup, we
-    // can freely vend pin references to the now-immortal timer list.
-    //
-    // Safety: &mut references to TIMER_LIST have stopped after initialization.
-    let list_ref = unsafe {
-        &*addr_of!(TIMER_LIST)
-    };
-    // Safety: we know the list has been initialized because we checked
-    // TIMER_LIST_READY, above. We also know that the list trivially meets the
-    // pin criterion, since it's immortal and always referenced by shared
-    // reference at this point.
-    unsafe {
-        Pin::new_unchecked(list_ref.assume_init_ref())
     }
 }
 

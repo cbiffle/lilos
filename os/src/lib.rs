@@ -151,6 +151,7 @@
 /// fancy messages. This means failures must be diagnosed by file:line only, so,
 /// don't use this more than once on the same line. In exchange, this makes
 /// asserts significantly smaller in terms of text size.
+#[allow(unused_macros)]
 macro_rules! cheap_assert {
     ($x:expr) => {
         if !$x { panic!(); };
@@ -163,11 +164,16 @@ pub(crate) use cheap_assert;
 pub mod list;
 pub mod exec;
 pub mod util;
-pub mod atomic;
 
-#[cfg(feature = "systick")]
+#[cfg(feature = "timer")]
 pub mod time;
 #[cfg(feature = "mutex")]
 pub mod mutex;
 #[cfg(feature = "spsc")]
 pub mod spsc;
+
+// For accessing from macros
+#[doc(hidden)]
+pub mod reexport {
+    pub use portable_atomic;
+}
