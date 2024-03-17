@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMG=target/thumbv7m-none-eabi/debug/lilos-testsuite-stm32f3
+IMG=target/thumbv7em-none-eabihf/debug/lilos-testsuite-stm32f3
 
 # F3 has enough flash to build in debug mode
 cargo build
