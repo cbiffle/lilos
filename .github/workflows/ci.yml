@@ -19,8 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rm rust-toolchain.toml
-      - run: rustup update ${{ matrix.toolchain}} && rustup default ${{ matrix.toolchain }} && rustup target add thumbv7em-none-eabihf thumbv7m-none-eabi thumbv6m-none-eabi
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup target add thumbv7em-none-eabihf thumbv7m-none-eabi thumbv6m-none-eabi
       - run: ./build-all.sh
+      - name: Archive lm3s6965 image
+        uses: actions/upload-artifact@v4
+        with:
+          name: lm3s6965-image-${{ matrix.toolchain }}
+          path: |
+            testsuite/lm3s6965/target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
+
   check_msrv_all:
     runs-on: ubuntu-latest
     steps:
@@ -37,3 +44,26 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - run: ./msrv-all.sh
+
+  run_test:
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - nightly
+          - beta
+    needs: build_all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Install qemu tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install qemu-system-arm
+      - run: >
+          qemu-system-arm
+          -cpu cortex-m3
+          -machine lm3s6965evb
+          -nographic
+          -semihosting-config enable=on,target=native
+          -kernel lm3s6965-image-${{ matrix.toolchain }}/lilos-testsuite-lm3s6965
