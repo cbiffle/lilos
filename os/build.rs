@@ -1,6 +1,6 @@
 fn main() {
     match std::env::var("TARGET").unwrap().as_str() {
-        "thumbv7m-none-eabi" | "thumbv7em-none-eabihf" => {
+        "thumbv7m-none-eabi" | "thumbv7em-none-eabi" | "thumbv7em-none-eabihf" => {
             // Turn on BASEPRI support for interrupt priority filtering.
             println!("cargo:rustc-cfg=feature=\"has-basepri\"");
             // Use native atomic RMW operations
