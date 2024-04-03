@@ -56,6 +56,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "cortex-m-semihosting"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c23234600452033cc77e4b761e740e02d2c4168e11dbf36ab14a0f58973592b0"
+dependencies = [
+ "cortex-m",
+]
+
+[[package]]
+name = "crc-any"
+version = "2.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c01a5e1f881f6fb6099a7bdf949e946719fd4f1fefa56264890574febf0eb6d0"
+dependencies = [
+ "debug-helper",
+]
+
+[[package]]
+name = "debug-helper"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f578e8e2c440e7297e008bb5486a3a8a194775224bbc23729b0dbdfaeebf162e"
+
+[[package]]
 name = "embedded-hal"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,6 +173,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "lilos-example-rp2040-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos",
+ "panic-halt",
+ "rp2040-boot2",
+ "rp2040-pac",
+]
+
+[[package]]
+name = "lilos-example-stm32f4-blinky"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos",
+ "panic-halt",
+ "stm32-metapac",
+]
+
+[[package]]
+name = "lilos-example-stm32f4-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos",
+ "panic-halt",
+ "stm32-metapac",
+]
+
+[[package]]
 name = "lilos-example-stm32f4-uart-echo"
 version = "0.1.0"
 dependencies = [
@@ -158,6 +216,102 @@ dependencies = [
  "lilos",
  "panic-halt",
  "stm32-metapac",
+]
+
+[[package]]
+name = "lilos-example-stm32g031-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos",
+ "panic-halt",
+ "stm32-metapac",
+]
+
+[[package]]
+name = "lilos-example-stm32h7-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "futures",
+ "lilos",
+ "panic-halt",
+ "stm32-metapac",
+]
+
+[[package]]
+name = "lilos-example-stm32h7-uart-echo"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "futures",
+ "lilos",
+ "panic-halt",
+ "stm32-metapac",
+]
+
+[[package]]
+name = "lilos-handoff"
+version = "1.0.0"
+dependencies = [
+ "lilos",
+ "scopeguard",
+]
+
+[[package]]
+name = "lilos-testsuite"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "cortex-m-semihosting",
+ "futures",
+ "lilos",
+ "lilos-handoff",
+ "panic-semihosting",
+]
+
+[[package]]
+name = "lilos-testsuite-lm3s6965"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos-testsuite",
+ "panic-semihosting",
+]
+
+[[package]]
+name = "lilos-testsuite-stm32f3"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos-testsuite",
+ "panic-semihosting",
+]
+
+[[package]]
+name = "lilos-testsuite-stm32f4"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos-testsuite",
+ "panic-semihosting",
+]
+
+[[package]]
+name = "lilos-testsuite-stm32g0"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos-testsuite",
+ "panic-halt",
 ]
 
 [[package]]
@@ -180,6 +334,16 @@ name = "panic-halt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
+
+[[package]]
+name = "panic-semihosting"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee8a3e1233d9073d76a870223512ce4eeea43c067a94a445c13bd6d792d7b1ab"
+dependencies = [
+ "cortex-m",
+ "cortex-m-semihosting",
+]
 
 [[package]]
 name = "pin-project"
@@ -232,6 +396,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rp2040-boot2"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c773ec49b836077aa144b58dc7654a243e1eecdb6cf0d25361ae7c7600fabd8"
+dependencies = [
+ "crc-any",
+]
+
+[[package]]
+name = "rp2040-pac"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13a6106d5db01c7171a39c1f7696780912db9b42fe7ac722db60069c8904ea7c"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "vcell",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -239,6 +423,12 @@ checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 dependencies = [
  "semver",
 ]
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "semver"

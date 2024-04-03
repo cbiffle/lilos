@@ -23,6 +23,9 @@ done
 DIRS="handoff testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 testsuite/lm3s6965 examples/*/*/"
 
 for d in $DIRS; do
+    if [[ $d == *memory.x ]]; then
+	continue
+    fi
     echo "---- building in $d"
     pushd $d > /dev/null
     cargo build

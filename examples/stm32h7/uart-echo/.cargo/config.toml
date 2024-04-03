@@ -2,7 +2,8 @@
 runner = "arm-none-eabi-gdb -q -x openocd.gdb"
 
 rustflags = [
-  "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Lexamples/stm32h7",
 ]
 
 [build]

@@ -2,43 +2,25 @@
 name = "lilos-testsuite-stm32g0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
-description = "Operating system tests for STM32F407."
-repository = "https://github.com/cbiffle/lilos/"
-keywords = ["async", "embedded", "realtime", "os"]
-categories = ["embedded"]
-readme = "README.mkdn"
+description = "Operating system tests for STM32G0."
 publish = false
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [package.metadata.docs.rs]
 default-target = "thumbv6m-none-eabi"
 
 [dependencies]
-cortex-m = "0.7.4"
-cortex-m-rt = { version = "0.7.1", default-features = false }
-panic-semihosting = "0.6.0"
-lilos-testsuite = { path = "..", default-features = false }
+cortex-m.workspace = true
+cortex-m-rt.workspace = true
+lilos-testsuite.workspace = true
+panic-halt.workspace = true
 
 [[bin]]
 name = "lilos-testsuite-stm32g0"
 test = false
 bench = false
 
-# Soooooo we don't actually _fit_ on a 32 kiB M0 with all the tests
-# unless we turn optimizations on. Because I like building all the
-# other examples and tests using the faster debug mode, I'll just
-# override the debug settings here to make things small.
-[profile.dev]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
-opt-level = "z"
-
-[profile.release]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
-opt-level = "z"
-overflow-checks = true # oughtta be the default imo

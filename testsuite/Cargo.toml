@@ -2,15 +2,13 @@
 name = "lilos-testsuite"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
 description = "Operating system tests."
-repository = "https://github.com/cbiffle/lilos/"
-keywords = ["async", "embedded", "realtime", "os"]
-categories = ["embedded"]
-readme = "README.mkdn"
 publish = false
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [features]
 default = ["handoff"]
@@ -20,13 +18,13 @@ handoff = ["dep:lilos-handoff"]
 default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
-cortex-m = "0.7.4"
-cortex-m-rt = { version = "0.7.1", default-features = false }
-cortex-m-semihosting = "0.5.0"
-futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
-lilos = { path = "../os" }
-lilos-handoff = { path = "../handoff", optional = true }
-panic-semihosting = "0.6.0"
+cortex-m.workspace = true
+cortex-m-rt.workspace = true
+cortex-m-semihosting.workspace = true
+futures.workspace = true
+lilos = {workspace = true, features = ["spsc", "systick", "mutex"]}
+lilos-handoff = { workspace = true, optional = true }
+panic-semihosting.workspace = true
 
 [lib]
 test = false

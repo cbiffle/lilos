@@ -2,14 +2,15 @@
 name = "lilos"
 version = "1.0.2-pre.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
-edition = "2021"
-license = "MPL-2.0"
 description = "A tiny embedded OS based around Futures and async."
-repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -22,17 +23,11 @@ spsc = []
 systick = []
 
 [dependencies]
-cfg-if = "1.0.0"
-cortex-m = {version = "0.7.4", features = ["inline-asm"]}
-cortex-m-rt = "0.7.1"
-pin-project = "1.1.5"
+cfg-if.workspace = true
+cortex-m.workspace = true
+cortex-m-rt.workspace = true
+pin-project.workspace = true
 
 [lib]
 test = false
 bench = false
-
-[profile.release]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
-opt-level = "z"

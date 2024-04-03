@@ -21,9 +21,11 @@ will find it useful too.
 
 ## Repo layout
 
-This repo contains crates in subdirectories, but it is _not_ a Cargo workspace.
-This means you will need to `cd` into subdirectories to build things. Here is a
-map:
+This repo contains crates in subdirectories, and the subdirectories use
+`.cargo/config.toml` files to change settings that Cargo has so far declined to
+allow in `Cargo.toml`, such as the target triple. This means you will need to
+`cd` into subdirectories to build things, rather than using `cargo build
+--all`. Here is a map:
 
 - `os` contains the operating system crate.
 - `testsuite` contains a test suite for the operating system, which can run on a

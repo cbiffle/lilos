@@ -2,7 +2,8 @@
 runner = "elf2uf2-rs -d"
 
 rustflags = [
-  "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Lexamples/rp2040",
 ]
 
 [build]

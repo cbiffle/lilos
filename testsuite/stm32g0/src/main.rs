@@ -1,10 +1,10 @@
-//! OS test suite, STM32F407 wrapper.
+//! OS test suite, STM32G0 wrapper.
 
 #![no_std]
 #![no_main]
 
-// get the panic handler
-use panic_semihosting as _;
+// using a smaller panic handler on G0 to save space.
+use panic_halt as _;
 
 /// This constant assumes a 16MHz clock at reset. You probably don't need to
 /// adjust it if your processor starts at a different speed; none of the tests

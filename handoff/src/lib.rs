@@ -67,6 +67,20 @@
 
 #![no_std]
 
+#![warn(
+    elided_lifetimes_in_paths,
+    explicit_outlives_requirements,
+    missing_debug_implementations,
+    missing_docs,
+    semicolon_in_expressions_from_macros,
+    single_use_lifetimes,
+    trivial_casts,
+    trivial_numeric_casts,
+    unreachable_pub,
+    unsafe_op_in_unsafe_fn,
+    unused_qualifications,
+)]
+
 use core::cell::Cell;
 use core::ptr::NonNull;
 

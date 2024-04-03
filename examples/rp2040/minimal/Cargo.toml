@@ -2,34 +2,26 @@
 name = "lilos-example-rp2040-minimal"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
 description = "Minimal example for lilos on rp2040."
-repository = "https://github.com/cbiffle/lilos/"
-keywords = ["async", "embedded", "realtime", "os"]
-categories = ["embedded"]
-readme = "README.mkdn"
 publish = false
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [package.metadata.docs.rs]
 default-target = "thumbv6m-none-eabi"
 
 [dependencies]
-cortex-m = "0.7.4"
-cortex-m-rt = "0.7.1"
-lilos = { path = "../../../os", default-features = false, features = ["systick"] }
-panic-halt = "0.2.0"
-rp2040-pac = {version = "0.3", features = ["rt"]}
-rp2040-boot2 = "0.2"
+cortex-m.workspace = true
+cortex-m-rt.workspace = true
+lilos = { workspace = true, features = ["systick"] }
+panic-halt.workspace = true
+rp2040-pac.workspace = true
+rp2040-boot2.workspace = true
 
 [[bin]]
 name = "lilos-example-rp2040-minimal"
 test = false
 bench = false
-
-[profile.release]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
-opt-level = "z"

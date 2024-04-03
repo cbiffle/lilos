@@ -18,7 +18,7 @@ jobs:
         with:
           name: lm3s6965-image-pinned
           path: |
-            testsuite/lm3s6965/target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
+            target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
 
   test_qemu:
     needs: build
@@ -61,7 +61,7 @@ jobs:
         with:
           name: lm3s6965-image-${{ matrix.toolchain }}
           path: |
-            testsuite/lm3s6965/target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
+            target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
 
   test_qemu_future:
     strategy:

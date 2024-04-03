@@ -3,6 +3,7 @@ runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semiho
 
 rustflags = [
   "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=-Ltestsuite/lm3s6965",
 ]
 
 [build]
