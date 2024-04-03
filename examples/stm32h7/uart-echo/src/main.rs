@@ -51,7 +51,7 @@
 
 extern crate panic_halt;
 
-use core::convert::{Infallible, TryFrom};
+use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::pin::pin;
 use core::future::Future;
