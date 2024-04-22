@@ -7,9 +7,9 @@ pub async fn test_create_drop() {
 
 pub async fn test_split_drop() {
     let mut handoff = Handoff::<usize>::new(); 
-    let (push, pop) = handoff.split();
-    drop(push);
-    drop(pop);
+    {
+        let (_push, _pop) = handoff.split();
+    }
     drop(handoff);
 }
 
