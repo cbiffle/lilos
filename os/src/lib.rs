@@ -109,22 +109,18 @@
 //!
 //! `lilos` itself tries to make it easier for you to handle cancellation in
 //! your programs, by providing APIs that have reasonable behavior on cancel.
-//! Specifically,
+//! All of the core APIs aim for _strict_ cancel-safety, where dropping a future
+//! and retrying the operation that produced it is equivalent to not dropping
+//! the future, in terms of visible side effects. (Obviously doing more work
+//! will take more CPU cycles; that's not what we mean by side effects.)
 //!
-//! - Wherever possible, `lilos` futures strive for a _strict_ definition of
-//!   cancel-safety, where dropping a future and retrying the operation that
-//!   produced it is equivalent to not dropping the future, in terms of visible
-//!   side effects. (Obviously doing more work will take more CPU cycles; that's
-//!   not what we mean by side effects.)
+//! If some code is useful, but can't achieve strict cancel safety, it should go
+//! in a separate crate. For example, the `lilos-handoff` crate _used to_ be
+//! part of the core OS, but was evicted because it can only achieve a weaker
+//! notion of cancel safety.
 //!
-//! - Where that is not possible (in a few corner-case APIs) `lilos` will
-//!   provide _weak_ cancel-safety, where the behavior of the operation at
-//!   cancellation is well-defined and documented.
-//!
-//! Over time, we're trying to redesign APIs to move things out of the second
-//! category into the first, with the goal of providing a fully cancel-safe OS
-//! API. As far as we can tell nobody's ever done this before, so it might take
-//! a bit. If you have suggestions or ideas, please file an issue!
+//! Any deviations from this principle are considered bugs, and should be
+//! reported if you notice them!
 //!
 //! [`select_biased!`]: https://docs.rs/futures/latest/futures/macro.select_biased.html
 //! [`join!`]: https://docs.rs/futures/latest/futures/macro.join.html

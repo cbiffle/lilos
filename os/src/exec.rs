@@ -1,7 +1,7 @@
 //! The async runtime executor, plus inter-task communication tools.
 //!
 //! **Note:** for our purposes, a _task_ is an independent top-level future
-//! managed by the executor polling loop. There are a fixed set of tasks,
+//! managed by the executor polling loop. There is a fixed set of tasks,
 //! provided to the executor at startup. This is distinct from the casual use
 //! of "task" to mean a piece of code that runs concurrently with other code;
 //! we'll use the term "concurrent process" for this. The fixed set of tasks
