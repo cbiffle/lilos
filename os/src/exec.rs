@@ -745,10 +745,10 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until<'a, F, T: TestResult>(
-        &'a self,
+    pub fn until<F, T: TestResult>(
+        &self,
         cond: F,
-    ) -> Until<'a, F>
+    ) -> Until<'_, F>
     where
         F: FnMut() -> T,
     {
@@ -789,10 +789,10 @@ impl Notify {
     ///    improve cancel safety by avoiding the move, if possible.
     /// 2. Passing a closure you received as `cond` instead of making a new one.
     ///    In this case, consider passing the closure by reference.
-    pub fn until_racy<'a, F, T: TestResult>(
-        &'a self,
+    pub fn until_racy<F, T: TestResult>(
+        &self,
         cond: F,
-    ) -> UntilRacy<'a, F>
+    ) -> UntilRacy<'_, F>
     where
         F: FnMut() -> T,
     {
