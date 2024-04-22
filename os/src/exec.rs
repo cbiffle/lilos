@@ -218,7 +218,7 @@ fn extract_mask(waker: &Waker) -> usize {
     // pointer to an integer. Transmuting the _other_ direction would be very
     // unsafe.
     let ptr_first = unsafe {
-        let (cell0, _) = mem::transmute::<_, (usize, usize)>(
+        let (cell0, _) = mem::transmute::<Waker, (usize, usize)>(
             Waker::from_raw(RawWaker::new(
                 1234 as *const (),
                 &VTABLE,

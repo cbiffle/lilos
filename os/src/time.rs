@@ -479,7 +479,7 @@ impl PeriodicGate {
 #[doc(hidden)]
 #[exception]
 fn SysTick() {
-    if TICK.fetch_add_polyfill(1, Ordering::Release) == core::u32::MAX {
+    if TICK.fetch_add_polyfill(1, Ordering::Release) == u32::MAX {
         EPOCH.fetch_add_polyfill(1, Ordering::Release);
     }
 }
