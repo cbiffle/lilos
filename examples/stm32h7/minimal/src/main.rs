@@ -20,6 +20,8 @@
 // because it isn't otherwise referenced in code!
 extern crate panic_halt;
 
+use stm32_metapac::{self as device, gpio::vals::Moder};
+
 // How often our blinky task wakes up (1/2 our blink frequency).
 const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
 
@@ -27,15 +29,14 @@ const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
 fn main() -> ! {
     // Check out peripherals from the runtime.
     let mut cp = cortex_m::Peripherals::take().unwrap();
-    let p = stm32h7::stm32h743::Peripherals::take().unwrap();
 
     // Turn on GPIOB. Note the barrier: the H7 is a multi-issue CPU and if we
     // want a specific ordering of memory operations, we have to ask for it.
-    p.RCC.ahb4enr.modify(|_, w| w.gpioben().enabled());
+    device::RCC.ahb4enr().modify(|w| w.set_gpioben(true));
     cortex_m::asm::dmb();
 
     // Configure our output pin, B0.
-    p.GPIOB.moder.modify(|_, w| w.moder0().output());
+    device::GPIOB.moder().modify(|w| w.set_moder(0, Moder::OUTPUT));
 
     // Create a task to blink the LED. You could also write this as an `async
     // fn` but we've inlined it as an `async` block for simplicity.
@@ -47,9 +48,9 @@ fn main() -> ! {
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.
         loop {
-            p.GPIOB.bsrr.write(|w| w.bs0().set_bit());
+            device::GPIOB.bsrr().write(|w| w.set_bs(0, true));
             gate.next_time().await;
-            p.GPIOB.bsrr.write(|w| w.br0().set_bit());
+            device::GPIOB.bsrr().write(|w| w.set_br(0, true));
             gate.next_time().await;
         }
     });
