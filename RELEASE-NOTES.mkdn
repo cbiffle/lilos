@@ -46,6 +46,14 @@ fix.
   code like this will appear in a separate crate soon.
 
 
+### Bug fixes
+
+- `spsc::Queue` was intended to `drop` any unpopped elements when the `Queue`
+  itself was dropped, but @OscarFKE pointed out that a typo prevented this from
+  actually happening! This has been fixed and queue contents should now be
+  dropped when you'd expect.
+
+
 ### Internal bug fixes
 
 - Changes to the internal representation of the timer list will render
