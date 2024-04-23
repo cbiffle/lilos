@@ -99,6 +99,7 @@ async fn task_coordinator() -> Infallible {
             spsc::test_stack,
             spsc::test_static_storage,
             spsc::test_static_everything,
+            spsc::test_nonempty_drop,
 
             handoff::test_create_drop,
             handoff::test_split_drop,

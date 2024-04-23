@@ -125,7 +125,7 @@ impl<'s, T> Queue<'s, T> {
 impl<T> Drop for Queue<'_, T> {
     fn drop(&mut self) {
         let h = self.head.load(Ordering::SeqCst);
-        let mut t = self.head.load(Ordering::SeqCst);
+        let mut t = self.tail.load(Ordering::SeqCst);
 
         while h != t {
             let unsafecell_ptr = self.storage[t].get();

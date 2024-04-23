@@ -1,3 +1,4 @@
+use core::cell::Cell;
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +63,46 @@ async fn test_wherever(q: &mut Queue<'_, u8>) {
             }
         },
     );
+}
+
+/// If a Queue is dropped when non-empty, we expect to go through and Drop all
+/// those elements. But do we?
+pub async fn test_nonempty_drop() {
+    let drops = Cell::new(0);
+
+    struct NoticeDrop<'a>(&'a Cell<usize>);
+    impl Drop for NoticeDrop<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    const N: usize = 5;
+
+    // Safety: assume_init is safe if the resulting type doesn't assume
+    // initialization, which an array of MaybeUninit does not.
+    let mut storage: [MaybeUninit<_>; N + 1] = unsafe {
+        MaybeUninit::uninit().assume_init()
+    };
+
+    let mut q = Queue::new(&mut storage);
+    let (mut push, mut pop) = q.split();
+
+    // Alright, record N things that notice when they are dropped:
+    for _ in 0..N {
+        push.reserve().await.push(NoticeDrop(&drops));
+    }
+
+    // nothing has been dropped yet:
+    assert_eq!(drops.get(), 0);
+
+    // We'll pop one manually just for the heck of it.
+    let _ = pop.pop().await;
+    assert_eq!(drops.get(), 1);
+
+    // And then the rest:
+    drop(q);
+    assert_eq!(drops.get(), N);
 }
 
 /// This "test" just needs to compile, to verify that Push and Pop are indeed
