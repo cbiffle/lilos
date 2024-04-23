@@ -56,8 +56,8 @@ use core::mem::MaybeUninit;
 use core::pin::pin;
 use core::future::Future;
 
-use stm32f4::stm32f407 as device;
-use device::interrupt;
+use device::gpio::vals::{Ot, Moder};
+use stm32_metapac::{self as device, interrupt};
 
 use lilos::exec::Notify;
 use lilos::spsc;
@@ -74,19 +74,18 @@ fn main() -> ! {
     // cortex_m crate expects that there's some common init code where this can
     // be done centrally -- so we pretty much have to do it here.
     let mut cp = cortex_m::Peripherals::take().unwrap();
-    let p = device::Peripherals::take().unwrap();
 
     // Create and pin tasks.
-    let heartbeat = pin!(heartbeat(&p.RCC, &p.GPIOD));
+    let heartbeat = pin!(heartbeat(device::RCC, device::GPIOD));
     let echo = pin!(usart_echo(
-        &p.RCC,
-        &p.GPIOA,
-        &p.USART2,
+        device::RCC,
+        device::GPIOA,
+        device::USART2,
         CLOCK_HZ,
     ));
 
-    p.RCC.ahb1enr.modify(|_, w| w.gpioden().enabled());
-    p.GPIOD.moder.modify(|_, w| w.moder15().output());
+    device::RCC.ahb1enr().modify(|w| w.set_gpioden(true));
+    device::GPIOD.moder().modify(|w| w.set_moder(15, Moder::OUTPUT));
 
     // Set up and run the scheduler.
     lilos::time::initialize_sys_tick(&mut cp.SYST, CLOCK_HZ);
@@ -94,9 +93,9 @@ fn main() -> ! {
         &mut [heartbeat, echo],
         lilos::exec::ALL_TASKS,
         || {
-            p.GPIOD.bsrr.write(|w| w.br15().set_bit());
+            device::GPIOD.bsrr().write(|w| w.set_br(15, true));
             cortex_m::asm::wfi();
-            p.GPIOD.bsrr.write(|w| w.bs15().set_bit());
+            device::GPIOD.bsrr().write(|w| w.set_bs(15, true));
         },
     )
 }
@@ -106,12 +105,10 @@ fn main() -> ! {
 
 /// Pulses a GPIO pin connected to an LED, to show that the scheduler is still
 /// running, etc.
-///
-/// Note that this captures only one of the two references it receives.
-fn heartbeat<'gpio>(
-    rcc: &device::RCC,
-    gpiod: &'gpio device::GPIOD,
-) -> impl Future<Output = Infallible> + 'gpio {
+fn heartbeat(
+    rcc: device::rcc::Rcc,
+    gpiod: device::gpio::Gpio,
+) -> impl Future<Output = Infallible> {
     // This is implemented using an explicit `async` block, instead of as an
     // `async fn`, to make it clear which actions occur during setup, and which
     // are ongoing. In particular, we only need to borrow the RCC for *setup*
@@ -121,8 +118,8 @@ fn heartbeat<'gpio>(
     const PERIOD: Millis = Millis(500);
 
     // Configure our output pin.
-    rcc.ahb1enr.modify(|_, w| w.gpioden().enabled());
-    gpiod.moder.modify(|_, w| w.moder12().output());
+    rcc.ahb1enr().modify(|w| w.set_gpioden(true));
+    gpiod.moder().modify(|w| w.set_moder(12, Moder::OUTPUT));
 
     // Set up our timekeeping to capture the current time (not whenever we first
     // get polled). This is usually not important but I'm being picky.
@@ -132,9 +129,9 @@ fn heartbeat<'gpio>(
     // from our stack into the future.
     async move {
         loop {
-            gpiod.bsrr.write(|w| w.bs12().set_bit());
+            gpiod.bsrr().write(|w| w.set_bs(12, true));
             gate.next_time().await;
-            gpiod.bsrr.write(|w| w.br12().set_bit());
+            gpiod.bsrr().write(|w| w.set_br(12, true));
             gate.next_time().await;
         }
     }
@@ -143,34 +140,36 @@ fn heartbeat<'gpio>(
 /// Initializes `usart` for operation at a fixed rate, and then re-transmits any
 /// characters received through it.
 async fn usart_echo(
-    rcc: &device::RCC,
-    gpio: &device::GPIOA,
-    usart: &device::USART2,
+    rcc: device::rcc::Rcc,
+    gpio: device::gpio::Gpio,
+    usart: device::usart::Usart,
     clock_hz: u32,
 ) -> Infallible {
     const BAUD_RATE: u32 = 115_200;
 
     // Turn on clock to the USART.
-    rcc.apb1enr.modify(|_, w| w.usart2en().enabled());
+    rcc.apb1enr().modify(|w| w.set_usart2en(true));
     // Calculate baud rate divisor for the given peripheral clock. (Using the
     // default 16x oversampling this calculation is pretty straightforward.)
-    let cycles_per_bit = clock_hz / BAUD_RATE;
-    usart.brr.write(|w| w.div_mantissa().bits((cycles_per_bit >> 4) as u16)
-        .div_fraction().bits(cycles_per_bit as u8 & 0xF));
+    let cycles_per_bit = u16::try_from(clock_hz / BAUD_RATE)
+        .expect("can't achieve requested baud rate");
+    usart.brr().write(|w| w.set_brr(cycles_per_bit));
     // Turn on the USART engine, transmitter, and receiver.
-    usart.cr1.write(|w| w.ue().enabled()
-        .te().enabled()
-        .re().enabled());
+    usart.cr1().write(|w| {
+        w.set_ue(true);
+        w.set_te(true);
+        w.set_re(true);
+    });
 
     // Turn on clock to GPIOA, where our signals emerge.
-    rcc.ahb1enr.modify(|_, w| w.gpioaen().enabled());
+    rcc.ahb1enr().modify(|w| w.set_gpioaen(true));
     // Configure our pins as AF7
-    gpio.afrl.modify(|_, w| w.afrl2().af7()
-        .afrl3().af7());
-    gpio.otyper.modify(|_, w| w.ot2().push_pull()
-        .ot3().push_pull());
-    gpio.moder.modify(|_, w| w.moder2().alternate()
-        .moder3().alternate());
+    gpio.afr(0).modify(|w| w.set_afr(2, 7));
+    gpio.otyper().modify(|w| w.set_ot(2, Ot::PUSHPULL));
+    gpio.moder().modify(|w| {
+        w.set_moder(2, Moder::ALTERNATE);
+        w.set_moder(3, Moder::ALTERNATE);
+    });
 
     // Enable the UART interrupt that we'll use to wake tasks.
     // Safety: our ISR (below) is safe to enable at any time -- plus, we're in a
@@ -209,7 +208,7 @@ async fn usart_echo(
 
 /// Echo receive task. Moves bytes from `usart` to `q`.
 async fn echo_rx(
-    usart: &device::USART2,
+    usart: device::usart::Usart,
     mut q: spsc::Pusher<'_, u8>,
 ) -> Infallible {
     loop {
@@ -219,7 +218,7 @@ async fn echo_rx(
 
 /// Echo transmit task. Moves bytes from `q` to `usart`.
 async fn echo_tx(
-    usart: &device::USART2,
+    usart: device::usart::Usart,
     mut q: spsc::Popper<'_, u8>,
 ) -> Infallible  {
     loop {
@@ -238,10 +237,10 @@ static TXE: Notify = Notify::new();
 /// loaded into it.
 ///
 /// This will only work correctly if USART2's interrupt is enabled at the NVIC.
-async fn send(usart: &device::USART2, c: u8) {
-    usart.cr1.modify(|_, w| w.txeie().enabled());
-    TXE.until(|| usart.sr.read().txe().bit()).await;
-    usart.dr.write(|w| w.dr().bits(u16::from(c)));
+async fn send(usart: device::usart::Usart, c: u8) {
+    usart.cr1().modify(|w| w.set_txeie(true));
+    TXE.until(|| usart.sr().read().txe()).await;
+    usart.dr().write(|w| w.set_dr(u16::from(c)));
 }
 
 /// Notification signal for waking a task from the USART RXE ISR.
@@ -252,10 +251,10 @@ static RXE: Notify = Notify::new();
 /// we've read the value out.
 ///
 /// This will only work correctly if USART2's interrupt is enabled at the NVIC.
-async fn recv(usart: &device::USART2) -> u8 {
-    usart.cr1.modify(|_, w| w.rxneie().enabled());
-    RXE.until(|| usart.sr.read().rxne().bit()).await;
-    usart.dr.read().dr().bits() as u8
+async fn recv(usart: device::usart::Usart) -> u8 {
+    usart.cr1().modify(|w| w.set_rxneie(true));
+    RXE.until(|| usart.sr().read().rxne()).await;
+    usart.dr().read().dr() as u8
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -265,21 +264,21 @@ async fn recv(usart: &device::USART2) -> u8 {
 /// events.
 #[interrupt]
 fn USART2() {
-    let usart = unsafe { &*device::USART2::ptr() };
-    let cr1 = usart.cr1.read();
-    let sr = usart.sr.read();
+    let usart = device::USART2;
+    let cr1 = usart.cr1().read();
+    let sr = usart.sr().read();
 
     // Note: we only honor the condition bits when the corresponding interrupt
     // sources are enabled on the USART, because otherwise they didn't cause
     // this interrupt.
 
-    if cr1.txeie().bit() && sr.txe().bit() {
+    if cr1.txeie() && sr.txe() {
         TXE.notify();
-        usart.cr1.modify(|_, w| w.txeie().disabled());
+        usart.cr1().modify(|w| w.set_txeie(false));
     }
 
-    if cr1.rxneie().bit() && sr.rxne().bit() {
+    if cr1.rxneie() && sr.rxne() {
         RXE.notify();
-        usart.cr1.modify(|_, w| w.rxneie().disabled());
+        usart.cr1().modify(|w| w.set_rxneie(false));
     }
 }

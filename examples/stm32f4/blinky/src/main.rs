@@ -29,38 +29,27 @@ use core::time::Duration;
 use lilos::time::sleep_for;
 
 // Shorthand for which SoC we're targeting:
-use stm32f4::stm32f407 as device;
+use stm32_metapac::{self as device, gpio::vals::Moder};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
     // Check out peripherals from the runtime.
     let mut cp = cortex_m::Peripherals::take().unwrap();
-    let p = device::Peripherals::take().unwrap();
 
     // Enable clock to GPIOD.
-    p.RCC.ahb1enr.modify(|_, w| w.gpioden().enabled());
-    // Set pins to outputs.
-    p.GPIOD.moder.modify(|_, w| {
-        w.moder12()
-            .output()
-            .moder13()
-            .output()
-            .moder14()
-            .output()
-            .moder15()
-            .output()
+    device::RCC.ahb1enr().modify(|w| w.set_gpioden(true));
+    // Set pins D12 thru D15 to outputs.
+    device::GPIOD.moder().modify(|w| {
+        for p in 12..=15 {
+            w.set_moder(p, Moder::OUTPUT);
+        }
     });
 
-    // Allocate some tasks, each with different LED mask and period. Note that
-    // we're able to have each task *borrow* a reference to GPIOD. This is
-    // interesting because we're loaning a local variable to other tasks, and
-    // also because `p.GPIOD` is not `Sync` and so normally cannot be shared
-    // across threads -- but our tasks are not threads, since they are
-    // cooperatively scheduled. So this just works.
-    let fut1 = pin!(blinky(1 << 12, Duration::from_millis(800), &p.GPIOD));
-    let fut2 = pin!(blinky(1 << 13, Duration::from_millis(400), &p.GPIOD));
-    let fut3 = pin!(blinky(1 << 14, Duration::from_millis(200), &p.GPIOD));
-    let fut4 = pin!(blinky(1 << 15, Duration::from_millis(100), &p.GPIOD));
+    // Allocate some tasks, each with different LED mask and period.
+    let fut1 = pin!(blinky(1 << 12, Duration::from_millis(800), device::GPIOD));
+    let fut2 = pin!(blinky(1 << 13, Duration::from_millis(400), device::GPIOD));
+    let fut3 = pin!(blinky(1 << 14, Duration::from_millis(200), device::GPIOD));
+    let fut4 = pin!(blinky(1 << 15, Duration::from_millis(100), device::GPIOD));
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.
@@ -83,7 +72,7 @@ fn main() -> ! {
 /// Each call to `blinky` produces a `Future` that captures its parameters. The
 /// `Future` loops forever, as indicated by its "never resolves" return type,
 /// `!`.
-async fn blinky(pin_mask: u16, interval: Duration, gpiod: &device::GPIOD)
+async fn blinky(pin_mask: u16, interval: Duration, gpiod: device::gpio::Gpio)
     -> Infallible
 {
     // Zero-extend the mask to fit the BSRR register.
@@ -91,10 +80,10 @@ async fn blinky(pin_mask: u16, interval: Duration, gpiod: &device::GPIOD)
 
     loop {
         // on
-        gpiod.bsrr.write(|w| unsafe { w.bits(pin_mask) });
+        gpiod.bsrr().write(|w| w.0 = pin_mask);
         sleep_for(interval).await;
         // off (same bits set in top 16 bits)
-        gpiod.bsrr.write(|w| unsafe { w.bits(pin_mask << 16) });
+        gpiod.bsrr().write(|w| w.0 = pin_mask << 16);
         sleep_for(interval).await;
     }
 }

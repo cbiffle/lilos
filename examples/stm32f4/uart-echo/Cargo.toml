@@ -22,10 +22,10 @@ futures = { version = "0.3.21", default-features = false, features = ["async-awa
 lilos = { path = "../../../os" }
 panic-halt = "0.2.0"
 
-[dependencies.stm32f4]
+[dependencies.stm32-metapac]
 default-features = false
-features = ["rt", "stm32f407"]
-version = "0.14.0"
+features = ["rt", "pac", "stm32f407vg"]
+version = "15.0"
 
 [[bin]]
 name = "lilos-example-stm32f4-uart-echo"
