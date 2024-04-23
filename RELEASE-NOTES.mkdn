@@ -1,6 +1,8 @@
 # Release Notes
 
-## Version 1.0.0 (in progress)
+## Version 1.0.0
+
+After five years of development, I'm prepared to declare this a 1.0 release!
 
 For an example of the changes required to port from 0.3.x to 1.0, see [the
 upgrade commit in the Keypad:GO!
