@@ -9,6 +9,7 @@
 mod list;
 mod spsc;
 mod mutex;
+#[cfg(feature = "handoff")]
 mod handoff;
 
 use core::convert::Infallible;
@@ -59,12 +60,15 @@ static NOTIFY_REACHED: AtomicBool = AtomicBool::new(false);
 const A_BIT: core::time::Duration = core::time::Duration::from_millis(2);
 
 macro_rules! async_tests {
-    ($($name:path,)*) => {
+    ($($(#[$attr:meta])* $name:path,)*) => {
         $(
-            cortex_m_semihosting::hprint!(concat!(stringify!($name), "... "));
-            $name().await;
-            cortex_m_semihosting::hprintln!("OK");
-        )*
+            $(#[$attr])*
+            {
+                cortex_m_semihosting::hprint!(concat!(stringify!($name), "... "));
+                $name().await;
+                cortex_m_semihosting::hprintln!("OK");
+            }
+         )*
     };
 }
 
@@ -101,14 +105,23 @@ async fn task_coordinator() -> Infallible {
             spsc::test_static_everything,
             spsc::test_nonempty_drop,
 
+            #[cfg(feature = "handoff")]
             handoff::test_create_drop,
+            #[cfg(feature = "handoff")]
             handoff::test_split_drop,
+            #[cfg(feature = "handoff")]
             handoff::test_push_pop,
+            #[cfg(feature = "handoff")]
             handoff::test_push_cancel,
+            #[cfg(feature = "handoff")]
             handoff::test_push_cancel_after_block,
+            #[cfg(feature = "handoff")]
             handoff::test_push_cancel_after_success,
+            #[cfg(feature = "handoff")]
             handoff::test_pop_cancel,
+            #[cfg(feature = "handoff")]
             handoff::test_pop_cancel_after_block,
+            #[cfg(feature = "handoff")]
             handoff::test_pop_cancel_after_success,
         }
     };

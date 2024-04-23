@@ -19,7 +19,7 @@ default-target = "thumbv6m-none-eabi"
 cortex-m = "0.7.4"
 cortex-m-rt = { version = "0.7.1", default-features = false }
 panic-semihosting = "0.6.0"
-lilos-testsuite = { path = ".." }
+lilos-testsuite = { path = "..", default-features = false }
 
 [[bin]]
 name = "lilos-testsuite-stm32g0"

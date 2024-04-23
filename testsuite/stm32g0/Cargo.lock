@@ -158,14 +158,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilos-handoff"
-version = "1.0.0"
-dependencies = [
- "lilos",
- "scopeguard",
-]
-
-[[package]]
 name = "lilos-testsuite"
 version = "0.1.0"
 dependencies = [
@@ -174,7 +166,6 @@ dependencies = [
  "cortex-m-semihosting",
  "futures",
  "lilos",
- "lilos-handoff",
  "panic-semihosting",
 ]
 
@@ -251,12 +242,6 @@ checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 dependencies = [
  "semver",
 ]
-
-[[package]]
-name = "scopeguard"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "semver"
