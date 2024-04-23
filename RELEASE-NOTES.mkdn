@@ -74,6 +74,9 @@ fix.
   impl for `Waker` is a no-op, which is how this went unnoticed for this long.
   But it was still wrong, so, fixed now.
 
+- Some of the test suite run scripts had rotted, since I normally run the tests
+  in GDB. Thanks to @KoviRobi for the fix there.
+
 ### Cleanups and future-proofing
 
 - The codebase should be ready for the `static_mut_refs` lint in Rust 1.77,
@@ -90,7 +93,12 @@ fix.
 - @kovirobi fixed the units on `initialize_sys_tick`, which incorrectly claimed
   to be in megahertz instead of hertz.
 
+- @kovirobi also contributed a QEMU-based test suite for CI, which is pretty
+  slick.
+
 - Code simplifications and cleanup from @mattfbacon.
+
+- Basic support for Cortex-M4 without hardfloat from @timokroeger.
 
 ## Version 0.3.6
 
