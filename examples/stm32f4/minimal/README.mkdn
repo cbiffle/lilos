@@ -1,0 +1,15 @@
+# STM32F407 Minimal Example
+
+Minimal example of using `lilos` to blink an LED at 1Hz on the
+STM32F4DISCOVERY board.
+
+This starts a single task, which uses the scheduler and timer to
+periodically toggle a GPIO pin (D12, which is an LED on the STM32F4DISCOVERY
+board).
+
+This demonstrates
+
+1. How to start the `lilos` executor and configure timekeeping.
+2. How to perform periodic actions and delays.
+3. How to safely share data on the stack with a task.
+
