@@ -27,6 +27,12 @@ pub trait AtomicExt {
     /// Atomically exchange our current contents for `val`, returning the
     /// original contents.
     fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value;
+
+    /// If `self`'s value is equal to `current`, atomically replace it with
+    /// `new`, otherwise leave it untouched.
+    ///
+    /// Returns `Ok(current)` on success, `Err(actual_value)` on failure.
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value>;
 }
 
 /// Atomic operations that apply to arithmetic types.
@@ -43,6 +49,9 @@ impl AtomicExt for AtomicU32 {
 
     fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
         self.swap(val, ordering)
+    }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        self.compare_exchange(current, new, success, failure)
     }
 }
 
@@ -63,6 +72,9 @@ impl AtomicExt for AtomicUsize {
     fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
         self.swap(val, ordering)
     }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        self.compare_exchange(current, new, success, failure)
+    }
 }
 
 #[cfg(feature = "has-native-rmw")]
@@ -81,6 +93,9 @@ impl<T> AtomicExt for AtomicPtr<T> {
 
     fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
         self.swap(val, ordering)
+    }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        self.compare_exchange(current, new, success, failure)
     }
 }
 
@@ -109,6 +124,18 @@ impl<T> AtomicExt for AtomicPtr<T> {
             x
         })
     }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        let (lo, so) = rmw_ordering(success);
+        cortex_m::interrupt::free(|_| {
+            let x = self.load(lo);
+            if x == current {
+                self.store(new, so);
+                break Ok(x);
+            } else {
+                break Err(x);
+            }
+        });
+    }
 }
 
 #[cfg(not(feature = "has-native-rmw"))]
@@ -123,6 +150,18 @@ impl AtomicExt for AtomicU32 {
             self.store(val, so);
             x
         })
+    }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        let (lo, so) = rmw_ordering(success);
+        cortex_m::interrupt::free(|_| {
+            let x = self.load(lo);
+            if x == current {
+                self.store(new, so);
+                break Ok(x);
+            } else {
+                break Err(x);
+            }
+        });
     }
 }
 
@@ -162,6 +201,18 @@ impl AtomicExt for AtomicUsize {
             x
         })
     }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        let (lo, so) = rmw_ordering(success);
+        cortex_m::interrupt::free(|_| {
+            let x = self.load(lo);
+            if x == current {
+                self.store(new, so);
+                break Ok(x);
+            } else {
+                break Err(x);
+            }
+        });
+    }
 }
 
 #[cfg(not(feature = "has-native-rmw"))]
@@ -194,6 +245,9 @@ impl AtomicExt for AtomicBool {
     fn swap_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value {
         self.swap(val, ordering)
     }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        self.compare_exchange(current, new, success, failure)
+    }
 }
 
 #[cfg(not(feature = "has-native-rmw"))]
@@ -208,5 +262,17 @@ impl AtomicExt for AtomicBool {
             self.store(val, so);
             x
         })
+    }
+    fn compare_exchange_polyfill(&self, current: Self::Value, new: Self::Value, success: Ordering, failure: Ordering) -> Result<Self::Value, Self::Value> {
+        let (lo, so) = rmw_ordering(success);
+        cortex_m::interrupt::free(|_| {
+            let x = self.load(lo);
+            if x == current {
+                self.store(new, so);
+                break Ok(x);
+            } else {
+                break Err(x);
+            }
+        });
     }
 }
