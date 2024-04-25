@@ -19,8 +19,15 @@
 
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 
+mod private {
+    pub trait Sealed {}
+}
+
 /// Basic atomic operations.
-pub trait AtomicExt {
+///
+/// Note that this trait is _sealed,_ meaning it cannot be implemented for
+/// types outside `lilos` itself.
+pub trait AtomicExt: private::Sealed {
     /// Primitive type corresponding to this atomic type.
     type Value;
 
@@ -64,6 +71,8 @@ pub trait AtomicArithExt: AtomicExt {
 
 macro_rules! impl_atomic_polyfills {
     ($t:ty, $v:ty $(, $param:ident)?) => {
+        impl<$($param)?> private::Sealed for $t {}
+
         // Native version
         #[cfg(feature = "has-native-rmw")]
         impl<$($param)?> AtomicExt for $t {
