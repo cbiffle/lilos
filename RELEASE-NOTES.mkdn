@@ -22,6 +22,9 @@ fix.
   these APIs, so you should just need to replace the `exec` module with `time`
   where you see compile errors.
 
+    - This renaming breaks compatibility with older versions of the debugger,
+      so, update.
+
 - Renamed `spsc` and `handoff` split handle types: `Push` is now `Pusher`, `Pop`
   is now `Popper`. (Because their old names sounded like what you'd name the
   future type for _completing_ a push or pop, and I felt like that was
@@ -58,7 +61,7 @@ fix.
 
 ### Internal bug fixes
 
-- Changes to the internal representation of the timer list will render
+- Changes to the internal representation of the timer list may render
   applications built with this version of `lilos` incompatible with older
   versions of `lildbg`.
 
