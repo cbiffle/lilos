@@ -1,0 +1,8 @@
+# STM32F407 examples
+
+These examples are targeted at the STM32F407-DISCOVERY evaluation board, or its
+newer replacement, the STM32F407G-DISC1.
+
+The only part of the examples that depends on the specific board is the pin
+choices for things like LEDs and UARTs, so it ought to be possible to use these
+on a different STM32F407 board by changing the pins used in the code.
