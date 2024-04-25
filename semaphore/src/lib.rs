@@ -39,6 +39,14 @@ pin_project! {
     /// the `Semaphore`, potentially waking a blocked caller.
     ///
     /// Semaphores are useful for restricting concurrent access to something.
+    ///
+    /// # Fairness
+    ///
+    /// This semaphore implementation is _fair,_ which in this context means
+    /// that permits are handed out in the order they're requested. If the
+    /// semaphore runs out of permits, tasks requesting permits are queued in
+    /// order and will be issued permits in order as they are returned to the
+    /// semaphore.
     #[derive(Debug)]
     pub struct Semaphore {
         available: AtomicUsize, 
@@ -135,15 +143,12 @@ impl Semaphore {
     /// ready -- otherwise the semaphore can be drained of all permits and
     /// nobody can make progress again.
     pub fn try_acquire(self: Pin<&Self>) -> Option<Permit<'_>> {
-        loop {
-            let a = self.available.load(Ordering::Acquire);
-            if a == 0 {
-                return None;
-            }
-            if self.available.compare_exchange_polyfill(a, a - 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-                return Some(Permit { semaphore: self });
-            }
-        }
+        self.available.fetch_update_polyfill(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |a| a.checked_sub(1),
+        ).ok()?;
+        Some(Permit { semaphore: self })
     }
 
     /// Stuffs one permit back into the semaphore.
@@ -163,7 +168,20 @@ impl Semaphore {
             // We have transferred our permit to a waiter, no need to mess with
             // updating the count.
         } else {
-            self.available.fetch_add(1, Ordering::SeqCst);
+            // We don't have to repeat the wake_one call in this loop, because
+            // we're not yielding -- we're not even in an async fn! -- so the
+            // only thing concurrent with us is ISRs, which can only wake tasks,
+            // not insert them.
+            //
+            // So the fact that the waiters list was found empty cannot change
+            // during this loop.
+            self.available.fetch_update_polyfill(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                // Note that this has a potential overflow on addition. This is
+                // deliberate, and is why we're not using fetch_add here!
+                |a| Some(a + 1),
+            ).unwrap();
         }
     }
 }
