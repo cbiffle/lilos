@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 1.0.1
+
+The only user-facing change in this release is that the internal `AtomicExt`
+trait has been sealed, preventing implementation outside of `lilos`. This trait
+was never intended to be exposed, so I'm treating this as a bugfix and yanking
+1.0.0 to avoid confusing anyone.
+
 ## Version 1.0.0
 
 After five years of development, I'm prepared to declare this a 1.0 release!
