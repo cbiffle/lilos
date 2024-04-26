@@ -16,7 +16,7 @@ default-target = "thumbv6m-none-eabi"
 [dependencies]
 cortex-m.workspace = true
 cortex-m-rt.workspace = true
-lilos-testsuite = {workspace = true, default-features = false}
+lilos-testsuite = {workspace = true}
 panic-halt.workspace = true
 
 [[bin]]
