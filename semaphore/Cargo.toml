@@ -1,6 +1,11 @@
 [package]
 name = "lilos-semaphore"
 version = "0.1.0"
+authors = ["Cliff L. Biffle <code@cliffle.com>"]
+description = "A counting semaphore for use with lilos."
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
 
 edition.workspace = true
 license.workspace = true
