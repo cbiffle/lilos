@@ -104,25 +104,27 @@ impl Semaphore {
     /// back of the priority list, to maintain fairness. Otherwise, the result
     /// is indistinguishable.
     pub async fn acquire(self: Pin<&Self>) -> Permit<'_> {
-        loop {
-            if let Some(permit) = self.try_acquire() {
-                return permit;
-            }
-
-            // Add ourselves to the wait list...
-            create_node!(node, (), noop_waker());
-            self.project_ref()
-                .waiters
-                .insert_and_wait_with_cleanup(node, || {
-                    // This is called when we've been detached from the wait
-                    // list, which means a permit was transferred to us, but
-                    // we haven't been polled -- and won't ever be polled,
-                    // for we are being dropped. This means we need to
-                    // release our permit, which might wake another task.
-                    self.out_of_band_release();
-                })
-                .await;
+        if let Some(permit) = self.try_acquire() {
+            return permit;
         }
+
+        // Add ourselves to the wait list...
+        create_node!(node, (), noop_waker());
+        self.project_ref()
+            .waiters
+            .insert_and_wait_with_cleanup(node, || {
+                // This is called when we've been detached from the wait
+                // list, which means a permit was transferred to us, but
+                // we haven't been polled -- and won't ever be polled,
+                // for we are being dropped. This means we need to
+                // release our permit, which might wake another task.
+                self.out_of_band_release();
+            })
+            .await;
+        // Getting detached from the list means a permit came our way ...
+        // without updating the count. So we can't use `try_acquire` to
+        // manufacture a `Permit`, we gotta do it our own selves.
+        Permit { semaphore: self }
     }
 
     /// Attempts to take a single permit from the semaphore, returning
