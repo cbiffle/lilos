@@ -6,8 +6,12 @@
 
 - Added `List::wake_one_if` as a generalized version of `List::wake_one` for
   doing conditional wakes.
+
 - Added `List::wake_while` as a generalized version of `List::wake_less_than`
-  for waking a series of similar waiters.
+
+- The `CancelSafe` type from `lilos::mutex` is now available in `lilos::util`
+  independent of which features are turned on, to make it easier to use in
+  external lock types. `lilos::mutex::CancelSafe` is now an alias.
 
 
 ## Version 1.0.2
