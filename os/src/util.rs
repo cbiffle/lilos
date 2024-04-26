@@ -103,3 +103,19 @@ impl<F, A> Future for OnCancel<F, A>
         result
     }
 }
+
+/// Newtype to wrap the contents of a mutex or lock when you know, in the
+/// context of the current application, that it is okay to unlock this
+/// particular lock at _any_ cancellation point.
+///
+/// This is a wrapper, rather than a `trait` implemented by certain types,
+/// because the property it asserts is not a property of a type at all -- it's a
+/// property of _context._ For instance, consider `Mutex<Option<T>>`. One
+/// application may be just fine with that mutex containing `None`, while
+/// another may only remove the contents temporarily to act on it, but expect it
+/// to be restored to `Some` before unlocking. Because both these use cases are
+/// valid, we can't universally label `Option` as either "cancellation friendly"
+/// or "not cancellation friendly," and must leave it up to the code that
+/// manages the mutex/lock itself.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Ord, PartialOrd)]
+pub struct CancelSafe<T>(pub T);
