@@ -547,7 +547,6 @@ impl List<()> {
 /// This is because any node in the list should only be in the list for the
 /// duration of an insert future, which borrows the list -- preventing it from
 /// being dropped.
-#[cfg(debug_assertions)]
 #[pinned_drop]
 impl<T> PinnedDrop for List<T> {
     fn drop(self: Pin<&mut Self>) {
@@ -559,6 +558,7 @@ impl<T> PinnedDrop for List<T> {
         // wake them now, they'll sleep, possibly forever.
         //
         // When in doubt: panic and set the behavior later.
+        #[cfg(debug_assertions)]
         cheap_assert!(self.root.is_detached());
     }
 }
