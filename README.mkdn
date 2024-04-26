@@ -33,6 +33,11 @@ allow in `Cargo.toml`, such as the target triple. This means you will need to
   README](https://github.com/cbiffle/lilos/blob/main/testsuite/README.mkdn) for
   instructions.
 - `examples` contains example programs for various microcontrollers.
+- There are a few "non-core" crates providing features that aren't mature
+  enough to go in `os`, but which you might find useful anyway:
+  - `handoff` provides a synchronous rendezvous for transferring data from one
+    task to another with minimal copies.
+  - `semaphore` provides a counting semaphore implementation.
 
 ## Building
 

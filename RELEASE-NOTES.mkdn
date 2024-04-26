@@ -2,6 +2,12 @@
 
 ## Version 1.?? (in progress)
 
+### New non-core APIs
+
+- Added an initial prototype of the `lilos-semaphore` crate, which provides a
+  counting semaphore designed for use with `lilos`. The crate's version is set
+  to `0.1.0` to reflect that it's not a final or released API just yet.
+
 ### Internal / developer experience
 
 - Switched from `pin_project_lite` to `pin_project` to gain some features that
