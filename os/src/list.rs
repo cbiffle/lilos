@@ -132,6 +132,8 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
+use pin_project::{pin_project, pinned_drop};
+
 use crate::util::{NotSendMarker, Captures};
 
 /// A cell specialized for holding `Waker`s. This is functionally equivalent to
@@ -199,6 +201,7 @@ impl WakerCell {
 /// `PartialOrd`, and the list will be maintained in ascending sorted order by
 /// each node's `contents`. If you don't require this, `Node<()>` degenerates
 /// into an insertion-order list.
+#[pin_project(PinnedDrop)]
 pub struct Node<T> {
     prev: Cell<NonNull<Self>>,
     next: Cell<NonNull<Self>>,
@@ -267,14 +270,10 @@ impl<T> Node<T> {
 }
 
 /// A `Node` will detach itself from any list on drop.
-impl<T> Drop for Node<T> {
-    fn drop(&mut self) {
-        // We assume that all nodes are pinned.
-        inner_drop(unsafe { Pin::new_unchecked(self) });
-
-        fn inner_drop<T>(this: Pin<&mut Node<T>>) {
-            this.as_ref().detach();
-        }
+#[pinned_drop]
+impl<T> PinnedDrop for Node<T> {
+    fn drop(self: Pin<&mut Self>) {
+        self.as_ref().detach();
     }
 }
 
@@ -326,7 +325,9 @@ impl<T: core::fmt::Debug> core::fmt::Debug for Node<T> {
 ///
 /// This isn't the only way we could do things, but it is the safest. If you're
 /// curious about the details, see the source code for `Drop`.
+#[pin_project(PinnedDrop)]
 pub struct List<T> {
+    #[pin]
     root: Node<T>,
     _marker: NotSendMarker,
 }
@@ -378,12 +379,8 @@ impl<T> List<T> {
     pub unsafe fn finish_init(list: Pin<&mut Self>) {
         // Safety: this is safe if our own safety contract is upheld.
         unsafe {
-            Node::finish_init(list.root_mut());
+            Node::finish_init(list.project().root);
         }
-    }
-
-    fn root_mut(self: Pin<&mut Self>) -> Pin<&mut Node<T>> {
-        unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).root) }
     }
 }
 
@@ -551,8 +548,9 @@ impl List<()> {
 /// duration of an insert future, which borrows the list -- preventing it from
 /// being dropped.
 #[cfg(debug_assertions)]
-impl<T> Drop for List<T> {
-    fn drop(&mut self) {
+#[pinned_drop]
+impl<T> PinnedDrop for List<T> {
+    fn drop(self: Pin<&mut Self>) {
         // It's not immediately clear to me what the Drop behavior should
         // be. In particular, if the list is dropped while non-empty, should
         // its nodes be awoken? On the one hand, whatever condition they're

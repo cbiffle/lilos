@@ -7,6 +7,8 @@
 use core::{future::Future, pin::Pin, task::{Context, Poll}};
 use core::marker::PhantomData;
 
+use pin_project::{pin_project, pinned_drop};
+
 /// Zero-sized marker type that can be included to ensure that a data structure
 /// is not automatically made `Sync` (i.e. safe for sharing across threads).
 ///
@@ -65,18 +67,21 @@ impl<F: Future> FutureExt for F {}
 /// Future wrapper that adds a cancel action (result of [`FutureExt::on_cancel`]).
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 #[derive(Debug)]
+#[pin_project(PinnedDrop)]
 pub struct OnCancel<F, A>
     where A: FnOnce(),
 {
+    #[pin]
     inner: F,
     action: Option<A>,
 }
 
-impl<F, A> Drop for OnCancel<F, A>
+#[pinned_drop]
+impl<F, A> PinnedDrop for OnCancel<F, A>
     where A: FnOnce(),
 {
-    fn drop(&mut self) {
-        if let Some(a) = self.action.take() {
+    fn drop(self: Pin<&mut Self>) {
+        if let Some(a) = self.project().action.take() {
             a();
         }
     }
@@ -89,12 +94,7 @@ impl<F, A> Future for OnCancel<F, A>
     type Output = F::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Safety: this is structural pin projection of the `inner` field; it's
-        // inlined because it's only used once. Couldn't use `pin_project_lite`
-        // here because it gets mad about `Drop` impls.
-        let inner = unsafe {
-            Pin::new_unchecked(&mut Pin::get_unchecked_mut(self.as_mut()).inner)
-        };
+        let inner = self.as_mut().project().inner;
         let result = inner.poll(cx);
         if result.is_ready() {
             // Disarm the cancel handler.

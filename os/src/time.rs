@@ -86,7 +86,7 @@ use core::time::Duration;
 
 use cortex_m::peripheral::{syst::SystClkSource, SYST};
 use cortex_m_rt::exception;
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 
 use crate::atomic::AtomicArithExt;
 
@@ -357,20 +357,19 @@ pub fn with_timeout<D, F>(timeout: D, code: F) -> impl Future<Output = Option<F:
     with_deadline(TickTime::now() + timeout, code)
 }
 
-pin_project! {
-    /// A future-wrapper that gates polling a future `B` on whether another
-    /// future `A` has resolved.
-    ///
-    /// Once `A` resolved, `B` is no longer polled and the combined future
-    /// resolves to `None`. If `B` resolves first, its result is produced
-    /// wrapped in `Some`.
-    #[derive(Debug)]
-    struct TimeLimited<A, B> {
-        #[pin]
-        limiter: A,
-        #[pin]
-        process: B,
-    }
+/// A future-wrapper that gates polling a future `B` on whether another
+/// future `A` has resolved.
+///
+/// Once `A` resolved, `B` is no longer polled and the combined future
+/// resolves to `None`. If `B` resolves first, its result is produced
+/// wrapped in `Some`.
+#[derive(Debug)]
+#[pin_project]
+struct TimeLimited<A, B> {
+    #[pin]
+    limiter: A,
+    #[pin]
+    process: B,
 }
 
 impl<A, B> Future for TimeLimited<A, B>

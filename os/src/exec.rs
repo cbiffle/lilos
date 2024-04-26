@@ -137,7 +137,7 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 
 use crate::atomic::{AtomicExt, AtomicArithExt};
 use crate::util::Captures;
@@ -853,14 +853,14 @@ impl<T> TestResult for Option<T> {
     }
 }
 
-pin_project! {
-    /// Internal future type used to implement `Notify::until`. This makes it
-    /// much easier to recognize the future in a debugger.
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct Until<'n, F> {
-        cond: F,
-        notify: &'n Notify,
-    }
+/// Internal future type used to implement `Notify::until`. This makes it
+/// much easier to recognize the future in a debugger.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[pin_project]
+pub struct Until<'n, F> {
+    cond: F,
+    notify: &'n Notify,
 }
 
 impl<F, T> Future for Until<'_, F>
@@ -880,14 +880,14 @@ impl<F, T> Future for Until<'_, F>
     }
 }
 
-pin_project! {
-    /// Internal future type used to implement `Notify::until_racy`. This makes
-    /// it much easier to recognize the future in a debugger.
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct UntilRacy<'n, F> {
-        cond: F,
-        notify: &'n Notify,
-    }
+/// Internal future type used to implement `Notify::until_racy`. This makes
+/// it much easier to recognize the future in a debugger.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[pin_project]
+pub struct UntilRacy<'n, F> {
+    cond: F,
+    notify: &'n Notify,
 }
 
 impl<F, T> Future for UntilRacy<'_, F>

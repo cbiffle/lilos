@@ -75,34 +75,33 @@ use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 
 use crate::atomic::AtomicArithExt;
 use crate::exec::noop_waker;
 use crate::list::List;
 
-pin_project! {
-    /// Holds a `T` that can be accessed from multiple concurrent futures/tasks,
-    /// but only one at a time.
-    ///
-    /// This implementation is more efficient than a spin-lock, because when the
-    /// mutex is contended, all competing tasks but one register themselves for
-    /// waking when the mutex is freed. Thus, nobody needs to spin.
-    ///
-    /// When the mutex is unlocked, the task doing the unlocking will check the
-    /// mutex's wait list and release the oldest task on it.
-    #[derive(Debug)]
-    pub struct Mutex<T: ?Sized> {
-        // Stores 0 when unlocked, 1 when locked.
-        state: AtomicUsize,
-        // Accumulates the wakers for all tasks that have attempted to obtain this
-        // mutex while it was locked.
-        #[pin]
-        waiters: List<()>,
-        // The contents of the mutex. Safe to access only when `state` is
-        // atomically flipped 0->1.
-        value: UnsafeCell<T>,
-    }
+/// Holds a `T` that can be accessed from multiple concurrent futures/tasks,
+/// but only one at a time.
+///
+/// This implementation is more efficient than a spin-lock, because when the
+/// mutex is contended, all competing tasks but one register themselves for
+/// waking when the mutex is freed. Thus, nobody needs to spin.
+///
+/// When the mutex is unlocked, the task doing the unlocking will check the
+/// mutex's wait list and release the oldest task on it.
+#[derive(Debug)]
+#[pin_project]
+pub struct Mutex<T: ?Sized> {
+    // Stores 0 when unlocked, 1 when locked.
+    state: AtomicUsize,
+    // Accumulates the wakers for all tasks that have attempted to obtain this
+    // mutex while it was locked.
+    #[pin]
+    waiters: List<()>,
+    // The contents of the mutex. Safe to access only when `state` is
+    // atomically flipped 0->1.
+    value: UnsafeCell<T>,
 }
 
 impl<T> Mutex<T> {
