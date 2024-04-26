@@ -490,6 +490,10 @@ impl<T: PartialOrd> List<T> {
     /// Beginning at the head of the list, removes nodes whose `contents` are
     /// `<= threshold` and wakes their tasks.
     ///
+    /// **Caution:** Despite the name of this function, this removes nodes whose
+    /// `contents` are _less than or equal to_ `threshold`! This name will be
+    /// deprecated at some point in the future to remove this gotcha.
+    ///
     /// After this completes:
     ///
     /// - Any `Node` previously inserted into this list with `contents <=
@@ -497,13 +501,30 @@ impl<T: PartialOrd> List<T> {
     ///
     /// - All `Node`s remaining in this list have `contents > threshold`.
     pub fn wake_less_than(self: Pin<&Self>, threshold: T) {
+        self.wake_while(|n| n.contents <= threshold);
+    }
+
+    /// Beginning at the head of the list, removes nodes that are accepted by
+    /// `pred` (i.e. it returns `true`), and wakes the associated tasks.
+    ///
+    /// Stops at the first node for which `pred` returns `false`. That node is
+    /// left in the list, and its task is not awoken.
+    ///
+    /// Note that there may be _other_ nodes farther in the list for which
+    /// `pred` would return `true`, unless `pred` is comparing the `contents`
+    /// field used to order the list.
+    ///
+    /// Returns `true` if at least one node was removed, `false` otherwise.
+    pub fn wake_while(self: Pin<&Self>, mut pred: impl FnMut(Pin<&Node<T>>) -> bool) -> bool {
+        let mut changes = false;
+
         // Work through the nodes from the head, using the root as a sentinel to
         // stop iteration.
         let mut candidate = self.root.next.get();
         while candidate != NonNull::from(&self.root) {
             // Safety: Link Valid Invariant
             let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
-            if cref.contents > threshold {
+            if !pred(cref) {
                 break;
             }
             // Copy the next pointer before detaching.
@@ -511,8 +532,33 @@ impl<T: PartialOrd> List<T> {
             cref.detach();
             cref.waker.wake_by_ref();
 
+            changes = true;
             candidate = next;
         }
+
+        changes
+    }
+
+
+    /// Inspects the first node `n` in the list and wakes it if `pred(&n)`
+    /// returns `true`.
+    ///
+    /// Returns `true` if a node was awoken, `false` if `pred` didn't accept the
+    /// node or the list was empty.
+    pub fn wake_one_if(self: Pin<&Self>, pred: impl FnOnce(Pin<&Node<T>>) -> bool) -> bool {
+        // Work through the nodes from the head, using the root as a sentinel to
+        // stop iteration.
+        let candidate = self.root.prev.get();
+        if candidate != NonNull::from(&self.root) {
+            // Safety: Link Valid Invariant
+            let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
+            if pred(cref) {
+                cref.detach();
+                cref.waker.wake_by_ref();
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -528,16 +574,7 @@ impl List<()> {
     /// Returns a flag indicating whether anything was done (i.e. whether the
     /// list was found empty).
     pub fn wake_one(self: Pin<&Self>) -> bool {
-        let candidate = self.root.prev.get();
-        if candidate != NonNull::from(&self.root) {
-            // Safety: Link Valid Invariant
-            let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
-            cref.detach();
-            cref.waker.wake_by_ref();
-            true
-        } else {
-            false
-        }
+        self.wake_one_if(|_| true)
     }
 }
 

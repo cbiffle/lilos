@@ -1,6 +1,6 @@
 [package]
 name = "lilos"
-version = "1.0.2"
+version = "1.1.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 description = "A tiny embedded OS based around Futures and async."
 keywords = ["async", "embedded", "realtime", "os"]
