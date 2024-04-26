@@ -172,6 +172,7 @@ macro_rules! impl_atomic_polyfills {
 
 impl_atomic_polyfills!(AtomicU32, u32);
 impl_atomic_polyfills!(AtomicUsize, usize);
+impl_atomic_polyfills!(core::sync::atomic::AtomicIsize, isize);
 impl_atomic_polyfills!(AtomicBool, bool);
 impl_atomic_polyfills!(AtomicPtr<T>, *mut T, T);
 
