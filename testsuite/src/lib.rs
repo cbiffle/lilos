@@ -1,8 +1,6 @@
 //! OS test suite.
 //!
-//! The test suite is SoC-independent, but we build and test on STM32F407
-//! because Cargo's feature resolution plus `cortex-m-rt`'s feature handling
-//! means that every binary in this workspace has to target the same SoC. Sigh.
+//! The test suite is SoC-independent.
 
 #![no_std]
 
@@ -129,13 +127,24 @@ async fn task_coordinator() -> Infallible {
             #[cfg(feature = "semaphore")]
             semaphore::test_create_drop,
             #[cfg(feature = "semaphore")]
-            semaphore::test_acquire_release,
+            semaphore::test_acquire,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_release,
             #[cfg(feature = "semaphore")]
             semaphore::test_exhaustion,
             #[cfg(feature = "semaphore")]
             semaphore::test_fairness,
             #[cfg(feature = "semaphore")]
             semaphore::test_cancellation,
+
+            #[cfg(feature = "semaphore")]
+            semaphore::test_scoped_create_drop,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_scoped_acquire,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_scoped_release,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_scoped_exhaustion,
         }
     };
 
