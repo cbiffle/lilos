@@ -93,15 +93,12 @@ impl<F, A> Future for OnCancel<F, A>
 {
     type Output = F::Output;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let inner = self.as_mut().project().inner;
-        let result = inner.poll(cx);
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let p = self.project();
+        let result = p.inner.poll(cx);
         if result.is_ready() {
             // Disarm the cancel handler.
-            //
-            // Safety: this is structural non-pinned projection of the `action`
-            // field; same argument as above.
-            unsafe { Pin::get_unchecked_mut(self) }.action = None;
+            *p.action = None;
         }
         result
     }
