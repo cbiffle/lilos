@@ -1,0 +1,3 @@
+# Counting semaphore for `lilos`
+
+This provides a counting semaphore for use with `lilos`.
