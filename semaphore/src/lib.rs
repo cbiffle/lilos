@@ -5,7 +5,6 @@
 //! [`lilos`]: https://docs.rs/lilos/
 
 #![no_std]
-
 #![warn(
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
@@ -17,7 +16,7 @@
     trivial_numeric_casts,
     unreachable_pub,
     unsafe_op_in_unsafe_fn,
-    unused_qualifications,
+    unused_qualifications
 )]
 
 use core::mem::ManuallyDrop;
@@ -73,7 +72,7 @@ pin_project! {
     /// semaphore.
     #[derive(Debug)]
     pub struct Semaphore {
-        available: AtomicUsize, 
+        available: AtomicUsize,
         #[pin]
         waiters: List<()>,
     }
@@ -113,17 +112,17 @@ impl Semaphore {
 
             // Add ourselves to the wait list...
             create_node!(node, (), noop_waker());
-            self.project_ref().waiters.insert_and_wait_with_cleanup(
-                node,
-                || {
+            self.project_ref()
+                .waiters
+                .insert_and_wait_with_cleanup(node, || {
                     // This is called when we've been detached from the wait
                     // list, which means a permit was transferred to us, but
                     // we haven't been polled -- and won't ever be polled,
                     // for we are being dropped. This means we need to
                     // release our permit, which might wake another task.
                     self.out_of_band_release();
-                },
-            ).await;
+                })
+                .await;
         }
     }
 
@@ -141,11 +140,11 @@ impl Semaphore {
     /// ready -- otherwise the semaphore can be drained of all permits and
     /// nobody can make progress again.
     pub fn try_acquire(self: Pin<&Self>) -> Option<Permit<'_>> {
-        self.available.fetch_update_polyfill(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |a| a.checked_sub(1),
-        ).ok()?;
+        self.available
+            .fetch_update_polyfill(Ordering::Relaxed, Ordering::Relaxed, |a| {
+                a.checked_sub(1)
+            })
+            .ok()?;
         Some(Permit { semaphore: self })
     }
 
@@ -173,13 +172,15 @@ impl Semaphore {
             //
             // So the fact that the waiters list was found empty cannot change
             // during this loop.
-            self.available.fetch_update_polyfill(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                // Note that this has a potential overflow on addition. This is
-                // deliberate, and is why we're not using fetch_add here!
-                |a| Some(a + 1),
-            ).unwrap();
+            self.available
+                .fetch_update_polyfill(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    // Note that this has a potential overflow on addition. This is
+                    // deliberate, and is why we're not using fetch_add here!
+                    |a| Some(a + 1),
+                )
+                .unwrap();
         }
     }
 
@@ -258,7 +259,9 @@ macro_rules! create_semaphore {
             // __permits is available for use here.
             let __permits = $permits;
             unsafe {
-                core::mem::ManuallyDrop::into_inner($crate::Semaphore::new(__permits))
+                core::mem::ManuallyDrop::into_inner($crate::Semaphore::new(
+                    __permits,
+                ))
             }
         });
         // Safety: the value has not been operated on since `new` except for
