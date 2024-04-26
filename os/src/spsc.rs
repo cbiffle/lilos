@@ -64,8 +64,8 @@ pub struct Queue<'s, T> {
     pushed: Notify,
 }
 
-/// This type is easily sharable across threads, because there are no useful
-/// operations that can be performed using only a shared reference.
+/// Safety: This type is easily sharable across threads, because there are no
+/// useful operations that can be performed using only a shared reference.
 unsafe impl<T> Sync for Queue<'_, T> where T: Send {}
 
 impl<'s, T> Queue<'s, T> {

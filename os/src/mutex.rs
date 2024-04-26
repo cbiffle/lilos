@@ -249,8 +249,18 @@ impl<T> Mutex<T> {
         }
     }
 
+    /// Grabs a reference to the contents of the mutex.
+    ///
+    /// Used internally by Deref.
+    ///
+    /// # Safety
+    ///
+    /// For this to be sound, you must ensure that there are no aliasing `&mut`
+    /// references to the contents.
     unsafe fn contents(&self) -> &T {
         let ptr = self.value.get();
+        // Safety: as long as our contract is upheld, this won't produce a
+        // reference aliasing a `&mut` so we should be fine.
         unsafe { &*ptr }
     }
 }

@@ -499,6 +499,9 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
         //    be wrong.
         let futures_ptr: *mut [Pin<*mut dyn Future<Output = Infallible>>] = futures_ptr as _;
         // Stash the task future array in a known location.
+        //
+        // Safety: this is written by code but never read back, so the fact that
+        // it's a static mut has no effect on code other than the warning.
         unsafe {
             TASK_FUTURES = Some(futures_ptr);
         }

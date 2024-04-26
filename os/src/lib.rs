@@ -142,6 +142,7 @@
     unsafe_op_in_unsafe_fn,
     unused_qualifications,
 )]
+#![warn(clippy::undocumented_unsafe_blocks)]
 
 /// Internal assert macro that doesn't stringify its expression or generate any
 /// fancy messages. This means failures must be diagnosed by file:line only, so,
