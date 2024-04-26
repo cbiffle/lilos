@@ -26,56 +26,55 @@ use lilos::atomic::AtomicExt;
 use lilos::create_node;
 use lilos::exec::noop_waker;
 use lilos::list::List;
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 
-pin_project! {
-    /// A counting semaphore.
-    ///
-    /// A `Semaphore` gets initialized with a certain number of _permits._
-    /// Callers can take one permit from the semaphore using the `acquire`
-    /// operation, which will block if there are none available, and wake when
-    /// one becomes available.
-    ///
-    /// `acquire` returns a `Permit`, which is a resource object that represents
-    /// holding one permit. When it is dropped, it restores its permit back to
-    /// the `Semaphore`, potentially waking a blocked caller.
-    ///
-    /// Semaphores are useful for restricting concurrent access to something.
-    ///
-    /// # Getting a semaphore
-    ///
-    /// Like `lilos`'s `Mutex` type, `Semaphore` must be pinned to be useful.
-    /// This crate includes a convenience macro, [`create_semaphore!`], to make
-    /// this easy. Like `create_mutex!`, `create_semaphore!` makes a named
-    /// variable as if you had used `let`, but does it internally to simplify
-    /// some stuff.
-    ///
-    /// ```
-    /// use lilos_semaphore::{create_semaphore, Semaphore};
-    ///
-    /// create_semaphore!(five_permits, 5);
-    ///
-    /// let _one_permit = five_permits.acquire().await;
-    /// ```
-    ///
-    /// Alternatively, if you want to avoid macros that hide the details from
-    /// you, you can create one by hand using the same two-step initialization
-    /// protocol as `Mutex`. See the source code for `create_semaphore!` for a
-    /// working example of how to do it.
-    ///
-    /// # Fairness
-    ///
-    /// This semaphore implementation is _fair,_ which in this context means
-    /// that permits are handed out in the order they're requested. If the
-    /// semaphore runs out of permits, tasks requesting permits are queued in
-    /// order and will be issued permits in order as they are returned to the
-    /// semaphore.
-    #[derive(Debug)]
-    pub struct Semaphore {
-        available: AtomicUsize,
-        #[pin]
-        waiters: List<()>,
-    }
+/// A counting semaphore.
+///
+/// A `Semaphore` gets initialized with a certain number of _permits._
+/// Callers can take one permit from the semaphore using the `acquire`
+/// operation, which will block if there are none available, and wake when
+/// one becomes available.
+///
+/// `acquire` returns a `Permit`, which is a resource object that represents
+/// holding one permit. When it is dropped, it restores its permit back to
+/// the `Semaphore`, potentially waking a blocked caller.
+///
+/// Semaphores are useful for restricting concurrent access to something.
+///
+/// # Getting a semaphore
+///
+/// Like `lilos`'s `Mutex` type, `Semaphore` must be pinned to be useful.
+/// This crate includes a convenience macro, [`create_semaphore!`], to make
+/// this easy. Like `create_mutex!`, `create_semaphore!` makes a named
+/// variable as if you had used `let`, but does it internally to simplify
+/// some stuff.
+///
+/// ```
+/// use lilos_semaphore::{create_semaphore, Semaphore};
+///
+/// create_semaphore!(five_permits, 5);
+///
+/// let _one_permit = five_permits.acquire().await;
+/// ```
+///
+/// Alternatively, if you want to avoid macros that hide the details from
+/// you, you can create one by hand using the same two-step initialization
+/// protocol as `Mutex`. See the source code for `create_semaphore!` for a
+/// working example of how to do it.
+///
+/// # Fairness
+///
+/// This semaphore implementation is _fair,_ which in this context means
+/// that permits are handed out in the order they're requested. If the
+/// semaphore runs out of permits, tasks requesting permits are queued in
+/// order and will be issued permits in order as they are returned to the
+/// semaphore.
+#[derive(Debug)]
+#[pin_project]
+pub struct Semaphore {
+    available: AtomicUsize,
+    #[pin]
+    waiters: List<()>,
 }
 
 impl Semaphore {

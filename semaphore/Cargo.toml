@@ -1,12 +1,18 @@
 [package]
 name = "lilos-semaphore"
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
 lilos.workspace = true
-pin-project-lite = "0.2.14"
+pin-project.workspace = true
 
 [lib]
 test = false
