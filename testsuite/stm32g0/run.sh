@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMG=target/thumbv6m-none-eabi/release/lilos-testsuite-stm32g0
+IMG=../../target/thumbv6m-none-eabi/release/lilos-testsuite-stm32g0
 
 # G0 has tight enough flash that we need to build in release mode.
 cargo build --release

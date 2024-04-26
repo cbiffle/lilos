@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMG=target/thumbv7em-none-eabihf/debug/lilos-testsuite-stm32f3
+IMG=../../target/thumbv7em-none-eabihf/debug/lilos-testsuite-stm32f3
 
 # F3 has enough flash to build in debug mode
 cargo build
