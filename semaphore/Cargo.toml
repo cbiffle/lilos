@@ -5,7 +5,7 @@ edition = "2021"
 license = "MPL-2.0"
 
 [dependencies]
-lilos = {version = "1.0.0", path = "../os", default-features = false}
+lilos.workspace = true
 pin-project-lite = "0.2.14"
 
 [lib]

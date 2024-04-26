@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "os",
     "handoff",
+    "semaphore",
     "examples/*/*",
     "testsuite",
     "testsuite/stm32f3",

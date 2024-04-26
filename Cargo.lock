@@ -262,6 +262,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lilos-semaphore"
+version = "0.1.0"
+dependencies = [
+ "lilos",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "lilos-testsuite"
 version = "0.1.0"
 dependencies = [
