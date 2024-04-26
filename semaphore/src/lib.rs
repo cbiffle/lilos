@@ -1,4 +1,8 @@
-//! A counting semaphore for use with `lilos`.
+//! A counting semaphore for use with [`lilos`].
+//!
+//! See the docs on [`Semaphore`] for more details.
+//!
+//! [`lilos`]: https://docs.rs/lilos/
 
 #![no_std]
 
@@ -18,8 +22,7 @@
 
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use lilos::atomic::AtomicExt;
 use lilos::create_node;
 use lilos::exec::noop_waker;
@@ -40,6 +43,27 @@ pin_project! {
     ///
     /// Semaphores are useful for restricting concurrent access to something.
     ///
+    /// # Getting a semaphore
+    ///
+    /// Like `lilos`'s `Mutex` type, `Semaphore` must be pinned to be useful.
+    /// This crate includes a convenience macro, [`create_semaphore!`], to make
+    /// this easy. Like `create_mutex!`, `create_semaphore!` makes a named
+    /// variable as if you had used `let`, but does it internally to simplify
+    /// some stuff.
+    ///
+    /// ```
+    /// use lilos_semaphore::{create_semaphore, Semaphore};
+    ///
+    /// create_semaphore!(five_permits, 5);
+    ///
+    /// let _one_permit = five_permits.acquire().await;
+    /// ```
+    ///
+    /// Alternatively, if you want to avoid macros that hide the details from
+    /// you, you can create one by hand using the same two-step initialization
+    /// protocol as `Mutex`. See the source code for `create_semaphore!` for a
+    /// working example of how to do it.
+    ///
     /// # Fairness
     ///
     /// This semaphore implementation is _fair,_ which in this context means
@@ -56,43 +80,17 @@ pin_project! {
 }
 
 impl Semaphore {
-    /// Returns an initialized but invalid Semaphore.
-    ///
-    /// # Safety
-    ///
-    /// The result is not safe to use or drop yet. You must move it to its final
-    /// resting place, pin it, and call `finish_init`.
-    pub unsafe fn new(permits: usize) -> ManuallyDrop<Self> {
-        let list = unsafe { List::new() };
-        ManuallyDrop::new(Semaphore {
-            available: AtomicUsize::new(permits),
-            waiters: ManuallyDrop::into_inner(list),
-        })
-    }
-
-    /// Finishes initializing a semaphore, discharging obligations from `new`.
-    ///
-    /// # Safety
-    ///
-    /// This is safe to call exactly once on the result of `new`, after it has
-    /// been moved to its final position and pinned.
-    pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        unsafe {
-            List::finish_init(this.project().waiters);
-        }
-    }
-
     /// Creates a future that will resolve when it can take a single permit from
     /// the semaphore. Until then, the future will remain pending (i.e. block).
     ///
-    /// Normally, once this future resolves, you'd keep the `Permit` object
+    /// Normally, once this future resolves, you'd keep the [`Permit`] object
     /// around until you're ready to give up the permit, at which point you'd
     /// drop it.
     ///
     /// To take a permit in a context where you can't keep a `Permit` around,
-    /// for whatever reason, you can instead call `core::mem::forget` on the
+    /// for whatever reason, you can instead call [`core::mem::forget`] on the
     /// `Permit`. If you do this, be sure to call
-    /// `Semaphore::out_of_band_release` to return your permit once you're
+    /// [`Semaphore::out_of_band_release`] to return your permit once you're
     /// ready -- otherwise the semaphore can be drained of all permits and
     /// nobody can make progress again.
     ///
@@ -133,13 +131,13 @@ impl Semaphore {
     /// `Some(permit)` if one is available immediately, or `None` if they are
     /// all taken.
     ///
-    /// Normally, if this returns `Some`, you'd keep the `Permit` object around
+    /// Normally, if this returns `Some`, you'd keep the [`Permit`] object around
     /// until you're ready to give up the permit, at which point you'd drop it.
     ///
     /// To take a permit in a context where you can't keep a `Permit` around,
-    /// for whatever reason, you can instead call `core::mem::forget` on the
+    /// for whatever reason, you can instead call [`core::mem::forget`] on the
     /// `Permit`. If you do this, be sure to call
-    /// `Semaphore::out_of_band_release` to return your permit once you're
+    /// [`Semaphore::out_of_band_release`] to return your permit once you're
     /// ready -- otherwise the semaphore can be drained of all permits and
     /// nobody can make progress again.
     pub fn try_acquire(self: Pin<&Self>) -> Option<Permit<'_>> {
@@ -153,8 +151,8 @@ impl Semaphore {
 
     /// Stuffs one permit back into the semaphore.
     ///
-    /// Use this if you have called `core::mem::forget` on a `Permit`, when you
-    /// want to restore that permit to the semaphore. Note that this is an
+    /// Use this if you have called [`core::mem::forget`] on a [`Permit`], when
+    /// you want to restore that permit to the semaphore. Note that this is an
     /// unusual use case and should only be done with good reason.
     ///
     /// It is, however, safe, in the Rust sense.
@@ -184,13 +182,46 @@ impl Semaphore {
             ).unwrap();
         }
     }
+
+    /// Returns an initialized but invalid `Semaphore`.
+    ///
+    /// You'll rarely use this function directly. For a more convenient way of
+    /// creating a `Semaphore`, see [`create_semaphore!`].
+    ///
+    /// # Safety
+    ///
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call [`Semaphore::finish_init`].
+    pub unsafe fn new(permits: usize) -> ManuallyDrop<Self> {
+        let list = unsafe { List::new() };
+        ManuallyDrop::new(Semaphore {
+            available: AtomicUsize::new(permits),
+            waiters: ManuallyDrop::into_inner(list),
+        })
+    }
+
+    /// Finishes initializing a semaphore, discharging obligations from
+    /// [`Semaphore::new`].
+    ///
+    /// You'll rarely use this function directly. For a more convenient way of
+    /// creating a `Semaphore`, see [`create_semaphore!`].
+    ///
+    /// # Safety
+    ///
+    /// This is safe to call exactly once on the result of `new`, after it has
+    /// been moved to its final position and pinned.
+    pub unsafe fn finish_init(this: Pin<&mut Self>) {
+        unsafe {
+            List::finish_init(this.project().waiters);
+        }
+    }
 }
 
 /// A resource object that represents holding a single permit from a
-/// `Semaphore`.
+/// [`Semaphore`].
 ///
-/// You can obtain a `Permit` by calling `Semaphore::acquire` or
-/// `Semaphore::try_acquire`. This decrements the semaphore's internal permit
+/// You can obtain a `Permit` by calling [`Semaphore::acquire`] or
+/// [`Semaphore::try_acquire`]. This decrements the semaphore's internal permit
 /// counter by 1. When you `drop` the `Permit`, it increments the counter by
 /// 1, possibly waking a task that was blocked.
 #[derive(Debug)]
@@ -204,7 +235,7 @@ impl Drop for Permit<'_> {
     }
 }
 
-/// Convenience macro for creating a semaphore on the stack.
+/// Convenience macro for creating a [`Semaphore`] on the stack.
 ///
 /// `create_semaphore!(ident, num_permits)` creates a semaphore that initially
 /// contains `num_permits` permits, and assigns it to a local variable called
