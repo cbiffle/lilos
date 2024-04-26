@@ -72,6 +72,8 @@ impl<'s, T> Queue<'s, T> {
     /// Creates a queue, borrowing the uninitialized `storage` (which will be
     /// arbitrarily overwritten).
     pub fn new(storage: &'s mut [MaybeUninit<T>]) -> Self {
+        let storage: *mut [MaybeUninit<T>] = storage;
+        let storage: *mut [UnsafeCell<MaybeUninit<T>>] = storage as *mut _;
         // Safety: the cast we're about to do is memory-layout-compatible
         // because:
         // - MaybeUninit<T> has the same memory layout as T
@@ -83,8 +85,6 @@ impl<'s, T> Queue<'s, T> {
         // memory backing `storage`, and the caller thinks of it as
         // `MaybeUninit`, meaning they aren't making assumptions about its
         // contents or dropping it when we're done.
-        let storage: *mut [MaybeUninit<T>] = storage;
-        let storage: *mut [UnsafeCell<MaybeUninit<T>>] = storage as *mut _;
         let storage: &'s mut [UnsafeCell<MaybeUninit<T>>] = unsafe {
             &mut *storage
         };

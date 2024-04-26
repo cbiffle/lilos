@@ -227,12 +227,12 @@ fn extract_mask(waker: &Waker) -> usize {
         cell0 == 1234usize
     };
 
+    let waker: *const Waker = waker;
     // Safety: at the moment, `Waker` consists exactly of a `*const ()` and a
     // `&'static RawWakerVTable` (or equivalent pointer), and this is unlikely
     // to change. We've already verified above that we can find the parameter
     // word, which is what we care about. Extracting it cannot violate memory
     // safety, since we're just reading initialized memory.
-    let waker: *const Waker = waker;
     unsafe {
         let parts = &*(waker as *const (usize, usize));
         if ptr_first {
