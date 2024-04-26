@@ -11,6 +11,8 @@ mod spsc;
 mod mutex;
 #[cfg(feature = "handoff")]
 mod handoff;
+#[cfg(feature = "semaphore")]
+mod semaphore;
 
 use core::convert::Infallible;
 use core::pin::pin;
@@ -123,6 +125,17 @@ async fn task_coordinator() -> Infallible {
             handoff::test_pop_cancel_after_block,
             #[cfg(feature = "handoff")]
             handoff::test_pop_cancel_after_success,
+
+            #[cfg(feature = "semaphore")]
+            semaphore::test_create_drop,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_acquire_release,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_exhaustion,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_fairness,
+            #[cfg(feature = "semaphore")]
+            semaphore::test_cancellation,
         }
     };
 

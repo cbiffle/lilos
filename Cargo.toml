@@ -24,6 +24,7 @@ rust-version = "1.69"
 lilos = { path = "os", version = "1.0.2-pre.0", default-features = false }
 lilos-testsuite = { path = "testsuite" }
 lilos-handoff = { path = "handoff" }
+lilos-semaphore = { path = "semaphore" }
 
 # External
 cfg-if = "1.0.0"

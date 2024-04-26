@@ -149,6 +149,15 @@ impl Semaphore {
         Some(Permit { semaphore: self })
     }
 
+    /// Returns the number of permits available in the semaphore.
+    ///
+    /// Note that this is a _snapshot._ If this returns 4, for instance, it
+    /// doesn't mean you can successfully call `acquire` 4 times without
+    /// blocking, because another acquirer may be racing you.
+    pub fn permits_available(&self) -> usize {
+        self.available.load(Ordering::Relaxed)
+    }
+
     /// Stuffs one permit back into the semaphore.
     ///
     /// Use this if you have called [`core::mem::forget`] on a [`Permit`], when
