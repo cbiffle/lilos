@@ -1,4 +1,4 @@
-use core::{pin::pin, task::Poll};
+use core::pin::pin;
 
 use lilos_semaphore::{create_semaphore, create_scoped_semaphore};
 
@@ -28,7 +28,7 @@ pub async fn test_exhaustion() {
     // Ensure that we can't get a second one.
     {
         let acq = pin!(a_semaphore.acquire());
-        if let Poll::Ready(_) = futures::poll!(acq) {
+        if futures::poll!(acq).is_ready() {
             panic!("acquire resolved and shouldn't've");
         };
     }
@@ -142,7 +142,7 @@ pub async fn test_scoped_exhaustion() {
     // Ensure that we can't get a second one.
     {
         let acq = pin!(a_semaphore.acquire());
-        if let Poll::Ready(_) = futures::poll!(acq) {
+        if futures::poll!(acq).is_ready() {
             panic!("acquire resolved and shouldn't've");
         };
     }

@@ -139,12 +139,12 @@ impl Semaphore {
 
     /// Attempts to take a single permit from the semaphore, returning `Ok` if
     /// one is available immediately, or `Err` if they are all taken.
-    pub fn try_acquire(self: &Self) -> Result<(), ()> {
+    pub fn try_acquire(&self) -> Result<(), NoPermits> {
         self.available
             .fetch_update_polyfill(Ordering::Relaxed, Ordering::Relaxed, |a| {
                 a.checked_sub(1)
             })
-            .map_err(|_| ())?;
+            .map_err(|_| NoPermits)?;
         Ok(())
     }
 
@@ -239,6 +239,10 @@ impl Semaphore {
     }
 }
 
+/// Error produced by [`Semaphore::try_acquire`] when no permits were available.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct NoPermits;
+
 /// Convenience macro for creating a [`Semaphore`] on the stack.
 ///
 /// `create_semaphore!(ident, num_permits)` creates a semaphore that initially
@@ -318,10 +322,10 @@ impl ScopedSemaphore {
     }
 
     /// Attempts to take a single [`Permit`] from the semaphore, returning
-    /// `Some(permit)` on success, or `None` if they are all taken.
-    pub fn try_acquire(self: Pin<&Self>) -> Option<Permit<'_>> {
-        self.inner.try_acquire().ok()?;
-        Some(Permit { semaphore: self })
+    /// `Ok(permit)` on success, or `Err` if they are all taken.
+    pub fn try_acquire(self: Pin<&Self>) -> Result<Permit<'_>, NoPermits> {
+        self.inner.try_acquire()?;
+        Ok(Permit { semaphore: self })
     }
 
     /// Returns the number of permits available in the semaphore.
