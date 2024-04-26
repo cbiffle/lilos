@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 1.?? (in progress)
+
+### Internal / developer experience
+
+- Switched from `pin_project_lite` to `pin_project` to gain some features that
+  let me remove several unsafe blocks.
+
+- Switched back to a Cargo workspace.
+
 ## Version 1.0.1
 
 The only user-facing change in this release is that the internal `AtomicExt`
