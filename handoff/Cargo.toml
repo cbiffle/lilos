@@ -1,6 +1,6 @@
 [package]
 name = "lilos-handoff"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 description = "Synchronous rendezvous structure for lilos"
 keywords = ["async", "embedded", "realtime", "os"]
