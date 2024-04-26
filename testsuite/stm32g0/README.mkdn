@@ -1,6 +1,6 @@
 # `lilos` test suite for STM32G0
 
-This crate customizes the test suite for STM32G0xx parts with at least 32 kiB of
+This crate customizes the test suite for STM32G0xx parts with at least 64 kiB of
 flash.
 
 Install the prerequisites described in the root of this repo, plus `openocd`.
