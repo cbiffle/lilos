@@ -4,7 +4,7 @@ set -euo pipefail
 
 jq --version
 
-DIRS="os handoff semaphore testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 examples/*/*/"
+DIRS="os handoff semaphore rwlock testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 examples/*/*/"
 
 for d in $DIRS; do
     pushd $d > /dev/null

@@ -262,6 +262,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lilos-rwlock"
+version = "0.1.0"
+dependencies = [
+ "lilos",
+ "pin-project",
+ "scopeguard",
+]
+
+[[package]]
 name = "lilos-semaphore"
 version = "0.1.0"
 dependencies = [
@@ -279,6 +288,7 @@ dependencies = [
  "futures",
  "lilos",
  "lilos-handoff",
+ "lilos-rwlock",
  "lilos-semaphore",
  "panic-semihosting",
 ]

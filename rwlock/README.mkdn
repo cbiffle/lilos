@@ -1,0 +1,5 @@
+# Read-write lock for `lilos`
+
+This provides a read-write lock for use with `lilos`.
+
+See the API documentation for more.

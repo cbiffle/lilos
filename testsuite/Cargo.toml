@@ -11,9 +11,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["handoff", "semaphore"]
+default = ["handoff", "semaphore", "rwlock"]
 handoff = ["dep:lilos-handoff"]
 semaphore = ["dep:lilos-semaphore"]
+rwlock = ["dep:lilos-rwlock"]
 
 [package.metadata.docs.rs]
 default-target = "thumbv7em-none-eabihf"
@@ -26,6 +27,7 @@ futures.workspace = true
 lilos = {workspace = true, features = ["spsc", "systick", "mutex"]}
 lilos-handoff = { workspace = true, optional = true }
 lilos-semaphore = { workspace = true, optional = true }
+lilos-rwlock = { workspace = true, optional = true }
 panic-semihosting.workspace = true
 
 [lib]

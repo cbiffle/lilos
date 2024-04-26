@@ -40,6 +40,10 @@
   independent of which features are turned on, to make it easier to use in
   external lock types. `lilos::mutex::CancelSafe` is now an alias.
 
+### Non-Core API
+
+- Added an initial prototype of `lilos-rwlock`, a read-write lock.
+
 
 ## Version 1.0.2
 

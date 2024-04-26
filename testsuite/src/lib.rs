@@ -11,6 +11,8 @@ mod mutex;
 mod handoff;
 #[cfg(feature = "semaphore")]
 mod semaphore;
+#[cfg(feature = "rwlock")]
+mod rwlock;
 
 use core::convert::Infallible;
 use core::pin::pin;
@@ -146,6 +148,17 @@ async fn task_coordinator() -> Infallible {
             semaphore::test_scoped_release,
             #[cfg(feature = "semaphore")]
             semaphore::test_scoped_exhaustion,
+
+            #[cfg(feature = "rwlock")]
+            rwlock::test_create_drop,
+            #[cfg(feature = "rwlock")]
+            rwlock::test_uncontended_try_lock_shared,
+            #[cfg(feature = "rwlock")]
+            rwlock::test_uncontended_try_lock_exclusive,
+            #[cfg(feature = "rwlock")]
+            rwlock::test_blocking,
+            #[cfg(feature = "rwlock")]
+            rwlock::test_fairness,
         }
     };
 

@@ -20,7 +20,7 @@ for k in ${!MODES[@]}; do
     popd > /dev/null
 done
 
-DIRS="handoff semaphore testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 testsuite/lm3s6965 examples/*/*/"
+DIRS="handoff semaphore rwlock testsuite/stm32f4 testsuite/stm32g0 testsuite/stm32f3 testsuite/lm3s6965 examples/*/*/"
 
 for d in $DIRS; do
     if [[ $d == *memory.x ]]; then

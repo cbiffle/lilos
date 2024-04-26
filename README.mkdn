@@ -40,6 +40,7 @@ allow in `Cargo.toml`, such as the target triple. This means you will need to
   - `handoff` provides a synchronous rendezvous for transferring data from one
     task to another with minimal copies.
   - `semaphore` provides a counting semaphore implementation.
+  - `rwlock` provides a read-write lock implementation.
 
 ## Building
 
