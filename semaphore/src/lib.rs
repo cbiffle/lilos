@@ -1,8 +1,9 @@
-//! A counting semaphore for use with [`lilos`].
+//! A [counting semaphore] for use with [`lilos`].
 //!
 //! See the docs on [`Semaphore`] for more details.
 //!
 //! [`lilos`]: https://docs.rs/lilos/
+//! [counting semaphore]: https://en.wikipedia.org/wiki/Semaphore_(programming)
 
 #![no_std]
 #![warn(
@@ -28,12 +29,12 @@ use lilos::exec::noop_waker;
 use lilos::list::List;
 use pin_project::pin_project;
 
-/// A counting semaphore.
+/// A [counting semaphore].
 ///
 /// A `Semaphore` gets initialized with a certain number of _permits._
-/// Callers can take one permit from the semaphore using the `acquire`
-/// operation, which will block if there are none available, and wake when
-/// one becomes available.
+/// Callers can take one permit from the semaphore using the
+/// [`Semaphore::acquire`] operation, which will block if there are none
+/// available, and wake when one becomes available.
 ///
 /// Permits can be added back to the semaphore one at a time using the
 /// [`Semaphore::release`] operation, or in batches using
@@ -41,11 +42,7 @@ use pin_project::pin_project;
 ///
 /// Semaphores are useful for restricting concurrent access to something,
 /// particularly in cases where you don't want to restrict it to exactly one
-/// observer (like with a `Mutex`). For this reason, the `Semaphore` API is
-/// different from a lot of Rust concurrency APIs, and does not return a
-/// "permit object" that represents a permit until dropped. This is because such
-/// an API is only useful in about half of the potential uses for a counting
-/// semaphore:
+/// observer (like with a `Mutex`). Two common use cases are:
 ///
 /// - To ensure that no more than `N` tasks can make it into a critical section
 /// simultaneously, you'd create a `Semaphore` with `N` permits. Each task would
@@ -60,9 +57,12 @@ use pin_project::pin_project;
 /// unblock the consumers. In this case, `release` and `acquire` are happening
 /// in totally different contexts.
 ///
-/// If your use case is closer to the first one, and you would like the
-/// convenience of a permit object managing calls to `release` for you, have a
-/// look at [`ScopedSemaphore`].
+/// To support _both_ these uses, the `Semaphore` API is different from a lot of
+/// Rust concurrency APIs, and does not return a "permit object" that represents
+/// a permit until dropped. If your use case is closer to the first example, and
+/// you would like the convenience of a permit object managing calls to
+/// `release` for you, have a look at [`ScopedSemaphore`], a thin wrapper that
+/// provides a [`Permit`].
 ///
 ///
 /// # Getting a semaphore
@@ -74,11 +74,11 @@ use pin_project::pin_project;
 /// some stuff.
 ///
 /// ```
-/// use lilos_semaphore::{create_semaphore, Semaphore};
+/// // Use the macro to easily create a semaphore named `scooters`:
+/// lilos_semaphore::create_semaphore!(scooters, 5);
 ///
-/// create_semaphore!(five_permits, 5);
-///
-/// five_permits.acquire().await;
+/// // Check out one scooter from the pool.
+/// scooters.acquire().await;
 /// ```
 ///
 /// Alternatively, if you want to avoid macros that hide the details from
@@ -94,6 +94,8 @@ use pin_project::pin_project;
 /// semaphore runs out of permits, tasks requesting permits are queued in
 /// order and will be issued permits in order as they are returned to the
 /// semaphore.
+///
+/// [counting semaphore]: https://en.wikipedia.org/wiki/Semaphore_(programming)
 #[derive(Debug)]
 #[pin_project]
 pub struct Semaphore {
@@ -281,7 +283,7 @@ macro_rules! create_semaphore {
     };
 }
 
-/// A counting semaphore that uses resource objects to manage permits,
+/// A [counting semaphore] that uses resource objects to manage permits,
 /// eliminating the need to explicitly call `release` in certain kinds of use
 /// cases.
 ///
@@ -292,6 +294,13 @@ macro_rules! create_semaphore {
 /// `ScopedSemaphore`. This makes the API closer to a traditional Rust mutex
 /// API, but only works in cases where the permits are being acquired and
 /// released in the same context.
+///
+/// The easy way to create a `ScopedSemaphore` is with the
+/// [`create_scoped_semaphore!`] macro.
+///
+/// See [`Semaphore`] for background and information about fairness.
+///
+/// [counting semaphore]: https://en.wikipedia.org/wiki/Semaphore_(programming)
 #[derive(Debug)]
 #[pin_project]
 pub struct ScopedSemaphore {
