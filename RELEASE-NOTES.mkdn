@@ -2,7 +2,13 @@
 
 ## Version 1.1 (in progress)
 
-### New core APIs
+### Core API changes
+
+- `List` and `Node` now take a second generic parameter, `M`, which for
+  compatibility with 1.0 is defaulted to `()`. `M` allows arbitrary
+  application-defined metadata to be associated with each node if desired. This
+  is useful for implementing more complex synchronization primitives, and is not
+  used by the core OS directly.
 
 - Added `List::wake_one_if` as a generalized version of `List::wake_one` for
   doing conditional wakes.

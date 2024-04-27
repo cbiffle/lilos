@@ -202,38 +202,59 @@ impl WakerCell {
 /// each node's `contents`. If you don't require this, `Node<()>` degenerates
 /// into an insertion-order list.
 #[pin_project(PinnedDrop)]
-pub struct Node<T> {
+pub struct Node<T, M = ()> {
     prev: Cell<NonNull<Self>>,
     next: Cell<NonNull<Self>>,
     waker: WakerCell,
     contents: T,
+    meta: M,
     _marker: NotSendMarker,
 }
 
 impl<T> Node<T> {
     /// Creates a `Node` in a semi-initialized state.
     ///
+    /// If you need to attach metadata to the node, see [`Node::new_with_meta`].
+    ///
     /// # Safety
     ///
     /// The result is not safe to use or drop yet. You must move it to its final
     /// resting place, pin it, and call `finish_init`.
+    #[inline(always)]
     pub unsafe fn new(contents: T, waker: Waker) -> ManuallyDrop<Self> {
+        // Safety: our safety contract is exactly the same as `new_with_meta`.
+        unsafe {
+            Self::new_with_meta(contents, (), waker)
+        }
+    }
+}
+
+impl<T, M> Node<T, M> {
+    /// Creates a `Node` in a semi-initialized state, attaching the given
+    /// metadata. If your metadata is `()`, please use [`Node::new`] instead.
+    ///
+    /// # Safety
+    ///
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call `finish_init`.
+    pub unsafe fn new_with_meta(contents: T, meta: M, waker: Waker) -> ManuallyDrop<Self> {
         ManuallyDrop::new(Node {
             prev: Cell::new(NonNull::dangling()),
             next: Cell::new(NonNull::dangling()),
             waker: WakerCell::new(waker),
             contents,
+            meta,
             _marker: NotSendMarker::default(),
         })
     }
 
     /// Finishes initialization of a node, discharging the obligations placed on
-    /// you by `new`.
+    /// you by `new` or `new_with_meta`.
     ///
     /// # Safety
     ///
-    /// To use this safely, you must call this on the pinned result of `new()`
-    /// before doing *anything else* with it.
+    /// To use this safely, you must call this on the pinned result of `new`
+    /// or `new_with_meta` before doing *anything else* with it.
     pub unsafe fn finish_init(node: Pin<&mut Self>) {
         // Note: this takes a &mut despite the code below not requiring it. We
         // do this to prove that the caller still has exclusive ownership.
@@ -267,11 +288,16 @@ impl<T> Node<T> {
         // node would violate our invariants.
         self.prev.get() == NonNull::from(self)
     }
+
+    /// Inspects the metadata contents of a `Node`.
+    pub fn meta(&self) -> &M {
+        &self.meta
+    }
 }
 
 /// A `Node` will detach itself from any list on drop.
 #[pinned_drop]
-impl<T> PinnedDrop for Node<T> {
+impl<T, M> PinnedDrop for Node<T, M> {
     fn drop(self: Pin<&mut Self>) {
         self.as_ref().detach();
     }
@@ -297,13 +323,14 @@ fn debug_link<'a, T>(parent: &T, cell: &'a Cell<NonNull<T>>) -> &'a dyn core::fm
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for Node<T> {
+impl<T: core::fmt::Debug, M: core::fmt::Debug> core::fmt::Debug for Node<T, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node")
             .field("prev", debug_link(self, &self.prev))
             .field("next", debug_link(self, &self.next))
             .field("waker", &"...")
             .field("contents", &self.contents)
+            .field("meta", &self.meta)
             .finish()
     }
 }
@@ -326,9 +353,9 @@ impl<T: core::fmt::Debug> core::fmt::Debug for Node<T> {
 /// This isn't the only way we could do things, but it is the safest. If you're
 /// curious about the details, see the source code for `Drop`.
 #[pin_project(PinnedDrop)]
-pub struct List<T> {
+pub struct List<T, M = ()> {
     #[pin]
-    root: Node<T>,
+    root: Node<T, M>,
     _marker: NotSendMarker,
 }
 
@@ -352,12 +379,40 @@ impl<T: Default> List<T> {
     /// steps! To make this process easier, consider using the
     /// [`create_list!`][crate::create_list] macro where possible.
     pub unsafe fn new() -> ManuallyDrop<List<T>> {
+        // Safety: our safety contract matches new_with_meta's.
+        unsafe {
+            Self::new_with_meta(())
+        }
+    }
+}
+
+impl<T: Default, M> List<T, M> {
+    /// Creates a `List` in an initialized but unsafe state, filling in the
+    /// list's generally-unused internal metadata slot with the value `meta`.
+    /// This value basically doesn't matter, and is passed in here only to avoid
+    /// requiring `M: Default`.
+    ///
+    /// The returned list is not safe to operate on or drop, which is why it's
+    /// returned in a `ManuallyDrop` wrapper.
+    ///
+    /// # Safety
+    ///
+    /// For this to be safe, you must do only one of two things with the result:
+    ///
+    /// 1. Drop it immediately (i.e. without removing it from `ManuallyDrop`).
+    /// 2. Unwrap it, pin it, and then call `List::finish_init`.
+    ///
+    /// You must *not* do anything that might `panic!` or `await` between these
+    /// steps! To make this process easier, consider using the
+    /// [`create_list!`][crate::create_list] macro where possible.
+    pub unsafe fn new_with_meta(meta: M) -> ManuallyDrop<List<T, M>> {
         // Safety: Node::new is unsafe because it produces a node that cannot be
         // safely dropped. We punt its obligations down the road by re-wrapping
         // it in our _own_ unsafe ManuallyDrop structure.
         let node = unsafe {
-            Node::new(
+            Node::new_with_meta(
                 T::default(),
+                meta,
                 exploding_waker(),
             )
         };
@@ -368,7 +423,7 @@ impl<T: Default> List<T> {
     }
 }
 
-impl<T> List<T> {
+impl<T, M> List<T, M> {
     /// Completes the initialization process, discharging the obligations put in
     /// place by `new`.
     ///
@@ -384,7 +439,7 @@ impl<T> List<T> {
     }
 }
 
-impl<T: PartialOrd> List<T> {
+impl<T: PartialOrd, M> List<T, M> {
     /// Inserts `node` into this list, maintaining ascending sort order, and
     /// then waits for it to be kicked back out.
     ///
@@ -422,7 +477,7 @@ impl<T: PartialOrd> List<T> {
     /// This should be pretty difficult to achieve in practice.
     pub fn insert_and_wait<'list, 'node>(
         self: Pin<&'list Self>,
-        node: Pin<&'node mut Node<T>>,
+        node: Pin<&'node mut Node<T, M>>,
     ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
         self.insert_and_wait_with_cleanup(
             node,
@@ -471,7 +526,7 @@ impl<T: PartialOrd> List<T> {
     /// This should be pretty difficult to achieve in practice.
     pub fn insert_and_wait_with_cleanup<'list, 'node, F: 'node + FnOnce()>(
         self: Pin<&'list Self>,
-        node: Pin<&'node mut Node<T>>,
+        node: Pin<&'node mut Node<T, M>>,
         cleanup: F,
     ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
         // We required `node` to be `mut` to prove exclusive ownership, but we
@@ -515,7 +570,7 @@ impl<T: PartialOrd> List<T> {
     /// field used to order the list.
     ///
     /// Returns `true` if at least one node was removed, `false` otherwise.
-    pub fn wake_while(self: Pin<&Self>, mut pred: impl FnMut(Pin<&Node<T>>) -> bool) -> bool {
+    pub fn wake_while(self: Pin<&Self>, mut pred: impl FnMut(Pin<&Node<T, M>>) -> bool) -> bool {
         let mut changes = false;
 
         // Work through the nodes from the head, using the root as a sentinel to
@@ -545,7 +600,7 @@ impl<T: PartialOrd> List<T> {
     ///
     /// Returns `true` if a node was awoken, `false` if `pred` didn't accept the
     /// node or the list was empty.
-    pub fn wake_one_if(self: Pin<&Self>, pred: impl FnOnce(Pin<&Node<T>>) -> bool) -> bool {
+    pub fn wake_one_if(self: Pin<&Self>, pred: impl FnOnce(Pin<&Node<T, M>>) -> bool) -> bool {
         // Work through the nodes from the head, using the root as a sentinel to
         // stop iteration.
         let candidate = self.root.prev.get();
@@ -562,7 +617,7 @@ impl<T: PartialOrd> List<T> {
     }
 }
 
-impl List<()> {
+impl<M> List<(), M> {
     /// Convenience method for waking all the waiters on an unsorted list,
     /// because `wake_less_than(())` looks weird.
     pub fn wake_all(self: Pin<&Self>) {
@@ -585,7 +640,7 @@ impl List<()> {
 /// duration of an insert future, which borrows the list -- preventing it from
 /// being dropped.
 #[pinned_drop]
-impl<T> PinnedDrop for List<T> {
+impl<T, M> PinnedDrop for List<T, M> {
     fn drop(self: Pin<&mut Self>) {
         // It's not immediately clear to me what the Drop behavior should
         // be. In particular, if the list is dropped while non-empty, should
@@ -600,7 +655,7 @@ impl<T> PinnedDrop for List<T> {
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for List<T> {
+impl<T: core::fmt::Debug, M: core::fmt::Debug> core::fmt::Debug for List<T, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("List")
             .field("last", debug_link(&self.root, &self.root.prev))
@@ -610,9 +665,9 @@ impl<T: core::fmt::Debug> core::fmt::Debug for List<T> {
 }
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
-struct WaitForDetach<'node, 'list, T, F: FnOnce()> {
-    node: Pin<&'node Node<T>>,
-    list: Pin<&'list List<T>>,
+struct WaitForDetach<'node, 'list, T, M, F: FnOnce()> {
+    node: Pin<&'node Node<T, M>>,
+    list: Pin<&'list List<T, M>>,
     state: Cell<WaitState>,
     cleanup: Option<F>,
 }
@@ -624,7 +679,7 @@ enum WaitState {
     DetachedAndPolled,
 }
 
-impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, '_, T, F> {
+impl<T: PartialOrd, M, F: FnOnce()> Future for WaitForDetach<'_, '_, T, M, F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
@@ -698,7 +753,7 @@ impl<T: PartialOrd, F: FnOnce()> Future for WaitForDetach<'_, '_, T, F> {
     }
 }
 
-impl<T, F: FnOnce()> Drop for WaitForDetach<'_, '_, T, F> {
+impl<T, M, F: FnOnce()> Drop for WaitForDetach<'_, '_, T, M, F> {
     fn drop(&mut self) {
         match self.state.get() {
             WaitState::NotYetAttached => {
@@ -781,6 +836,22 @@ macro_rules! create_list {
             $crate::list::List::finish_init($var.as_mut());
         }
     };
+    ($var:ident, $met:expr) => {
+        // Safety: we discharge the obligations of `new_with_meta` by pinning
+        // and finishing the value, below, before it can be dropped.
+        let $var = $met;
+        #[allow(unused_unsafe)]
+        let mut $var = core::pin::pin!(unsafe {
+            core::mem::ManuallyDrop::into_inner($crate::list::List::new_with_meta($var))
+        });
+        // Safety: the value has not been operated on since `new_with_meta`
+        // except for being pinned, so this operation causes it to become valid
+        // and safe.
+        #[allow(unused_unsafe)]
+        unsafe {
+            $crate::list::List::finish_init($var.as_mut());
+        }
+    };
 }
 
 /// Convenience macro for creating a pinned node on the stack.
@@ -803,6 +874,22 @@ macro_rules! create_node {
         });
         // Safety: the value has not been operated on since `new` except for
         // being pinned, so this operation causes it to become valid and safe.
+        unsafe {
+            $crate::list::Node::finish_init($var.as_mut());
+        }
+    };
+    ($var:ident, $dl:expr, $meta:expr, $w: expr) => {
+        // Safety: we discharge the obligations of `new_with_meta` by pinning and
+        // finishing the value, below, before it can be dropped.
+        let $var = ($dl, $meta, $w);
+        let mut $var = core::pin::pin!(unsafe {
+            core::mem::ManuallyDrop::into_inner($crate::list::Node::new_with_meta(
+                $var.0, $var.1, $var.2,
+            ))
+        });
+        // Safety: the value has not been operated on since `new_with_meta`
+        // except for being pinned, so this operation causes it to become valid
+        // and safe.
         unsafe {
             $crate::list::Node::finish_init($var.as_mut());
         }
