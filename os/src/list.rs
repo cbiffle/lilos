@@ -7,7 +7,7 @@
 //! - [`List::insert_and_wait`] traverses the list to insert the `Node` in its
 //!   proper place, and then waits for the node to be kicked back out.
 //! - [`List::wake_less_than`] starts at one end and removes every `Node` with a
-//!   value less than a threshold.
+//!   value less than or equal to (sic) a threshold.
 //!
 //! The sort order is used to order things by timestamps, but you may find other
 //! uses for it.
@@ -15,14 +15,38 @@
 //! If you just want to keep things in a list, and don't care about order or
 //! need to associate a timestamp, simply use `List<()>`. This disables the
 //! sorting and removes the order-related fields from both the list and node.
+//! Such a list will track its nodes in the order in which they were inserted.
 //!
-//! # How to use for sleep/wake
 //!
-//! The basics are straightforward: given a `List` tracking waiters on a
-//! particular event, create a `Node` and `insert_and_wait` it. At some future
-//! point in a concurrent process or interrupt handler, one of the `wake_*`
-//! methods on `List` gets called, and the `Node` will be removed and its
-//! associated `Waker` invoked, causing `insert_and_wait` to return.
+//! # Using as a timer list, or other type of ordered list
+//!
+//! - Create a `List<YourTimestamp>`.
+//! 
+//! - To track a waiter in the list, create a `Node<YourTimestamp>` and pass it
+//! to [`List::insert_and_wait`]. The node will be inserted in timestamp order,
+//! after any existing nodes with the same timestamp. Note that you must `await`
+//! (or poll) the future produced by `insert_and_wait` for the node to actually
+//! join the list in its proper place.
+//!
+//! - At some future point, wake all nodes in a timestamp range by using either
+//! [`List::wake_while`] or, as a convenience for writing timers,
+//! [`List::wake_less_than`].
+//!
+//!
+//! # Using as a wait queue
+//!
+//! - Create a `List<()>`.
+//!
+//! - To track a waiter in the list, create a `Node<()>` and pass it to
+//! [`List::insert_and_wait`]. The node will be inserted at the tail of the
+//! list. Note that you must `await` (or poll) the future produced by
+//! `insert_and_wait` for the node to actually join the list in its proper
+//! place.
+//!
+//! - To wake one waiter, use [`List::wake_one`].
+//!
+//! - To wake a series of waiters, us [`List::wake_while`].
+//!
 //!
 //! # Pinning
 //!
@@ -102,6 +126,22 @@
 //! // All done, my_node can be dropped
 //! # }
 //! ```
+//!
+//!
+//! # The metadata (`M`) parameter
+//!
+//! `List<T>` is actually `List<T, M>`, but the `M` parameter defaults to `()`
+//! and is ignored by most users.
+//!
+//! `M` is for metadata, and allows you to associate an arbitrary,
+//! application-specific piece of data with each node in the list. For instance,
+//! if a wait queue distinguishes between different _kinds_ of waiters, you
+//! could declare an `enum` listing the kinds, and use that as the metadata
+//! parameter.
+//!
+//! Metadata is available for inspection in the [`List::wake_one_if`] and
+//! [`List::wake_while`] operations, through the [`Node::meta`] function.
+//!
 //!
 //! # How is this safe?
 //!
@@ -194,13 +234,25 @@ impl WakerCell {
 /// slightly involved two-step process. The `create_node` macro helps with this;
 /// see `Node::new` if you want to do it yourself.
 ///
-/// A node contains two pieces of metadata: the `waker` and the `contents`. The
-/// `waker` is a `core::task::Waker`, an abstract reference to a task that
-/// wishes to be woken up at some point. The `contents` is some `T`, and is
-/// typically a timestamp. Inserting a node into a list requires that `T` be
-/// `PartialOrd`, and the list will be maintained in ascending sorted order by
-/// each node's `contents`. If you don't require this, `Node<()>` degenerates
-/// into an insertion-order list.
+/// A node contains three pieces of data: the `waker`, the `contents`, and the
+/// `metadata`.
+///
+/// - The `waker` is a `core::task::Waker`, an abstract reference to a task that
+///   wishes to be woken up at some point. You'll generally provide
+///   [`noop_waker`] and the OS will replace it with an appropriate one when the
+///   node is inserted into a list.
+///
+/// - The `contents` is some `T`, and is typically a timestamp. Inserting a node
+///   into a list requires that `T` be `PartialOrd`, and the list will be
+///   maintained in ascending sorted order by each node's `contents`. If you
+///   don't need your list to be sorted, `Node<()>` degenerates into an
+///   insertion-order list.
+///
+/// - The `metadata` (`M`) allows you to associate data of your choice with a
+///   node. This data cannot affect insertion order, but can be used to decide
+///   which nodes to detach or wake, by inspecting it through [`Node::meta`]
+///   during [`List::wake_one_if`] or [`List::wake_while`]. Note that `M` can be
+///   omitted, in which case it defaults to `()`.
 #[pin_project(PinnedDrop)]
 pub struct Node<T, M = ()> {
     prev: Cell<NonNull<Self>>,
@@ -215,6 +267,9 @@ impl<T> Node<T> {
     /// Creates a `Node` in a semi-initialized state.
     ///
     /// If you need to attach metadata to the node, see [`Node::new_with_meta`].
+    ///
+    /// Note that you probably don't need to use this directly. See
+    /// [`create_node!`] for a more convenient option.
     ///
     /// # Safety
     ///
@@ -232,6 +287,9 @@ impl<T> Node<T> {
 impl<T, M> Node<T, M> {
     /// Creates a `Node` in a semi-initialized state, attaching the given
     /// metadata. If your metadata is `()`, please use [`Node::new`] instead.
+    ///
+    /// Note that you probably don't need to use this directly. See
+    /// [`create_node_with_meta!`] for a more convenient option.
     ///
     /// # Safety
     ///
@@ -344,6 +402,17 @@ impl<T: core::fmt::Debug, M: core::fmt::Debug> core::fmt::Debug for Node<T, M> {
 /// involved. Use the [`create_list!`][crate::create_list] macro when possible,
 /// or see `List::new` for instructions.
 ///
+/// # Type parameters
+///
+/// `List` has two type parameters, `T` and `M`. Only `T` must be provided.
+///
+/// `T` is used to order nodes in the list, according to its `PartialOrd` impl.
+/// If you don't need ordering, pass `()` to disable this.
+///
+/// `M` is used to associate arbitrary uninterpreted metadata to each node. If
+/// you don't need this, omit it or pass `()` (which is the default if it's
+/// omitted).
+///
 /// # Drop
 ///
 /// You must remove/wake all the nodes in a list before dropping the list.
@@ -449,9 +518,14 @@ impl<T: PartialOrd, M> List<T, M> {
     /// Inserts `node` into this list, maintaining ascending sort order, and
     /// then waits for it to be kicked back out.
     ///
-    /// Specifically, `node` will be placed just *before* the first item in the
-    /// list whose `contents` are greater than or equal to `node.contents`, if
-    /// such an item exists, or at the end if not.
+    /// Specifically, `node` will be placed just *after* the first item in the
+    /// list whose `contents` are less than or equal to `node.contents`, if such
+    /// an item exists, or at the end if not. This ensures that, within
+    /// stretches of nodes with equal `contents`, the nodes are sorted in
+    /// insertion order.
+    ///
+    /// (For a `Node<()>` (an insertion-ordered list), all nodes have the same
+    /// contents, so this degenerates into maintaining insertion order.)
     ///
     /// When the returned future completes, `node` has been detached again.
     ///
@@ -468,14 +542,13 @@ impl<T: PartialOrd, M> List<T, M> {
     /// pointers, violating aliasing.
     ///
     /// If the node is detached on drop, but this future has not yet been
-    /// polled, then you, the user, have a decision to make. If the node
-    /// is likely to have been detached with `wake_one`, then the event that
-    /// caused the wake may be lost if this future is dropped now without being
-    /// polled. To handle this race condition, use
-    /// `insert_and_wait_with_cleanup` instead.
+    /// polled, then you, the user, have a decision to make. If the node being
+    /// detached from the list represents a meaningful change to state, such as
+    /// the continued locking of a mutex, then failing to poll the future before
+    /// drop may corrupt state by e.g. leaving that mutex locked. To handle
+    /// this, use `insert_and_wait_with_cleanup` instead.
     ///
-    /// If, however, you don't use `wake_one` on this list, don't worry about
-    /// it.
+    /// For the common case of a timer list, cleanup is typically not needed.
     ///
     /// # Panics
     ///
@@ -494,9 +567,9 @@ impl<T: PartialOrd, M> List<T, M> {
     /// Inserts `node` into this list, maintaining ascending sort order, and
     /// then waits for it to be kicked back out.
     ///
-    /// Specifically, `node` will be placed just *before* the first item in the
-    /// list whose `contents` are greater than or equal to `node.contents`, if
-    /// such an item exists, or at the end if not.
+    /// Specifically, `node` will be placed just *after* the last item in the
+    /// list whose `contents` are less than or equal to `node.contents`, if such
+    /// an item exists, or at the end if not.
     ///
     /// When the returned future completes, `node` has been detached again.
     ///
@@ -506,7 +579,8 @@ impl<T: PartialOrd, M> List<T, M> {
     /// 2. The returned `Future` has not yet been polled, and
     /// 3. It is being dropped.
     ///
-    /// This gives you an opportunity to e.g. wake another node.
+    /// This gives you an opportunity to e.g. wake another node or otherwise fix
+    /// up state.
     ///
     /// # Cancellation
     ///
@@ -566,7 +640,8 @@ impl<T: PartialOrd, M> List<T, M> {
     }
 
     /// Beginning at the head of the list, removes nodes that are accepted by
-    /// `pred` (i.e. it returns `true`), and wakes the associated tasks.
+    /// `pred` (i.e. where `pred(node)` returns `true`), and wakes the
+    /// associated tasks.
     ///
     /// Stops at the first node for which `pred` returns `false`. That node is
     /// left in the list, and its task is not awoken.
@@ -601,7 +676,7 @@ impl<T: PartialOrd, M> List<T, M> {
     }
 
 
-    /// Inspects the first node `n` in the list and wakes it if `pred(&n)`
+    /// Inspects the head node `n` in the list and wakes it if `pred(&n)`
     /// returns `true`.
     ///
     /// Returns `true` if a node was awoken, `false` if `pred` didn't accept the
@@ -625,11 +700,19 @@ impl<T: PartialOrd, M> List<T, M> {
 impl<M> List<(), M> {
     /// Convenience method for waking all the waiters on an unsorted list,
     /// because `wake_less_than(())` looks weird.
+    ///
+    /// Note that using this operation tends to trigger the amusingly named
+    /// ["thundering herd problem"][th], by making a bunch of waiting tasks
+    /// compete to decide who gets to do something next. More surgical wake
+    /// methods like [`List::wake_one`] are often a better choice when
+    /// applicable.
+    ///
+    /// [th]: https://en.wikipedia.org/wiki/Thundering_herd_problem
     pub fn wake_all(self: Pin<&Self>) {
         self.wake_less_than(())
     }
 
-    /// Wakes the oldest waiter on an unsorted list.
+    /// Wakes the oldest waiter on an unsorted list (the head).
     ///
     /// Returns a flag indicating whether anything was done (i.e. whether the
     /// list was found empty).
@@ -644,6 +727,9 @@ impl<M> List<(), M> {
 /// This is because any node in the list should only be in the list for the
 /// duration of an insert future, which borrows the list -- preventing it from
 /// being dropped.
+///
+/// This code should be unreachable in practice, because lists are borrowed by
+/// the insert futures, and thus kept alive while non-empty.
 #[pinned_drop]
 impl<T, M> PinnedDrop for List<T, M> {
     fn drop(self: Pin<&mut Self>) {
@@ -668,6 +754,7 @@ impl<T: core::fmt::Debug, M: core::fmt::Debug> core::fmt::Debug for List<T, M> {
             .finish()
     }
 }
+
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
 struct WaitForDetach<'node, 'list, T, M, F: FnOnce()> {
