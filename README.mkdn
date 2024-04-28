@@ -1,5 +1,7 @@
 # `lilos`: A minimal async RTOS
 
+![crates.io published version badge](https://img.shields.io/crates/v/lilos.svg)
+![docs.rs badge link](https://img.shields.io/docsrs/lilos.svg)
 ![CI status badge](https://github.com/cbiffle/lilos/actions/workflows/ci.yml/badge.svg)
 
 - [Intro guide](doc/intro.adoc)
