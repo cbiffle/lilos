@@ -8,6 +8,8 @@ use core::cell::Cell;
 use lilos::{create_list, create_node};
 use lilos::list::{List, Node};
 
+use crate::{poll_and_assert_not_ready, poll_and_assert_ready};
+
 pub async fn test_node_basics() {
     create_node!(node, (), lilos::exec::noop_waker());
     // Node type is what we expect?
@@ -60,22 +62,61 @@ pub async fn test_insert_and_wait_wake_one() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
 
-    futures::join! {
-        async {
-            // Check that we can insert...
-            list.insert_and_wait(node.as_mut()).await;
-            assert!(node.is_detached());
-        },
-        async {
-            // Check that we discover the node and wake it.
-            loop {
-                if list.wake_one() { break; }
-                lilos::exec::yield_cpu().await;
-            }
-        },
-    };
+    // Check that we can insert a node, A:
+    create_node!(node_a, (), lilos::exec::noop_waker());
+    let mut fut_a = pin!(list.insert_and_wait(node_a.as_mut()));
+    poll_and_assert_not_ready!(fut_a);
+
+    // Also insert a second node, B:
+    create_node!(node_b, (), lilos::exec::noop_waker());
+    let mut fut_b = pin!(list.insert_and_wait(node_b.as_mut()));
+
+    // We should be able to wake a node.
+    assert!(list.wake_one());
+
+    // That node must be node A, not B
+    poll_and_assert_ready!(fut_a);
+    poll_and_assert_not_ready!(fut_b);
+}
+
+pub async fn test_wake_while_insert_order() {
+    create_list!(list);
+    // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
+    let list = list.into_ref();
+
+    // Insert a series of nodes:
+    create_node!(node_a, (), lilos::exec::noop_waker());
+    let mut fut_a = pin!(list.insert_and_wait(node_a.as_mut()));
+    poll_and_assert_not_ready!(fut_a);
+
+    create_node!(node_b, (), lilos::exec::noop_waker());
+    let mut fut_b = pin!(list.insert_and_wait(node_b.as_mut()));
+    poll_and_assert_not_ready!(fut_b);
+
+    create_node!(node_c, (), lilos::exec::noop_waker());
+    let mut fut_c = pin!(list.insert_and_wait(node_c.as_mut()));
+    poll_and_assert_not_ready!(fut_c);
+
+    create_node!(node_d, (), lilos::exec::noop_waker());
+    let mut fut_d = pin!(list.insert_and_wait(node_d.as_mut()));
+    poll_and_assert_not_ready!(fut_d);
+
+    // (Ab)use wake_while to only wake up two of them.
+    let mut check_count = 0;
+    let changes = list.wake_while(|_n| {
+        check_count += 1;
+        check_count <= 2
+    });
+    assert!(changes);
+    assert_eq!(check_count, 3);
+
+    // We must have woken nodes A and B:
+    poll_and_assert_ready!(fut_a);
+    poll_and_assert_ready!(fut_b);
+    // ...and not nodes C and D:
+    poll_and_assert_not_ready!(fut_c);
+    poll_and_assert_not_ready!(fut_d);
 }
 
 pub async fn test_insert_and_wait_cancel_behavior() {

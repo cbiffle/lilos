@@ -2,6 +2,13 @@
 
 ## Version 1.1 (in progress)
 
+### Bugfixes
+
+- It turns out that `List`'s ordering behavior has been subtly inconsistent for
+  quite some time, but in a way that was impossible to observe in previous
+  versions. The extensions to the `List` API (below) exposed this fact, and it
+  is fixed in this version.
+
 ### Core API changes
 
 - `List` and `Node` now take a second generic parameter, `M`, which for
@@ -13,7 +20,10 @@
 - Added `List::wake_one_if` as a generalized version of `List::wake_one` for
   doing conditional wakes.
 
-- Added `List::wake_while` as a generalized version of `List::wake_less_than`
+- Added `List::wake_while` as a generalized version of `List::wake_less_than`.
+  This has the side effect of making the order of nodes with the same
+  `contents` value observable, which is what exposed the list ordering bug
+  mentioned above (now fixed).
 
 - Added `List::is_empty` for checking if any nodes are waiting on a list. (It's
   surprising that I haven't needed this before!)

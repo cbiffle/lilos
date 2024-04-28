@@ -1,8 +1,8 @@
-use core::pin::Pin;
+use core::pin::{Pin, pin};
 use core::task::Poll;
 
 use lilos::{create_mutex, create_static_mutex, mutex::Mutex, mutex::CancelSafe};
-use crate::A_BIT;
+use crate::{A_BIT, poll_and_assert_not_ready};
 
 pub async fn test_stack() {
     create_mutex!(mutex, CancelSafe(42_usize));
@@ -73,30 +73,28 @@ pub async fn test_fairness() {
     // Initially lock the mutex.
     let held = mutex.lock().await;
 
-    let waiter1 = mutex.lock();
-    futures::pin_mut!(waiter1);
-    let _ = futures::poll!(waiter1.as_mut());
+    let mut waiter1 = pin!(mutex.lock());
+    poll_and_assert_not_ready!(waiter1);
 
-    let waiter2 = mutex.lock();
-    futures::pin_mut!(waiter2);
-    let _ = futures::poll!(waiter2.as_mut());
+    let mut waiter2 = pin!(mutex.lock());
+    poll_and_assert_not_ready!(waiter2);
 
     // Release initial lock...
     drop(held);
     // Introduce a new waiter, who never sees the initial lock. They still
     // should not be able to acquire the mutex.
-    let waiter3 = mutex.lock();
-    futures::pin_mut!(waiter3);
+    let mut waiter3 = pin!(mutex.lock());
+    poll_and_assert_not_ready!(waiter3);
+
     // Poll everybody _but_ the one who should have the mutex
-    assert!(matches!(futures::poll!(waiter3.as_mut()), Poll::Pending));
-    assert!(matches!(futures::poll!(waiter2.as_mut()), Poll::Pending));
+    poll_and_assert_not_ready!(waiter2);
 
     // but waiter1 should get it.
     let locked1 = waiter1.await;
     drop(locked1);
 
     // waiter3 should still be waiter-ing
-    assert!(matches!(futures::poll!(waiter3.as_mut()), Poll::Pending));
+    poll_and_assert_not_ready!(waiter3);
     // and waiter2 is now first in line.
     let locked2 = waiter2.await;
     drop(locked2);

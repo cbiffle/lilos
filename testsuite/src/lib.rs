@@ -88,6 +88,7 @@ async fn task_coordinator() -> Infallible {
             list::test_list_basics,
             list::test_insert_and_wait_not_eager,
             list::test_insert_and_wait_wake_one,
+            list::test_wake_while_insert_order,
             list::test_insert_and_wait_cancel_behavior,
             list::test_iawwc_no_fire_if_never_polled,
             list::test_iawwc_no_fire_if_polled_after_detach,
@@ -282,5 +283,27 @@ async fn block_forever() -> Infallible {
     let notify = exec::Notify::new();
     loop {
         notify.until(|| false).await;
+    }
+}
+
+#[macro_export]
+macro_rules! poll_and_assert_ready {
+    ($fut:expr) => { poll_and_assert_ready!($fut, concat!("future not ready: ", stringify!($fut))) };
+    ($fut:expr, $msg:expr $(, $args:tt)*) => {
+        if let core::task::Poll::Ready(v) = futures::poll!($fut.as_mut()) {
+            v
+        } else {
+            panic!($msg $($args)*);
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! poll_and_assert_not_ready {
+    ($fut:expr) => { poll_and_assert_not_ready!($fut, concat!("future unexpectedly ready: ", stringify!($fut))) };
+    ($fut:expr, $msg:expr $(, $args:tt)*) => {
+        if !futures::poll!($fut.as_mut()).is_pending() {
+            panic!($msg $($args)*);
+        }
     }
 }

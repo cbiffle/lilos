@@ -607,9 +607,8 @@ impl<T: PartialOrd, M> List<T, M> {
     /// Returns `true` if a node was awoken, `false` if `pred` didn't accept the
     /// node or the list was empty.
     pub fn wake_one_if(self: Pin<&Self>, pred: impl FnOnce(Pin<&Node<T, M>>) -> bool) -> bool {
-        // Work through the nodes from the head, using the root as a sentinel to
-        // stop iteration.
-        let candidate = self.root.prev.get();
+        // Inspect the head of the list, assuming it is not the root.
+        let candidate = self.root.next.get();
         if candidate != NonNull::from(&self.root) {
             // Safety: Link Valid Invariant
             let cref = unsafe { Pin::new_unchecked(candidate.as_ref()) };
@@ -706,32 +705,32 @@ impl<T: PartialOrd, M, F: FnOnce()> Future for WaitForDetach<'_, '_, T, M, F> {
                     debug_assert!(node.prev.get() == nnn);
                     debug_assert!(node.next.get() == nnn); // technically redundant
 
-                    // Work through the nodes starting at the head, looking for
-                    // the soon-to-be `next` of `node`. Use the root as a
+                    // Work through the nodes starting at the tail, looking for
+                    // the soon-to-be `prev` of `node`. Use the root as a
                     // sentinel to stop iteration.
-                    let mut candidate = self.list.root.next.get();
+                    let mut candidate = self.list.root.prev.get();
                     while candidate != NonNull::from(&self.list.root) {
                         // Safety: Link Valid Invariant means we can deref this
                         let cref = unsafe { candidate.as_ref() };
 
-                        if cref.contents >= node.contents {
+                        if cref.contents <= node.contents {
                             break;
                         }
-                        candidate = cref.next.get();
+                        candidate = cref.prev.get();
                     }
 
                     // `candidate` is either a neighbor node, or the root; in
-                    // the latter case, `node` is becoming the new head of the
+                    // the latter case, `node` is becoming the new tail of the
                     // list.
-                    node.next.set(candidate);
+                    node.prev.set(candidate);
                     // Safety: Link Valid Invariant
                     let cref = unsafe { candidate.as_ref() };
-                    node.prev.set(cref.prev.get());
+                    node.next.set(cref.next.get());
                     // Safety: Link Valid Invariant
                     unsafe {
-                        cref.prev.get().as_ref().next.set(nnn);
+                        cref.next.get().as_ref().prev.set(nnn);
                     }
-                    cref.prev.set(nnn);
+                    cref.next.set(nnn);
                 }
 
                 self.state.set(WaitState::Attached);
