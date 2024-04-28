@@ -25,7 +25,6 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use lilos::atomic::AtomicExt;
 use lilos::create_node;
-use lilos::exec::noop_waker;
 use lilos::list::List;
 use pin_project::pin_project;
 
@@ -125,7 +124,7 @@ impl Semaphore {
         }
 
         // Add ourselves to the wait list...
-        create_node!(node, (), noop_waker());
+        create_node!(node, ());
         self.project_ref()
             .waiters
             .insert_and_wait_with_cleanup(node, || {

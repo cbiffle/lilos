@@ -65,7 +65,7 @@
 //! ```ignore
 //! # fn foo() {
 //! // This creates a local variable called "my_node"
-//! os::create_node!(my_node, (), os::exec::noop_waker());
+//! os::create_node!(my_node, ());
 //!
 //! // Join a wait list
 //! wait_list.insert_and_wait(my_node.as_mut()).await;
@@ -240,7 +240,8 @@ impl WakerCell {
 /// - The `waker` is a `core::task::Waker`, an abstract reference to a task that
 ///   wishes to be woken up at some point. You'll generally provide
 ///   [`noop_waker`] and the OS will replace it with an appropriate one when the
-///   node is inserted into a list.
+///   node is inserted into a list. (The `create_node!` macro will provide
+///   `noop_waker` automatically if not overridden.)
 ///
 /// - The `contents` is some `T`, and is typically a timestamp. Inserting a node
 ///   into a list requires that `T` be `PartialOrd`, and the list will be
@@ -956,16 +957,14 @@ macro_rules! create_list_with_meta {
             $crate::list::List::finish_init($var.as_mut());
         }
     };
+    ($var:ident) => { $crate::create_list_with_meta!($var, core::default::Default::default()) };
 }
 
 /// Convenience macro for creating a pinned node on the stack.
 ///
-/// `create_node!(ident, val, waker)` is equivalent to `let ident = ...;` -- it
+/// `create_node!(ident, val)` is equivalent to `let ident = ...;` -- it
 /// creates a local variable called `ident`, holding an initialized node. The
-/// node's contents are set to `val`, and its waker is `waker`.
-///
-/// (Note: `waker` should almost always be
-/// [`exec::noop_waker()`][crate::exec::noop_waker].)
+/// node's contents are set to `val` and it uses the `noop_waker` by default.
 #[macro_export]
 macro_rules! create_node {
     ($var:ident, $dl:expr, $w: expr) => {
@@ -982,18 +981,19 @@ macro_rules! create_node {
             $crate::list::Node::finish_init($var.as_mut());
         }
     };
+    ($var:ident, $dl:expr) => {
+        $crate::create_node!($var, $dl, $crate::exec::noop_waker())
+    };
+
 }
 
 /// Convenience macro for creating a pinned node on the stack with attached
 /// metadata.
 ///
-/// `create_node_with_meta!(ident, val, meta, waker)` is equivalent to `let
+/// `create_node_with_meta!(ident, val, meta)` is equivalent to `let
 /// ident = ...;` -- it creates a local variable called `ident`, holding an
 /// initialized node. The node's contents are set to `val`, metadata is set to
-/// `meta, and its waker is `waker`.
-///
-/// (Note: `waker` should almost always be
-/// [`exec::noop_waker()`][crate::exec::noop_waker].)
+/// `meta, and it uses the `noop_waker` by default.
 #[macro_export]
 macro_rules! create_node_with_meta {
     ($var:ident, $dl:expr, $meta:expr, $w: expr) => {
@@ -1012,4 +1012,7 @@ macro_rules! create_node_with_meta {
             $crate::list::Node::finish_init($var.as_mut());
         }
     };
+    ($var:ident, $dl:expr, $meta:expr) => {
+        $crate::create_node_with_meta!($var, $dl, $meta, $crate::exec::noop_waker())
+    }
 }

@@ -282,7 +282,7 @@ pub async fn sleep_until(deadline: TickTime) {
         return;
     }
 
-    crate::create_node!(node, deadline, crate::exec::noop_waker());
+    crate::create_node!(node, deadline);
 
     // Insert our node into the pending timer list. If we get cancelled, the
     // node will detach itself as it's being dropped.

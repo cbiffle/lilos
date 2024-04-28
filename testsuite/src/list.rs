@@ -11,7 +11,7 @@ use lilos::list::{List, Node};
 use crate::{poll_and_assert_not_ready, poll_and_assert_ready};
 
 pub async fn test_node_basics() {
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
     // Node type is what we expect?
     let node: Pin<&mut Node<()>> = node;
     
@@ -44,7 +44,7 @@ pub async fn test_insert_and_wait_not_eager() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
 
     // Insertion must not happen eagerly, it must wait for the insert future to
     // be pinned and polled.
@@ -64,12 +64,12 @@ pub async fn test_insert_and_wait_wake_one() {
 
 
     // Check that we can insert a node, A:
-    create_node!(node_a, (), lilos::exec::noop_waker());
+    create_node!(node_a, ());
     let mut fut_a = pin!(list.insert_and_wait(node_a.as_mut()));
     poll_and_assert_not_ready!(fut_a);
 
     // Also insert a second node, B:
-    create_node!(node_b, (), lilos::exec::noop_waker());
+    create_node!(node_b, ());
     let mut fut_b = pin!(list.insert_and_wait(node_b.as_mut()));
 
     // We should be able to wake a node.
@@ -86,19 +86,19 @@ pub async fn test_wake_while_insert_order() {
     let list = list.into_ref();
 
     // Insert a series of nodes:
-    create_node!(node_a, (), lilos::exec::noop_waker());
+    create_node!(node_a, ());
     let mut fut_a = pin!(list.insert_and_wait(node_a.as_mut()));
     poll_and_assert_not_ready!(fut_a);
 
-    create_node!(node_b, (), lilos::exec::noop_waker());
+    create_node!(node_b, ());
     let mut fut_b = pin!(list.insert_and_wait(node_b.as_mut()));
     poll_and_assert_not_ready!(fut_b);
 
-    create_node!(node_c, (), lilos::exec::noop_waker());
+    create_node!(node_c, ());
     let mut fut_c = pin!(list.insert_and_wait(node_c.as_mut()));
     poll_and_assert_not_ready!(fut_c);
 
-    create_node!(node_d, (), lilos::exec::noop_waker());
+    create_node!(node_d, ());
     let mut fut_d = pin!(list.insert_and_wait(node_d.as_mut()));
     poll_and_assert_not_ready!(fut_d);
 
@@ -124,7 +124,7 @@ pub async fn test_insert_and_wait_cancel_behavior() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
 
     // Let's check my assertion about cancel behavior, shall we?
     let fut = list.insert_and_wait(node.as_mut());
@@ -144,7 +144,7 @@ pub async fn test_iawwc_no_fire_if_never_polled() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
     let cleanup_called = Cell::new(false);
 
     let fut = list.insert_and_wait_with_cleanup(
@@ -162,7 +162,7 @@ pub async fn test_iawwc_no_fire_if_polled_after_detach() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
     let cleanup_called = Cell::new(false);
 
     {
@@ -188,7 +188,7 @@ pub async fn test_iawwc_fire() {
     // Drop list mutability. TODO: should create_list even return a Pin<&mut>?
     let list = list.into_ref();
 
-    create_node!(node, (), lilos::exec::noop_waker());
+    create_node!(node, ());
     let cleanup_called = Cell::new(false);
 
     // Testing the cleanup behavior is slightly subtle: we need to activate the

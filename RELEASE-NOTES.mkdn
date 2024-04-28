@@ -17,6 +17,9 @@
   is useful for implementing more complex synchronization primitives, and is not
   used by the core OS directly.
 
+- The `create_node!` macro now allows its `waker` parameter to be omitted,
+  defaulting to `noop_waker`.
+
 - Added `List::wake_one_if` as a generalized version of `List::wake_one` for
   doing conditional wakes.
 

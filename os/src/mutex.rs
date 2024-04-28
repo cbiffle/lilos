@@ -78,7 +78,6 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use pin_project::pin_project;
 
 use crate::atomic::AtomicArithExt;
-use crate::exec::noop_waker;
 use crate::list::List;
 pub use crate::util::CancelSafe;
 
@@ -223,7 +222,7 @@ impl<T> Mutex<T> {
         }
 
         // We'd like to put our name on the wait list, please.
-        create_node!(wait_node, (), noop_waker());
+        create_node!(wait_node, ());
 
         let p = self.project_ref();
         p.waiters.insert_and_wait_with_cleanup(
@@ -376,7 +375,7 @@ impl<T> Mutex<CancelSafe<T>> {
         }
 
         // We'd like to put our name on the wait list, please.
-        create_node!(wait_node, (), noop_waker());
+        create_node!(wait_node, ());
 
         let p = self.project_ref();
         p.waiters.insert_and_wait_with_cleanup(
