@@ -928,6 +928,18 @@ macro_rules! create_list {
             $crate::list::List::finish_init($var.as_mut());
         }
     };
+}
+
+/// Convenience macro for creating a pinned list on the stack, when the list is
+/// using metadata.
+///
+/// `create_list_with_meta!(ident, meta)` is equivalent to `let ident = ...;` --
+/// it creates a local variable called `ident`, holding an initialized list.
+///
+/// The `meta` value passed doesn't matter at all. It's requested here to avoid
+/// requiring `M: Default`.
+#[macro_export]
+macro_rules! create_list_with_meta {
     ($var:ident, $met:expr) => {
         // Safety: we discharge the obligations of `new_with_meta` by pinning
         // and finishing the value, below, before it can be dropped.
@@ -970,6 +982,20 @@ macro_rules! create_node {
             $crate::list::Node::finish_init($var.as_mut());
         }
     };
+}
+
+/// Convenience macro for creating a pinned node on the stack with attached
+/// metadata.
+///
+/// `create_node_with_meta!(ident, val, meta, waker)` is equivalent to `let
+/// ident = ...;` -- it creates a local variable called `ident`, holding an
+/// initialized node. The node's contents are set to `val`, metadata is set to
+/// `meta, and its waker is `waker`.
+///
+/// (Note: `waker` should almost always be
+/// [`exec::noop_waker()`][crate::exec::noop_waker].)
+#[macro_export]
+macro_rules! create_node_with_meta {
     ($var:ident, $dl:expr, $meta:expr, $w: expr) => {
         // Safety: we discharge the obligations of `new_with_meta` by pinning and
         // finishing the value, below, before it can be dropped.
