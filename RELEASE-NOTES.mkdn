@@ -15,6 +15,9 @@
 
 - Added `List::wake_while` as a generalized version of `List::wake_less_than`
 
+- Added `List::is_empty` for checking if any nodes are waiting on a list. (It's
+  surprising that I haven't needed this before!)
+
 - The `CancelSafe` type from `lilos::mutex` is now available in `lilos::util`
   independent of which features are turned on, to make it easier to use in
   external lock types. `lilos::mutex::CancelSafe` is now an alias.

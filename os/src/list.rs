@@ -437,6 +437,12 @@ impl<T, M> List<T, M> {
             Node::finish_init(list.project().root);
         }
     }
+
+    /// Checks if the list is empty (i.e. there are no nodes waiting). Returns
+    /// `true` if the list is empty, `false` if there are nodes waiting.
+    pub fn is_empty(&self) -> bool {
+        self.root.is_detached()
+    }
 }
 
 impl<T: PartialOrd, M> List<T, M> {
@@ -651,7 +657,7 @@ impl<T, M> PinnedDrop for List<T, M> {
         //
         // When in doubt: panic and set the behavior later.
         #[cfg(debug_assertions)]
-        cheap_assert!(self.root.is_detached());
+        cheap_assert!(self.is_empty());
     }
 }
 
