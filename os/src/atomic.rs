@@ -65,6 +65,8 @@ pub trait AtomicExt: private::Sealed {
 pub trait AtomicArithExt: AtomicExt {
     /// Atomically add `val` to our contents, returning the original value.
     fn fetch_add_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value;
+    /// Atomically subtract `val` to our contents, returning the original value.
+    fn fetch_sub_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value;
     /// Atomically OR `val` into our contents, returning the original value.
     fn fetch_or_polyfill(&self, val: Self::Value, ordering: Ordering) -> Self::Value;
 }
@@ -190,6 +192,14 @@ macro_rules! impl_atomic_arith_polyfills {
                 self.fetch_add(val, ordering)
             }
 
+            fn fetch_sub_polyfill(
+                &self,
+                val: Self::Value,
+                ordering: Ordering,
+            ) -> Self::Value {
+                self.fetch_sub(val, ordering)
+            }
+
             fn fetch_or_polyfill(
                 &self,
                 val: Self::Value,
@@ -215,6 +225,19 @@ macro_rules! impl_atomic_arith_polyfills {
                 })
             }
 
+            fn fetch_sub_polyfill(
+                &self,
+                val: Self::Value,
+                ordering: Ordering,
+            ) -> Self::Value {
+                let (lo, so) = rmw_ordering(ordering);
+                cortex_m::interrupt::free(|_| {
+                    let x = self.load(lo);
+                    self.store(x.wrapping_sub(val), so);
+                    x
+                })
+            }
+
             fn fetch_or_polyfill(
                 &self,
                 val: Self::Value,
@@ -231,6 +254,7 @@ macro_rules! impl_atomic_arith_polyfills {
     };
 }
 
+impl_atomic_arith_polyfills!(core::sync::atomic::AtomicIsize);
 impl_atomic_arith_polyfills!(AtomicUsize);
 impl_atomic_arith_polyfills!(AtomicU32);
 
