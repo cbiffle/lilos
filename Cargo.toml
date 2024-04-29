@@ -21,7 +21,7 @@ rust-version = "1.69"
 
 [workspace.dependencies]
 # Internal
-lilos = { path = "os", version = "1.0.2", default-features = false }
+lilos = { path = "os", version = "1.1.0", default-features = false }
 lilos-testsuite = { path = "testsuite" }
 lilos-handoff = { path = "handoff" }
 lilos-semaphore = { path = "semaphore" }
