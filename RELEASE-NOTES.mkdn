@@ -20,10 +20,15 @@
 - The `create_node!` macro now allows its `waker` parameter to be omitted,
   defaulting to `noop_waker`.
 
+- Renamed `List::wake_less_than` to `List::wake_thru`, since its behavior
+  (waking nodes with contents less than _or equal to_ a value) didn't match its
+  name. The old name is still available as an alias, for compatibility with 1.x,
+  but is deprecated.
+
 - Added `List::wake_one_if` as a generalized version of `List::wake_one` for
   doing conditional wakes.
 
-- Added `List::wake_while` as a generalized version of `List::wake_less_than`.
+- Added `List::wake_while` as a generalized version of `List::wake_thru`.
   This has the side effect of making the order of nodes with the same
   `contents` value observable, which is what exposed the list ordering bug
   mentioned above (now fixed).

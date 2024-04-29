@@ -553,7 +553,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             #[cfg(feature = "systick")]
             {
                 // Scan for any expired timers.
-                tl.wake_less_than(TickTime::now());
+                tl.wake_thru(TickTime::now());
             }
 
             // Capture and reset wake bits, then process any 1s.

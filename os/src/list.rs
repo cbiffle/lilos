@@ -6,8 +6,8 @@
 //!
 //! - [`List::insert_and_wait`] traverses the list to insert the `Node` in its
 //!   proper place, and then waits for the node to be kicked back out.
-//! - [`List::wake_less_than`] starts at one end and removes every `Node` with a
-//!   value less than or equal to (sic) a threshold.
+//! - [`List::wake_thru`] starts at one end and removes every `Node` with a
+//!   value less than or equal to a threshold.
 //!
 //! The sort order is used to order things by timestamps, but you may find other
 //! uses for it.
@@ -30,7 +30,7 @@
 //!
 //! - At some future point, wake all nodes in a timestamp range by using either
 //! [`List::wake_while`] or, as a convenience for writing timers,
-//! [`List::wake_less_than`].
+//! [`List::wake_thru`].
 //!
 //!
 //! # Using as a wait queue
@@ -626,9 +626,22 @@ impl<T: PartialOrd, M> List<T, M> {
     /// Beginning at the head of the list, removes nodes whose `contents` are
     /// `<= threshold` and wakes their tasks.
     ///
+    /// After this completes:
+    ///
+    /// - Any `Node` previously inserted into this list with `contents <=
+    ///   threshold` is now detached, and its waker has been called.
+    ///
+    /// - All `Node`s remaining in this list have `contents > threshold`.
+    pub fn wake_thru(self: Pin<&Self>, threshold: T) {
+        self.wake_while(|n| n.contents <= threshold);
+    }
+
+    /// Beginning at the head of the list, removes nodes whose `contents` are
+    /// `<= threshold` and wakes their tasks.
+    ///
     /// **Caution:** Despite the name of this function, this removes nodes whose
-    /// `contents` are _less than or equal to_ `threshold`! This name will be
-    /// deprecated at some point in the future to remove this gotcha.
+    /// `contents` are _less than or equal to_ `threshold`! This name has been
+    /// deprecated, and you should use [`List::wake_thru`] instead.
     ///
     /// After this completes:
     ///
@@ -636,8 +649,9 @@ impl<T: PartialOrd, M> List<T, M> {
     ///   threshold` is now detached, and its waker has been called.
     ///
     /// - All `Node`s remaining in this list have `contents > threshold`.
+    #[deprecated = "this function's name is misleading, please use wake_thru instead"]
     pub fn wake_less_than(self: Pin<&Self>, threshold: T) {
-        self.wake_while(|n| n.contents <= threshold);
+        self.wake_thru(threshold)
     }
 
     /// Beginning at the head of the list, removes nodes that are accepted by
@@ -700,7 +714,7 @@ impl<T: PartialOrd, M> List<T, M> {
 
 impl<M> List<(), M> {
     /// Convenience method for waking all the waiters on an unsorted list,
-    /// because `wake_less_than(())` looks weird.
+    /// because `wake_thru(())` looks weird.
     ///
     /// Note that using this operation tends to trigger the amusingly named
     /// ["thundering herd problem"][th], by making a bunch of waiting tasks
@@ -710,7 +724,7 @@ impl<M> List<(), M> {
     ///
     /// [th]: https://en.wikipedia.org/wiki/Thundering_herd_problem
     pub fn wake_all(self: Pin<&Self>) {
-        self.wake_less_than(())
+        self.wake_thru(())
     }
 
     /// Wakes the oldest waiter on an unsorted list (the head).
