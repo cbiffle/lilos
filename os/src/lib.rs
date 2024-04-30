@@ -148,6 +148,7 @@
 /// fancy messages. This means failures must be diagnosed by file:line only, so,
 /// don't use this more than once on the same line. In exchange, this makes
 /// asserts significantly smaller in terms of text size.
+#[cfg_attr(not(debug_assertions), allow(unused_macros))]
 macro_rules! cheap_assert {
     ($x:expr) => {
         if !$x { panic!(); };
