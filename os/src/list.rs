@@ -559,10 +559,16 @@ impl<T: PartialOrd, M> List<T, M> {
         self: Pin<&'list Self>,
         node: Pin<&'node mut Node<T, M>>,
     ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
-        self.insert_and_wait_with_cleanup(
+        // We required `node` to be `mut` to prove exclusive ownership, but we
+        // don't actually need to mutate it -- and we're going to alias it. So,
+        // downgrade.
+        let node = node.into_ref();
+
+        WaitForDetach {
             node,
-            || (),
-        )
+            list: self,
+            state: Cell::new(WaitState::NotYetAttached),
+        }
     }
 
     /// Inserts `node` into this list, maintaining ascending sort order, and
@@ -615,10 +621,12 @@ impl<T: PartialOrd, M> List<T, M> {
         // downgrade.
         let node = node.into_ref();
 
-        WaitForDetach {
-            node,
-            list: self,
-            state: Cell::new(WaitState::NotYetAttached),
+        WaitWithCleanup {
+            inner: WaitForDetach {
+                node,
+                list: self,
+                state: Cell::new(WaitState::NotYetAttached),
+            },
             cleanup: Some(cleanup),
         }
     }
@@ -772,21 +780,20 @@ impl<T: core::fmt::Debug, M: core::fmt::Debug> core::fmt::Debug for List<T, M> {
 
 /// Internal future type used for `insert_and_wait`. Gotta express this as a
 /// named type because it needs a custom `Drop` impl.
-struct WaitForDetach<'node, 'list, T, M, F: FnOnce()> {
+struct WaitForDetach<'node, 'list, T, M> {
     node: Pin<&'node Node<T, M>>,
     list: Pin<&'list List<T, M>>,
     state: Cell<WaitState>,
-    cleanup: Option<F>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum WaitState {
     NotYetAttached,
     Attached,
     DetachedAndPolled,
 }
 
-impl<T: PartialOrd, M, F: FnOnce()> Future for WaitForDetach<'_, '_, T, M, F> {
+impl<T: PartialOrd, M> Future for WaitForDetach<'_, '_, T, M> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
@@ -860,27 +867,38 @@ impl<T: PartialOrd, M, F: FnOnce()> Future for WaitForDetach<'_, '_, T, M, F> {
     }
 }
 
-impl<T, M, F: FnOnce()> Drop for WaitForDetach<'_, '_, T, M, F> {
+impl<T, M> Drop for WaitForDetach<'_, '_, T, M> {
     fn drop(&mut self) {
-        match self.state.get() {
-            WaitState::NotYetAttached => {
-                // No work to do here.
-            }
-            WaitState::Attached => {
-                if self.node.is_detached() {
-                    // Uh oh, we have not had a chance to handle the detach.
-                    if let Some(cleanup) = self.cleanup.take() {
-                        cleanup();
-                    }
-                } else {
-                    // If _we_ detach ourselves, we don't run the cleanup
-                    // action.
-                    self.node.detach();
-                }
+        if self.state.get() == WaitState::Attached {
+            self.node.detach();
+        }
+    }
+}
 
-            }
-            WaitState::DetachedAndPolled => {
-                // No work to do here either.
+#[pin_project(PinnedDrop)]
+struct WaitWithCleanup<'node, 'list, T, M, F: FnOnce()> {
+    #[pin]
+    inner: WaitForDetach<'node, 'list, T, M>,
+    cleanup: Option<F>,
+}
+
+impl<T: PartialOrd, M, F: FnOnce()> Future for WaitWithCleanup<'_, '_, T, M, F> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>)
+        -> Poll<Self::Output>
+    {
+        self.project().inner.poll(cx)
+    }
+}
+
+#[pinned_drop]
+impl<T, M, F: FnOnce()> PinnedDrop for WaitWithCleanup<'_, '_, T, M, F> {
+    fn drop(self: Pin<&mut Self>) {
+        if self.inner.state.get() == WaitState::Attached && self.inner.node.is_detached() {
+            // Uh oh, we have not had a chance to handle the detach.
+            if let Some(cleanup) = self.project().cleanup.take() {
+                cleanup();
             }
         }
     }
