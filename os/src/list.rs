@@ -1011,9 +1011,9 @@ macro_rules! create_node {
 #[macro_export]
 macro_rules! create_node_with_meta {
     ($var:ident, $dl:expr, $meta:expr, $w: expr) => {
+        let $var = ($dl, $meta, $w);
         // Safety: we discharge the obligations of `new_with_meta` by pinning and
         // finishing the value, below, before it can be dropped.
-        let $var = ($dl, $meta, $w);
         let mut $var = core::pin::pin!(unsafe {
             core::mem::ManuallyDrop::into_inner($crate::list::Node::new_with_meta(
                 $var.0, $var.1, $var.2,
