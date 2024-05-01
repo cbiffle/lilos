@@ -187,7 +187,12 @@ impl<'q, T> Pusher<'q, T> {
             return None;
         }
 
-        let unsafecell_ptr = self.q.storage[h].get();
+        // Safety: we maintain self.q.head (and thus the value of h here) within
+        // range for storage.
+        let unsafecell = unsafe {
+            self.q.storage.get_unchecked(h)
+        };
+        let unsafecell_ptr = unsafecell.get();
         // Safety: this is dereferencing a raw pointer into the unsafecell,
         // which we can do because (1) the cell being between h and t implies
         // that it is not aliased, and (2) because we have &mut Self we know
@@ -289,7 +294,12 @@ impl<T> Popper<'_, T> {
 
         let t_next = self.q.next_index(t);
 
-        let unsafecell_ptr = self.q.storage[t].get();
+        // Safety: we always maintain self.q.tail (and thus the value of t here)
+        // within bounds for storage.
+        let unsafecell = unsafe {
+            self.q.storage.get_unchecked(t)
+        };
+        let unsafecell_ptr = unsafecell.get();
         // Safety: we're dereferencing the raw pointer into the UnsafeCell,
         // which we can do because (1) this cell is between t and h, so it's not
         // aliased by any pushing, and (2) we have a &mut Self, so it's also by
