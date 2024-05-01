@@ -171,7 +171,7 @@ use core::future::Future;
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::ptr::NonNull;
-use core::task::{Poll, RawWaker, RawWakerVTable, Waker};
+use core::task::{Poll, Waker};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::util::{NotSendMarker, Captures};
@@ -483,7 +483,7 @@ impl<T: Default, M> List<T, M> {
             Node::new_with_meta(
                 T::default(),
                 meta,
-                exploding_waker(),
+                crate::exec::noop_waker(),
             )
         };
         ManuallyDrop::new(List {
@@ -901,43 +901,6 @@ impl<T, M, F: FnOnce()> PinnedDrop for WaitWithCleanup<'_, '_, T, M, F> {
                 cleanup();
             }
         }
-    }
-}
-
-/// Used to construct wakers that will crash the program if used.
-///
-/// We use this for the placeholder Waker installed in List, because it should
-/// never be awoken -- that would indicate list corruption.
-static EXPLODING_VTABLE: RawWakerVTable = {
-    // Reduce number of panic sites
-    #[inline(never)]
-    fn mono_explode() -> ! {
-        panic!("list inconsistency")
-    }
-
-    fn explode<T>(_: *const ()) -> T {
-        mono_explode()
-    }
-
-    RawWakerVTable::new(
-        explode, // clone
-        explode, // wake
-        explode, // wake_by_ref
-        |_| (),  // drop
-    )
-};
-
-/// Makes a `Waker` that will panic if used in any way other than being dropped.
-///
-/// If this looks like a total hack, that's because it is. To reduce code
-/// duplication, `List` contains a `Node`, and `Node` of course must hold a
-/// `Waker`. Since we never intend to use the `Waker` stored in `List`, we use
-/// an exploding waker.
-fn exploding_waker() -> Waker {
-    // Safety: the EXPLODING_VTABLE doesn't dereference the context pointer at
-    // all, so we could pass literally anything here and be safe.
-    unsafe {
-        Waker::from_raw(RawWaker::new(core::ptr::null(), &EXPLODING_VTABLE))
     }
 }
 
