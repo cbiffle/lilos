@@ -1,5 +1,19 @@
 # Release Notes
 
+## Version 1.1.1 (in progress)
+
+### Internal improvements
+
+- All code using lists, particularly timer lists, should now be slightly
+  smaller.
+
+- Removed an internal unused `Waker` implementation, reducing the base flash
+  requirement of the OS.
+
+- `spsc` now uses `get_unchecked` in a couple of places to avoid generating
+  bounds checks. This is the first place in `lilos` where I've used unsafe code
+  for performance or size reasons, and I hope not to make a habit of it.
+
 ## Version 1.1
 
 ### Bugfixes
