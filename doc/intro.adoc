@@ -727,6 +727,7 @@ used `async`, so that the same code could produce both a simple function and a
 possible ways your code could be used. I am suspicious, and I hope after reading
 this section, you are too.
 
+[[executor]]
 == {os} executor and API contracts
 
 To be able to reason about the behavior of a program written using `async fn`,
@@ -794,6 +795,108 @@ ownership of, say, a peripheral into an `async fn`, and then you throw that
 `async fn` away... well, you've thrown away access to the peripheral too. In
 general, if there's any chance you'll want to cancel and retry an operation, it
 should take its resources _by reference._
+
+
+[[interrupts]]
+== Interrupts and concurrency
+
+=== Calling {os} APIs from interrupt handlers
+
+Using {os} APIs from interrupt handlers is nuanced.
+
+In the default configuration (an application started using `run_tasks` without
+any fancy preemption options), interrupt handlers don't preempt task code. In
+this situation, you can squint and treat interrupt handlers as an additional
+task, albeit one that isn't `async`.
+
+On Cortex-M processors, the default interrupt controller configuration also
+stops interrupt handlers from preempting _each other._
+
+In this situation, it's safe to use a surprisingly broad set of {os}'s APIs from
+interrupt handlers. However, it's kind of hard to actually access the APIs.
+
+A small subset of core {os} types are `Sync` and can be stored directly in a
+`static`, for sharing with interrupt handlers. `Notify` is the main one, and is
+the example discussed in the section <<howto-notify>>. This is the easy case.
+
+Fancier things like mutexes are, perhaps surprisingly, _not `Sync`_ in {os}.
+This is because `Sync` indicates whether a type can support simultaneous shared
+access from multiple threads with potentially arbitrary preemption and
+interleaving of operations; we don't have to support that on {os} because our
+tasks aren't threads, and this simplifies the implementation dramatically.
+
+It's _possible_ to share these types with interrupt handlers in a limited
+fashion safely, but I don't currently have a worked example of this because it's
+a very niche requirement, in my experience.
+
+=== Interrupt prioritization and ISR preemption
+
+By configuring the interrupt controller, you can arrange for interrupt handlers
+to be able to preempt _one another_ even if they can't preempt {os} tasks. On
+the `cortex_m` crate this requires some `unsafe` code, so you won't do it by
+accident.
+
+Once you've done this, assume that {os} APIs are only safe to use from the
+_lowest_ priority interrupt handlers -- that is, the ones that aren't going to
+be preempting another handler. There are exceptions, in particular `Notify`,
+which is always safe.
+
+=== Allowing ISRs to preempt tasks
+
+By configuring the interrupt controller appropriately and starting your
+application with `run_tasks_with_preemption`, it's possible to allow a _subset_
+of interrupt handlers to fire even while your tasks are running. Any interrupt
+handlers that you allow to do this must be careful with what {os} API they call.
+Unless stated otherwise, assume that they only have access to `Notify`.
+
+The most common example of this is allowing the `SysTick` interrupt handler to
+preempt application code. {os} uses `SysTick` to maintain the OS timer, and its
+`SysTick` interrupt handler is carefully written to be safe when preempting task
+code. If tasks do more than about a millisecond of computation between yielding
+with `await` points, the `SysTick` handler may be delayed, and the OS may lose
+time.
+
+For instance, setting `SysTick` to the highest priority and allowing it to
+preempt tasks would look like this:
+
+[source]
+----
+// ... in the application main fn ...
+let mut cp = cortex_m::Peripherals::take().unwrap();
+
+// ... other stuff ...
+
+unsafe {
+    // Set to the highest priority.
+    cp.SCB.set_priority(SystemHandler::SysTick, 0); <1>
+}
+
+// set up tasks...
+
+// run the executor
+unsafe {
+    lilos::exec::run_tasks_with_preemption( <2>
+        tasks_array,
+        lilos::exec::ALL_TASKS,
+        lilos::exec::Interrupts::Filtered(0x80), <3>
+    )
+}
+----
+
+At <1> we override the default priority (which is all-1s) to zero, the highest.
+
+When starting the executor at <2>, we use `run_tasks_with_preemption`, which
+requires `unsafe` because it requires you to have thought through your
+application architecture in terms of preemption. (In this specific case, it's
+probably fine for any application, but once other interrupt handlers are
+involved, you'll want to be careful.)
+
+Passing `Filtered(0x80)` at <3> masks interrupts of priority `0x80` and lower
+(numerically greater) while tasks are running. This leaves the priorities
+between 0 and `0x7F` available for preempting interrupt handlers. Note that the
+number of bits implemented in the priority field on Cortex-M is _vendor
+dependent,_ so you can't just pass `1` here and expect it to work for "any
+priority lower than 0."
 
 
 == How to do the thing you're trying
