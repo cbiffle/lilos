@@ -1,26 +1,30 @@
 use core::pin::pin;
 
-use lilos_semaphore::{create_semaphore, create_scoped_semaphore};
+use lilos_semaphore::{Semaphore, ScopedSemaphore};
 
 pub async fn test_create_drop() {
-    create_semaphore!(_a_semaphore, 10);
+    let _a_semaphore = pin!(Semaphore::new(10));
+    let _a_semaphore = _a_semaphore.into_ref();
 }
 
 pub async fn test_acquire() {
-    create_semaphore!(a_semaphore, 10);
+    let a_semaphore = pin!(Semaphore::new(10));
+    let a_semaphore = a_semaphore.into_ref();
     a_semaphore.acquire().await;
     assert_eq!(a_semaphore.permits_available(), 9);
 }
 
 pub async fn test_release() {
-    create_semaphore!(a_semaphore, 10);
+    let a_semaphore = pin!(Semaphore::new(10));
+    let a_semaphore = a_semaphore.into_ref();
     a_semaphore.release();
     assert_eq!(a_semaphore.permits_available(), 11);
 }
 
 pub async fn test_exhaustion() {
     // Start out with a permit.
-    create_semaphore!(a_semaphore, 1);
+    let a_semaphore = pin!(Semaphore::new(1));
+    let a_semaphore = a_semaphore.into_ref();
 
     // Take it.
     a_semaphore.acquire().await;
@@ -39,7 +43,8 @@ pub async fn test_exhaustion() {
 
 pub async fn test_fairness() {
     // Start out with a permit.
-    create_semaphore!(a_semaphore, 1);
+    let a_semaphore = pin!(Semaphore::new(1));
+    let a_semaphore = a_semaphore.into_ref();
 
     // Take it.
     a_semaphore.acquire().await;
@@ -85,7 +90,8 @@ pub async fn test_fairness() {
 
 pub async fn test_cancellation() {
     // Start out with a permit.
-    create_semaphore!(a_semaphore, 1);
+    let a_semaphore = pin!(Semaphore::new(1));
+    let a_semaphore = a_semaphore.into_ref();
 
     // Take it.
     a_semaphore.acquire().await;
@@ -117,24 +123,28 @@ pub async fn test_cancellation() {
 // which should Just Work. So, just gonna do basics:
 
 pub async fn test_scoped_create_drop() {
-    create_scoped_semaphore!(_a_semaphore, 10);
+    let _a_semaphore = pin!(ScopedSemaphore::new(10));
+    let _a_semaphore = _a_semaphore.into_ref();
 }
 
 pub async fn test_scoped_acquire() {
-    create_scoped_semaphore!(a_semaphore, 10);
+    let a_semaphore = pin!(ScopedSemaphore::new(10));
+    let a_semaphore = a_semaphore.into_ref();
     let _permit = a_semaphore.acquire().await;
     assert_eq!(a_semaphore.permits_available(), 9);
 }
 
 pub async fn test_scoped_release() {
-    create_scoped_semaphore!(a_semaphore, 10);
+    let a_semaphore = pin!(ScopedSemaphore::new(10));
+    let a_semaphore = a_semaphore.into_ref();
     a_semaphore.out_of_band_release(1);
     assert_eq!(a_semaphore.permits_available(), 11);
 }
 
 pub async fn test_scoped_exhaustion() {
     // Start out with a permit.
-    create_scoped_semaphore!(a_semaphore, 1);
+    let a_semaphore = pin!(ScopedSemaphore::new(1));
+    let a_semaphore = a_semaphore.into_ref();
 
     // Take it.
     let _permit = a_semaphore.acquire().await;

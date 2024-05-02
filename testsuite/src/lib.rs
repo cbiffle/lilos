@@ -86,7 +86,6 @@ async fn task_coordinator() -> Infallible {
             test_with_deadline_blocking,
             test_notify,
 
-            list::test_node_basics,
             list::test_list_basics,
             list::test_insert_and_wait_not_eager,
             list::test_insert_and_wait_wake_one,

@@ -150,9 +150,8 @@ cfg_if::cfg_if! {
         use core::sync::atomic::AtomicBool;
         use core::ptr::{addr_of, addr_of_mut};
 
-        use crate::cheap_assert;
-        use crate::list::List;
-        use core::mem::{MaybeUninit, ManuallyDrop};
+        use lilos_list::List;
+        use core::mem::MaybeUninit;
         use crate::time::TickTime;
     }
 }
@@ -254,6 +253,10 @@ static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
 /// Returns a [`Waker`] that doesn't do anything and costs nothing to `clone`.
 /// This is useful as a placeholder before a *real* `Waker` becomes available.
 /// You probably don't need this unless you're building your own wake lists.
+#[deprecated(
+    since = "1.2.0",
+    note = "was only ever used with List which is now deprecated",
+)]
 pub fn noop_waker() -> Waker {
     // Safety: Waker::from_raw is unsafe because the Waker can do weird and
     // destructive stuff if either the pointer, or the vtable functions, don't
@@ -524,26 +527,12 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
         let timer_list = unsafe {
             &mut *addr_of_mut!(TIMER_LIST)
         };
+
         // Initialize the list node itself.
-        //
-        // Safety: we discharge the obligations of `new` here by continuing,
-        // below, to pin and finish initialization of the list.
-        timer_list.write(ManuallyDrop::into_inner(unsafe {
-            List::new()
-        }));
-        // Safety: we're not going to overwrite or drop this static list, so we
-        // have trivially fulfilled the pin requirements.
-        let mut timer_list = unsafe {
-            Pin::new_unchecked(timer_list.assume_init_mut())
-        };
-        // Safety: finish_init requires that we haven't done anything to the
-        // List since `new` except for pinning it, which is the case here.
-        unsafe {
-            List::finish_init(timer_list.as_mut());
-        }
+        timer_list.write(List::new());
 
         // The list is initialized; we can now produce _shared_ references to
-        // it. Our one and only Pin<&mut List> ends here.
+        // it. Because it won't move again, we can pin those references.
     }
 
     #[cfg(feature = "systick")]
@@ -553,7 +542,8 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
             #[cfg(feature = "systick")]
             {
                 // Scan for any expired timers.
-                tl.wake_thru(TickTime::now());
+                let now = TickTime::now();
+                tl.wake_while(|&t| t <= now);
             }
 
             // Capture and reset wake bits, then process any 1s.

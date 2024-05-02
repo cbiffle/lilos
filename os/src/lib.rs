@@ -148,20 +148,20 @@
 /// fancy messages. This means failures must be diagnosed by file:line only, so,
 /// don't use this more than once on the same line. In exchange, this makes
 /// asserts significantly smaller in terms of text size.
-#[cfg_attr(not(debug_assertions), allow(unused_macros))]
+#[cfg(any(debug_assertions, feature = "systick"))]
 macro_rules! cheap_assert {
     ($x:expr) => {
         if !$x { panic!(); };
     }
 }
-#[allow(unused_imports)]
-pub(crate) use cheap_assert;
+
+pub mod exec;
+pub mod atomic;
+pub mod util;
 
 #[macro_use]
+#[deprecated(since = "1.2.0", note = "please move to the lilos-list crate")]
 pub mod list;
-pub mod exec;
-pub mod util;
-pub mod atomic;
 
 #[cfg(feature = "systick")]
 pub mod time;

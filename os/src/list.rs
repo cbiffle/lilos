@@ -239,9 +239,9 @@ impl WakerCell {
 ///
 /// - The `waker` is a `core::task::Waker`, an abstract reference to a task that
 ///   wishes to be woken up at some point. You'll generally provide
-///   [`noop_waker`] and the OS will replace it with an appropriate one when the
-///   node is inserted into a list. (The `create_node!` macro will provide
-///   `noop_waker` automatically if not overridden.)
+///   [`noop_waker`][crate::exec::noop_waker] and the OS will replace it with an
+///   appropriate one when the node is inserted into a list. (The `create_node!`
+///   macro will provide `noop_waker` automatically if not overridden.)
 ///
 /// - The `contents` is some `T`, and is typically a timestamp. Inserting a node
 ///   into a list requires that `T` be `PartialOrd`, and the list will be
@@ -270,7 +270,7 @@ impl<T> Node<T> {
     /// If you need to attach metadata to the node, see [`Node::new_with_meta`].
     ///
     /// Note that you probably don't need to use this directly. See
-    /// [`create_node!`] for a more convenient option.
+    /// [`create_node!`][crate::create_node] for a more convenient option.
     ///
     /// # Safety
     ///
@@ -290,7 +290,8 @@ impl<T, M> Node<T, M> {
     /// metadata. If your metadata is `()`, please use [`Node::new`] instead.
     ///
     /// Note that you probably don't need to use this directly. See
-    /// [`create_node_with_meta!`] for a more convenient option.
+    /// [`create_node_with_meta!`][crate::create_node_with_meta] for a more
+    /// convenient option.
     ///
     /// # Safety
     ///
@@ -483,6 +484,7 @@ impl<T: Default, M> List<T, M> {
             Node::new_with_meta(
                 T::default(),
                 meta,
+                #[allow(deprecated)]
                 crate::exec::noop_waker(),
             )
         };
@@ -657,7 +659,6 @@ impl<T: PartialOrd, M> List<T, M> {
     ///   threshold` is now detached, and its waker has been called.
     ///
     /// - All `Node`s remaining in this list have `contents > threshold`.
-    #[deprecated = "this function's name is misleading, please use wake_thru instead"]
     pub fn wake_less_than(self: Pin<&Self>, threshold: T) {
         self.wake_thru(threshold)
     }
@@ -977,6 +978,7 @@ macro_rules! create_node {
         }
     };
     ($var:ident, $dl:expr) => {
+        #[allow(deprecated)]
         $crate::create_node!($var, $dl, $crate::exec::noop_waker())
     };
 

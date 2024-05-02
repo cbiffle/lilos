@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "list",
     "os",
     "handoff",
     "semaphore",
@@ -23,6 +24,7 @@ rust-version = "1.69"
 [workspace.dependencies]
 # Internal
 lilos = { path = "os", version = "1.1.0", default-features = false }
+lilos-list = { path = "list", version = "0.1.0" }
 lilos-testsuite = { path = "testsuite" }
 lilos-handoff = { path = "handoff" }
 lilos-semaphore = { path = "semaphore" }

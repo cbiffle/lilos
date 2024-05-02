@@ -1,14 +1,50 @@
 # Release Notes
 
-## Version 1.1.1 (in progress)
+## Version 1.2.0 (in progress)
+
+Internal changes to data structures mean the OS minimum RAM requirement is down
+by 1/3 (from 60 bytes to 40), and programs I've tested are at least 100 bytes
+smaller in flash.
+
+### Core API changes
+
+- The original `list` module, and the `List` and `Node` types it contained, are
+  now deprecated. The new `lilos-list` crate provides a dramatically improved
+  version. In particular, this eliminates the need for the "two-phase init"
+  dance with pinned OS types that has haunted `lilos` from the early days.
+  - Uses of the old `List` type should use the new one from `lilos-list`.
+  - Instead of using macros to create a list, write: `pin!(List::new())`.
+  - The `Node` type is now private. Instead, the "contents" field that used to
+    be passed to `create_node!` is now a parameter to the `List::wait` function.
+
+- Two-phase init of `Mutex` is now deprecated. You can now just write
+  `pin!(Mutex::create(something))`. (It's `create` and not `new` because I'm
+  preserving `new` in deprecated form for backwards compatibility with 1.1.) The
+  mutex creation macros still work.
+
+- It is now possible to create a `Mutex` or `List` in a `const fn` context,
+  including in a static initializer.
+
+### Non-Core API
+
+- The `lilos-list` crate exists now.
+
+- `rwlock` 0.2 uses the new `lilos-list` internally, and no longer requires (or
+  supports) two-phase init. I've removed the creation macro.
+
+- `semaphore` 0.2 uses the new `lilos-list` internally, and no longer requires (or
+  supports) two-phase init. I've removed the creation macro here, too.
 
 ### Internal improvements
 
-- All code using lists, particularly timer lists, should now be slightly
-  smaller.
+- All internal use of lists has been rewritten to use `waitlist`.
 
-- Removed an internal unused `Waker` implementation, reducing the base flash
-  requirement of the OS.
+- All code using any kind of lists, particularly timer lists, should now be
+  slightly smaller.
+
+- Removed an internal mostly-unused `Waker` implementation, reducing the base
+  flash requirement of the OS for applications that use the new `waitlist`
+  module.
 
 - `spsc` now uses `get_unchecked` in a couple of places to avoid generating
   bounds checks. This is the first place in `lilos` where I've used unsafe code

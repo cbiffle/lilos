@@ -1,0 +1,23 @@
+# Allocation-free doubly-linked intrusive lists
+
+This is the list type used to implement timer lists and wait queues in
+[`lilos`]. It takes an unusual approach to implementing a sound doubly-linked
+intrusive list in Rust without allocation, which is otherwise quite difficult:
+it presents a different API that's easier to make sound.
+
+This data structure can be built for any platform, and has tests that can run
+both hosted and under Miri (to check for pointer abuses).
+
+See the rustdoc for more details.
+
+## Versioning
+
+It's not important for applications or custom synchronization primitives to use
+_exactly_ the same version of `lilos-list` as `lilos` does internally. Having
+multiple versions linked into a single binary will work fine. (However, it will
+take somewhat less space in flash if you can arrange to use the same version.)
+
+`lilos-list` is versioned separately from the OS API and will likely go through
+major versions faster than the rest of the OS.
+
+[`lilos`]: https://docs.rs/lilos/latest/lilos/

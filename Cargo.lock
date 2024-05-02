@@ -164,11 +164,12 @@ dependencies = [
 
 [[package]]
 name = "lilos"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "cfg-if",
  "cortex-m",
  "cortex-m-rt",
+ "lilos-list",
  "pin-project",
 ]
 
@@ -262,19 +263,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilos-rwlock"
+name = "lilos-list"
 version = "0.1.0"
 dependencies = [
+ "pin-project",
+]
+
+[[package]]
+name = "lilos-rwlock"
+version = "0.2.0"
+dependencies = [
  "lilos",
+ "lilos-list",
  "pin-project",
  "scopeguard",
 ]
 
 [[package]]
 name = "lilos-semaphore"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lilos",
+ "lilos-list",
  "pin-project",
 ]
 
@@ -288,6 +298,7 @@ dependencies = [
  "futures",
  "lilos",
  "lilos-handoff",
+ "lilos-list",
  "lilos-rwlock",
  "lilos-semaphore",
  "panic-semihosting",

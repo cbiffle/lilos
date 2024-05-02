@@ -1,8 +1,8 @@
 [package]
-name = "lilos-rwlock"
-version = "0.2.0"
+name = "lilos-list"
+version = "0.1.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
-description = "A read-write / writer-preferred lock for use with lilos."
+description = "Allocation-free intrusive doubly-linked wait queues for lilos."
 keywords = ["async", "embedded", "os"]
 categories = ["embedded", "no-std"]
 readme = "README.mkdn"
@@ -12,15 +12,5 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[package.metadata.docs.rs]
-default-target = "thumbv7em-none-eabihf"
-
 [dependencies]
-lilos.workspace = true
-lilos-list.workspace = true
 pin-project.workspace = true
-scopeguard.workspace = true
-
-[lib]
-test = false
-bench = false

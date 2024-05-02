@@ -1,15 +1,16 @@
 use core::pin::pin;
 
-use lilos_rwlock::create_rwlock;
+use lilos_rwlock::RwLock;
 
 use crate::{poll_and_assert_not_ready, poll_and_assert_ready};
 
 pub async fn test_create_drop() {
-    create_rwlock!(_a_lock, 0u32);
+    let _a_lock = pin!(RwLock::new(0u32));
 }
 
 pub async fn test_uncontended_try_lock_shared() {
-    create_rwlock!(a_lock, 0u32);
+    let a_lock = pin!(RwLock::new(0u32));
+    let a_lock = a_lock.into_ref();
     let guard1 = a_lock.try_lock_shared()
         .expect("uncontended lock should succeed");
     assert!(a_lock.try_lock_exclusive().is_err());
@@ -24,7 +25,8 @@ pub async fn test_uncontended_try_lock_shared() {
 }
 
 pub async fn test_uncontended_try_lock_exclusive() {
-    create_rwlock!(a_lock, 0u32);
+    let a_lock = pin!(RwLock::new(0u32));
+    let a_lock = a_lock.into_ref();
     let guard1 = a_lock.try_lock_exclusive()
         .expect("uncontended lock-exclusive should succeed");
 
@@ -39,7 +41,8 @@ pub async fn test_uncontended_try_lock_exclusive() {
 }
 
 pub async fn test_blocking() {
-    create_rwlock!(a_lock, 0u32);
+    let a_lock = pin!(RwLock::new(0u32));
+    let a_lock = a_lock.into_ref();
 
     let guard1 = a_lock.lock_shared().await;
     let guard2 = a_lock.lock_shared().await;
@@ -90,7 +93,8 @@ pub async fn test_blocking() {
 /// shared claims are always coalesced even if they were once separated by an
 /// exclusive claim, since-cancelled.
 pub async fn test_fairness() {
-    create_rwlock!(a_lock, 0u32);
+    let a_lock = pin!(RwLock::new(0u32));
+    let a_lock = a_lock.into_ref();
 
     // E1 S1 S2 E2 S3 S4 E3 S5
     //          ^--- will be removed

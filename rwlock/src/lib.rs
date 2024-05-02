@@ -36,12 +36,9 @@
 )]
 
 use core::cell::{Cell, UnsafeCell};
-use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
-use lilos::create_node_with_meta;
-use lilos::exec::noop_waker;
-use lilos::list::List;
+use lilos_list::{List, Meta};
 use lilos::util::CancelSafe;
 use pin_project::pin_project;
 use scopeguard::ScopeGuard;
@@ -74,19 +71,19 @@ use scopeguard::ScopeGuard;
 ///
 /// # Getting an `RwLock`
 ///
-/// The easiest way to obtain an `RwLock` is through the [`create_rwlock!`]
-/// macro:
+/// `RwLock` needs to be pinned to be useful, so you'll generally write:
 ///
 /// ```
-/// create_rwlock(my_lock, initial_data());
+/// let my_lock = pin!(RwLock::new(initial_data_here()));
+/// // Drop &mut:
+/// let my_lock = my_lock.into_ref();
 ///
 /// let guard = my_lock.lock_shared().await;
 /// guard.do_stuff();
 /// ```
 ///
-/// If you don't want to use the macro, you can also create one manually, though
-/// the process is slightly awkward because of the need to `Pin` the data
-/// structure. See the source code of `create_rwlock!` to get you started.
+/// There is also the [`create_rwlock!`] macro that wraps up those first two
+/// lines, if you prefer.
 ///
 ///
 /// # Using the guarded data
@@ -222,40 +219,22 @@ impl<T> RwLock<T> {
         })
     }
 
-    /// Returns an initialized but invalid `RwLock`.
+    /// Returns an `RwLock` containing `contents`.
     ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `RwLock`, see [`create_rwlock!`].
+    /// The result needs to be pinned to be useful, so you'll generally write:
     ///
-    /// # Safety
-    ///
-    /// The result is not safe to use or drop yet. You must move it to its final
-    /// resting place, pin it, and call [`RwLock::finish_init`].
-    pub unsafe fn new(contents: T) -> ManuallyDrop<Self> {
+    /// ```
+    /// let my_rwlock = pin!(RwLock::new(contents));
+    /// let my_rwlock = my_rwlock.into_ref();
+    /// ```
+    pub const fn new(contents: T) -> Self {
         // The Access value chosen here doesn't matter.
-        let list = unsafe { List::new_with_meta(Access::Exclusive) };
-        ManuallyDrop::new(Self {
+        Self {
             lock: LockImpl {
                 readers: Cell::new(0),
-                waiters: ManuallyDrop::into_inner(list),
+                waiters: List::new(),
             },
             contents: UnsafeCell::new(contents),
-        })
-    }
-
-    /// Finishes initializing a read-write lock, discharging obligations from
-    /// [`RwLock::new`].
-    ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `RwLock`, see [`create_rwlock!`].
-    ///
-    /// # Safety
-    ///
-    /// This is safe to call exactly once on the result of `new`, after it has
-    /// been moved to its final position and pinned.
-    pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        unsafe {
-            List::finish_init(this.project().lock.project().waiters);
         }
     }
 }
@@ -265,7 +244,7 @@ impl<T> RwLock<T> {
 struct LockImpl {
     readers: Cell<isize>,
     #[pin]
-    waiters: List<(), Access>,
+    waiters: List<Meta<Access>>,
 }
 
 impl LockImpl {
@@ -279,10 +258,9 @@ impl LockImpl {
         // primitives, we have no need to register a cleanup action here,
         // because simply getting evicted from the wait list doesn't grant us
         // any access we'd need to give up -- that's handled below.
-        create_node_with_meta!(node, (), Access::Shared, noop_waker());
         self.project_ref()
             .waiters
-            .insert_and_wait_with_cleanup(node, || {
+            .join_with_cleanup(Meta(Access::Shared), || {
                 // The release routine advances the reader count _for us_ so
                 // that our access is assured even if we're not promptly polled.
                 // This means we have to reverse that change if we're cancelled.
@@ -321,8 +299,8 @@ impl LockImpl {
             // Wake any number of pending _shared_ users and record their
             // count, to keep them from getting scooped before they're
             // polled.
-            self.project_ref().waiters.wake_while(|n| {
-                if n.meta() == &Access::Shared {
+            self.project_ref().waiters.wake_while(|Meta(access)| {
+                if access == &Access::Shared {
                     let r = self.readers.get();
                     // We do not want to overflow the reader count during this
                     // wake-frenzy.
@@ -360,11 +338,9 @@ impl LockImpl {
             self.process_exclusive_cancellation();
         }));
 
-        create_node_with_meta!(node, (), Access::Exclusive, noop_waker());
-
         self.project_ref()
             .waiters
-            .insert_and_wait_with_cleanup(node, || {
+            .join_with_cleanup(Meta(Access::Exclusive), || {
                 // Disarm the trap.
                 ScopeGuard::into_inner(trap.take().unwrap());
                 // The release routine decrements the reader count _for us_ so
@@ -417,15 +393,15 @@ impl LockImpl {
 
             // Wake a _single_ exclusive lock attempt if one exists at the head
             // of the queue.
-            if p.waiters.wake_one_if(|n| n.meta() == &Access::Exclusive) {
+            if p.waiters.wake_head_if(|Meta(access)| access == &Access::Exclusive) {
                 // Record it, to keep it from getting scooped.
                 self.readers.set(-1);
             } else {
                 // Wake any number of pending _shared_ users and record their
                 // count, to keep them from getting scooped before they're
                 // polled.
-                p.waiters.wake_while(|n| {
-                    if n.meta() == &Access::Shared {
+                p.waiters.wake_while(|Meta(access)| {
+                    if access == &Access::Shared {
                         let r = self.readers.get();
                         // We do not want to overflow the reader count during this
                         // wake-frenzy.
@@ -461,7 +437,7 @@ impl LockImpl {
                 if self
                     .project_ref()
                     .waiters
-                    .wake_one_if(|n| n.meta() == &Access::Exclusive)
+                    .wake_head_if(|Meta(access)| access == &Access::Exclusive)
                 {
                     // Found one. Record its count to ensure that nobody scoops it
                     // before it gets polled.
@@ -474,7 +450,7 @@ impl LockImpl {
                 if self
                     .project_ref()
                     .waiters
-                    .wake_one_if(|n| n.meta() == &Access::Shared)
+                    .wake_head_if(|Meta(access)| access == &Access::Shared)
                 {
                     // Set the count back to saturated.
                     self.readers.set(isize::MAX);
@@ -843,27 +819,7 @@ impl<T> DerefMut for ExclusiveGuard<'_, T> {
 #[macro_export]
 macro_rules! create_rwlock {
     ($var:ident, $contents:expr) => {
-        // Safety: we discharge the obligations of `new` by pinning and
-        // finishing the value, below, before it can be dropped.
-        let mut $var = core::pin::pin!({
-            // Evaluate $contents eagerly, before defining any locals, and
-            // outside of any unsafe block. This ensures that the caller will
-            // get a warning if they do something unsafe in the $contents
-            // expression, while also ensuring that any existing variable called
-            // __contents is available for use here.
-            let __contents = $contents;
-            unsafe {
-                core::mem::ManuallyDrop::into_inner($crate::RwLock::new(
-                    __contents,
-                ))
-            }
-        });
-        // Safety: the value has not been operated on since `new` except for
-        // being pinned, so this operation causes it to become valid and safe.
-        unsafe {
-            $crate::RwLock::finish_init($var.as_mut());
-        }
-        // Drop mutability.
-        let $var = $var.as_ref();
+        let $var = core::pin::pin!($crate::RwLock::new($contents));
+        let $var = $var.into_ref();
     };
 }

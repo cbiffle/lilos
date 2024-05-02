@@ -20,12 +20,10 @@
     unused_qualifications
 )]
 
-use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use lilos_list::List;
 use lilos::atomic::AtomicExt;
-use lilos::create_node;
-use lilos::list::List;
 use pin_project::pin_project;
 
 /// A [counting semaphore].
@@ -66,24 +64,27 @@ use pin_project::pin_project;
 ///
 /// # Getting a semaphore
 ///
-/// Like `lilos`'s `Mutex` type, `Semaphore` must be pinned to be useful.
-/// This crate includes a convenience macro, [`create_semaphore!`], to make
-/// this easy. Like `create_mutex!`, `create_semaphore!` makes a named
-/// variable as if you had used `let`, but does it internally to simplify
-/// some stuff.
+/// Like `lilos`'s `Mutex` type, `Semaphore` must be pinned to be useful. So
+/// generally you'll wind up writing something like this:
 ///
 /// ```
-/// // Use the macro to easily create a semaphore named `scooters`:
-/// lilos_semaphore::create_semaphore!(scooters, 5);
+/// let scooters = pin!(Semaphore::new(5));
+/// // Drop &mut:
+/// let scooters = scooters.into_ref();
 ///
 /// // Check out one scooter from the pool.
 /// scooters.acquire().await;
 /// ```
 ///
-/// Alternatively, if you want to avoid macros that hide the details from
-/// you, you can create one by hand using the same two-step initialization
-/// protocol as `Mutex`. See the source code for `create_semaphore!` for a
-/// working example of how to do it.
+/// This crate includes a convenience macro, [`create_semaphore!`], that
+/// basically just wraps up the first two lines:
+///
+/// ```
+/// lilos_semaphore::create_semaphore!(scooters, 5);
+///
+/// // Check out one scooter from the pool.
+/// scooters.acquire().await;
+/// ```
 ///
 ///
 /// # Fairness
@@ -124,10 +125,9 @@ impl Semaphore {
         }
 
         // Add ourselves to the wait list...
-        create_node!(node, ());
         self.project_ref()
             .waiters
-            .insert_and_wait_with_cleanup(node, || {
+            .join_with_cleanup((), || {
                 // This is called when we've been detached from the wait
                 // list, which means a permit was transferred to us, but
                 // we haven't been polled -- and won't ever be polled,
@@ -206,36 +206,20 @@ impl Semaphore {
         }
     }
 
-    /// Returns an initialized but invalid `Semaphore`.
+    /// Returns an `Semaphore` initialized with `permits` permits.
     ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `Semaphore`, see [`create_semaphore!`].
+    /// The result needs to be pinned to be useful, so you'll usually write:
     ///
-    /// # Safety
+    /// ```
+    /// let semaphore = pin!(Semaphore::new(permit_count));
+    /// let semaphore = semaphore.into_ref();
+    /// ```
     ///
-    /// The result is not safe to use or drop yet. You must move it to its final
-    /// resting place, pin it, and call [`Semaphore::finish_init`].
-    pub unsafe fn new(permits: usize) -> ManuallyDrop<Self> {
-        let list = unsafe { List::new() };
-        ManuallyDrop::new(Semaphore {
+    /// See also the convenience macro [`create_semaphore!`].
+    pub const fn new(permits: usize) -> Self {
+        Semaphore {
             available: AtomicUsize::new(permits),
-            waiters: ManuallyDrop::into_inner(list),
-        })
-    }
-
-    /// Finishes initializing a semaphore, discharging obligations from
-    /// [`Semaphore::new`].
-    ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `Semaphore`, see [`create_semaphore!`].
-    ///
-    /// # Safety
-    ///
-    /// This is safe to call exactly once on the result of `new`, after it has
-    /// been moved to its final position and pinned.
-    pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        unsafe {
-            List::finish_init(this.project().waiters);
+            waiters: List::new(),
         }
     }
 }
@@ -257,28 +241,8 @@ pub struct NoPermits;
 #[macro_export]
 macro_rules! create_semaphore {
     ($var:ident, $permits:expr) => {
-        // Safety: we discharge the obligations of `new` by pinning and
-        // finishing the value, below, before it can be dropped.
-        let mut $var = core::pin::pin!({
-            // Evaluate $permits eagerly, before defining any locals, and
-            // outside of any unsafe block. This ensures that the caller will
-            // get a warning if they do something unsafe in the $permits
-            // expression, while also ensuring that any existing variable called
-            // __permits is available for use here.
-            let __permits = $permits;
-            unsafe {
-                core::mem::ManuallyDrop::into_inner($crate::Semaphore::new(
-                    __permits,
-                ))
-            }
-        });
-        // Safety: the value has not been operated on since `new` except for
-        // being pinned, so this operation causes it to become valid and safe.
-        unsafe {
-            $crate::Semaphore::finish_init($var.as_mut());
-        }
-        // Drop mutability.
-        let $var = $var.as_ref();
+        let $var = core::pin::pin!($crate::Semaphore::new($permits));
+        let $var = $var.into_ref();
     };
 }
 
@@ -293,9 +257,6 @@ macro_rules! create_semaphore {
 /// `ScopedSemaphore`. This makes the API closer to a traditional Rust mutex
 /// API, but only works in cases where the permits are being acquired and
 /// released in the same context.
-///
-/// The easy way to create a `ScopedSemaphore` is with the
-/// [`create_scoped_semaphore!`] macro.
 ///
 /// See [`Semaphore`] for background and information about fairness.
 ///
@@ -358,34 +319,19 @@ impl ScopedSemaphore {
         self.project_ref().inner.release_multiple(n);
     }
 
-    /// Returns an initialized but invalid `ScopedSemaphore`.
+    /// Returns a `ScopedSemaphore` that initially contains `permits` permits.
     ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `ScopedSemaphore`, see [`create_scoped_semaphore!`].
+    /// The result needs to be pinned to be useful, so you'll usually write:
     ///
-    /// # Safety
+    /// ```
+    /// let semaphore = pin!(ScopedSemaphore::new(permit_count));
+    /// let semaphore = semaphore.into_ref();
+    /// ```
     ///
-    /// The result is not safe to use or drop yet. You must move it to its final
-    /// resting place, pin it, and call [`ScopedSemaphore::finish_init`].
-    pub unsafe fn new(permits: usize) -> ManuallyDrop<Self> {
-        ManuallyDrop::new(Self {
-            inner: ManuallyDrop::into_inner(unsafe { Semaphore::new(permits) }),
-        })
-    }
-
-    /// Finishes initializing a semaphore, discharging obligations from
-    /// [`ScopedSemaphore::new`].
-    ///
-    /// You'll rarely use this function directly. For a more convenient way of
-    /// creating a `ScopedSemaphore`, see [`create_scoped_semaphore!`].
-    ///
-    /// # Safety
-    ///
-    /// This is safe to call exactly once on the result of `new`, after it has
-    /// been moved to its final position and pinned.
-    pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        unsafe {
-            Semaphore::finish_init(this.project().inner);
+    /// See also the convenience macro [`create_scoped_semaphore!`].
+    pub const fn new(permits: usize) -> Self {
+        Self {
+            inner: Semaphore::new(permits),
         }
     }
 }
@@ -419,27 +365,7 @@ impl Drop for Permit<'_> {
 #[macro_export]
 macro_rules! create_scoped_semaphore {
     ($var:ident, $permits:expr) => {
-        // Safety: we discharge the obligations of `new` by pinning and
-        // finishing the value, below, before it can be dropped.
-        let mut $var = core::pin::pin!({
-            // Evaluate $permits eagerly, before defining any locals, and
-            // outside of any unsafe block. This ensures that the caller will
-            // get a warning if they do something unsafe in the $permits
-            // expression, while also ensuring that any existing variable called
-            // __permits is available for use here.
-            let __permits = $permits;
-            unsafe {
-                core::mem::ManuallyDrop::into_inner($crate::ScopedSemaphore::new(
-                    __permits,
-                ))
-            }
-        });
-        // Safety: the value has not been operated on since `new` except for
-        // being pinned, so this operation causes it to become valid and safe.
-        unsafe {
-            $crate::ScopedSemaphore::finish_init($var.as_mut());
-        }
-        // Drop mutability.
-        let $var = $var.as_ref();
+        let $var = core::pin::pin!($crate::ScopedSemaphore::new($permits));
+        let $var = $var.into_ref();
     };
 }

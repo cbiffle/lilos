@@ -1,6 +1,6 @@
 [package]
 name = "lilos-semaphore"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 description = "A counting semaphore for use with lilos."
 keywords = ["async", "embedded", "realtime", "os"]
@@ -16,6 +16,7 @@ rust-version.workspace = true
 default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
+lilos-list.workspace = true
 lilos.workspace = true
 pin-project.workspace = true
 

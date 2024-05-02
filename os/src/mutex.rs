@@ -1,11 +1,21 @@
 //! Fair mutex that must be pinned.
 //!
-//! This implements a mutex (a kind of lock) guarding a value of type `T`.
-//! Creating a `Mutex` by hand is somewhat involved (see [`Mutex::new`] for
-//! details), so there's a convenience macro,
-//! [`create_mutex!`][crate::create_mutex].
+//! This implements a mutex (a kind of lock) guarding a value of type `T`. This
+//! mutex must be pinned before it can be used, so the process of creating a
+//! mutex generally looks like this:
 //!
-//! If you don't want to store a value inside the mutex, use a `Mutex<()>`.
+//! ```
+//! let my_mutex = pin!(Mutex::create(contents));
+//! // drop mutability to share with other code:
+//! let my_mutex = my_mutex.into_ref();
+//! ```
+//!
+//! There's also a convenience macro, [`create_mutex!`][crate::create_mutex].
+//!
+//! If you don't want to store a value inside the mutex, use a `Mutex<()>`,
+//! though note that this is a weird use case that might be better served by a
+//! semaphore.
+//!
 //!
 //! # `lock` vs `lock_assuming_cancel_safe`
 //!
@@ -63,22 +73,16 @@
 //! to unlock the mutex. (An OS task may contain many processes.) This makes
 //! unlocking more expensive, but means that the unlock operation is *fair*,
 //! preventing starvation of contending tasks.
-//!
-//! However, in exchange for this property, mutexes must be pinned, which makes
-//! using them slightly more awkward. See the macros
-//! [`create_mutex!`][crate::create_mutex] and
-//! [`create_static_mutex!`][crate::create_static_mutex] for convenient
-//! shorthand (or as examples of how to do it yourself).
 
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use lilos_list::List;
 use pin_project::pin_project;
 
 use crate::atomic::AtomicArithExt;
-use crate::list::List;
 pub use crate::util::CancelSafe;
 
 /// Holds a `T` that can be accessed from multiple concurrent futures/tasks,
@@ -105,35 +109,13 @@ pub struct Mutex<T: ?Sized> {
 }
 
 impl<T> Mutex<T> {
-    /// Returns an initialized but invalid mutex.
-    ///
-    /// # Safety
-    ///
-    /// The result is not safe to use or drop yet. You must move it to its final
-    /// resting place, pin it, and call `finish_init`.
-    pub unsafe fn new(contents: T) -> ManuallyDrop<Self> {
-        // Safety: List::new is unsafe because it produces a value that cannot
-        // yet be dropped. We discharge this obligation by unwrapping it and
-        // moving it into a _new_ ManuallyDrop, kicking the can down the road.
-        let list = unsafe { List::new() };
-        ManuallyDrop::new(Mutex {
+    /// Returns a mutex containing `contents`. The result must be pinned before
+    /// it's good for much.
+    pub const fn create(contents: T) -> Self {
+        Self {
             state: AtomicUsize::new(0),
-            waiters: ManuallyDrop::into_inner(list),
+            waiters: List::new(),
             value: UnsafeCell::new(contents),
-        })
-    }
-
-    /// Finishes initializing a mutex, discharging obligations from `new`.
-    ///
-    /// # Safety
-    ///
-    /// This is safe to call exactly once on the result of `new`, after it has
-    /// been moved to its final position and pinned.
-    pub unsafe fn finish_init(this: Pin<&mut Self>) {
-        // Safety: List::finish_init is safe if our _own_ safety contract is
-        // upheld.
-        unsafe {
-            List::finish_init(this.project().waiters);
         }
     }
 
@@ -221,12 +203,9 @@ impl<T> Mutex<T> {
             return perm;
         }
 
-        // We'd like to put our name on the wait list, please.
-        create_node!(wait_node, ());
-
         let p = self.project_ref();
-        p.waiters.insert_and_wait_with_cleanup(
-            wait_node.as_mut(),
+        p.waiters.join_with_cleanup(
+            (),
             || {
                 // Safety: if we are evicted from the wait list, which is
                 // the only time this cleanup routine is called, then we own
@@ -262,6 +241,29 @@ impl<T> Mutex<T> {
         // Safety: as long as our contract is upheld, this won't produce a
         // reference aliasing a `&mut` so we should be fine.
         unsafe { &*ptr }
+    }
+}
+
+#[deprecated(since = "1.2.0", note = "old-style initialization is complicated, see Mutex::create")]
+impl<T> Mutex<T> {
+    /// Returns an initialized but invalid mutex.
+    ///
+    /// # Safety
+    ///
+    /// The result is not safe to use or drop yet. You must move it to its final
+    /// resting place, pin it, and call `finish_init`.
+    pub unsafe fn new(contents: T) -> ManuallyDrop<Self> {
+        ManuallyDrop::new(Self::create(contents))
+    }
+
+    /// Finishes initializing a mutex, discharging obligations from `new`.
+    ///
+    /// # Safety
+    ///
+    /// This is safe to call exactly once on the result of `new`, after it has
+    /// been moved to its final position and pinned.
+    pub unsafe fn finish_init(_this: Pin<&mut Self>) {
+        // This operation no longer does anything.
     }
 }
 
@@ -375,11 +377,9 @@ impl<T> Mutex<CancelSafe<T>> {
         }
 
         // We'd like to put our name on the wait list, please.
-        create_node!(wait_node, ());
-
         let p = self.project_ref();
-        p.waiters.insert_and_wait_with_cleanup(
-            wait_node.as_mut(),
+        p.waiters.join_with_cleanup(
+            (),
             || {
                 // Safety: if we are evicted from the wait list, which is
                 // the only time this cleanup routine is called, then we own
@@ -418,19 +418,8 @@ impl<T> Mutex<CancelSafe<T>> {
 #[macro_export]
 macro_rules! create_mutex {
     ($var:ident, $contents:expr) => {
-        let $var = $contents;
-        // Safety: we discharge the obligations of `new` by pinning and
-        // finishing the value, below, before it can be dropped.
-        let mut $var = core::pin::pin!(unsafe {
-            core::mem::ManuallyDrop::into_inner($crate::mutex::Mutex::new($var))
-        });
-        // Safety: the value has not been operated on since `new` except for
-        // being pinned, so this operation causes it to become valid and safe.
-        unsafe {
-            $crate::mutex::Mutex::finish_init($var.as_mut());
-        }
-        // Drop mutability.
-        let $var = $var.as_ref();
+        let $var = core::pin::pin!($crate::mutex::Mutex::create($contents));
+        let $var = $var.into_ref();
     };
 }
 
@@ -479,25 +468,17 @@ macro_rules! create_static_mutex {
         // (which we'll do in a sec)
         unsafe {
             __m.write(
-                ManuallyDrop::into_inner($crate::mutex::Mutex::new($contents))
+                $crate::mutex::Mutex::create($contents)
             );
         }
 
         // Safety: this is the only mutable reference to M that will ever exist
         // in the program, so we can pin it as long as we don't touch M again
         // below (which we do not).
-        let mut m: Pin<&'static mut _> = unsafe {
-            Pin::new_unchecked(__m.assume_init_mut())
+        let m: Pin<&'static _> = unsafe {
+            Pin::new_unchecked(__m.assume_init_ref())
         };
-
-        // Safety: the value has not been operated on since `new` except for
-        // being pinned, so this operation causes it to become valid and safe.
-        unsafe {
-            $crate::mutex::Mutex::finish_init(m.as_mut());
-        }
-
-        // Drop mutability and return value.
-        m.into_ref()
+        m
     }};
 }
 
