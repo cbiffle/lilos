@@ -20,6 +20,12 @@ jobs:
           path: |
             target/thumbv7m-none-eabi/debug/lilos-testsuite-lm3s6965
 
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./doc-all.sh
+
   test_qemu:
     needs: build
     runs-on: ubuntu-latest
