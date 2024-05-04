@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 0 * * 0'  # Ensure job runs weekly to test nightly/beta/stable
 
 env:
   CARGO_TERM_COLOR: always
