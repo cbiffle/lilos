@@ -1,4 +1,7 @@
-//! Doubly-linked intrusive lists for scheduling and waking.
+//! Doubly-linked intrusive lists for scheduling and waking (old version).
+//!
+//! **Please use the `lilos_list` crate instead. It's better in literally every
+//! way.**
 //!
 //! A [`List<T>`][List] keeps track of nodes (of type [`Node<T>`][Node]) that
 //! each contain some value `T`. The list is kept in *sorted* order by comparing
