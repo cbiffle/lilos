@@ -17,6 +17,8 @@ mod handoff;
 mod semaphore;
 #[cfg(feature = "rwlock")]
 mod rwlock;
+#[cfg(feature = "watch")]
+mod watch;
 
 use core::convert::Infallible;
 use core::pin::pin;
@@ -162,6 +164,11 @@ async fn task_coordinator() -> Infallible {
             rwlock::test_blocking,
             #[cfg(feature = "rwlock")]
             rwlock::test_fairness,
+
+            #[cfg(feature = "watch")]
+            watch::test_receive_only,
+            #[cfg(feature = "watch")]
+            watch::test_send_receive,
         }
     };
 

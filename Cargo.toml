@@ -26,6 +26,7 @@ lilos-testsuite = { path = "testsuite" }
 lilos-handoff = { path = "extra/handoff" }
 lilos-semaphore = { path = "extra/semaphore" }
 lilos-rwlock = { path = "extra/rwlock" }
+lilos-watch = { path = "extra/watch" }
 
 # External
 cfg-if = "1.0.0"

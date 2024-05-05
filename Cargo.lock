@@ -301,6 +301,7 @@ dependencies = [
  "lilos-list",
  "lilos-rwlock",
  "lilos-semaphore",
+ "lilos-watch",
  "panic-semihosting",
 ]
 
@@ -342,6 +343,13 @@ dependencies = [
  "cortex-m-rt",
  "lilos-testsuite",
  "panic-halt",
+]
+
+[[package]]
+name = "lilos-watch"
+version = "0.1.0"
+dependencies = [
+ "lilos",
 ]
 
 [[package]]
