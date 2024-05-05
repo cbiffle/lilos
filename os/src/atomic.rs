@@ -80,7 +80,7 @@ macro_rules! impl_atomic_polyfills {
         impl<$($param)?> private::Sealed for $t {}
 
         // Native version
-        #[cfg(feature = "has-native-rmw")]
+        #[cfg(lilos_has_native_rmw)]
         impl<$($param)?> AtomicExt for $t {
             type Value = $v;
 
@@ -113,7 +113,7 @@ macro_rules! impl_atomic_polyfills {
         }
 
         // Non-native version
-        #[cfg(not(feature = "has-native-rmw"))]
+        #[cfg(not(lilos_has_native_rmw))]
         impl<$($param)?> AtomicExt for $t {
             type Value = $v;
         
@@ -186,7 +186,7 @@ impl_atomic_polyfills!(AtomicPtr<T>, *mut T, T);
 macro_rules! impl_atomic_arith_polyfills {
     ($t:ty $(, $param:ident)?) => {
         // Native version
-        #[cfg(feature = "has-native-rmw")]
+        #[cfg(lilos_has_native_rmw)]
         impl<$($param)?> AtomicArithExt for $t {
             fn fetch_add_polyfill(
                 &self,
@@ -214,7 +214,7 @@ macro_rules! impl_atomic_arith_polyfills {
         }
 
         // Non-native version
-        #[cfg(not(feature = "has-native-rmw"))]
+        #[cfg(not(lilos_has_native_rmw))]
         impl<$($param)?> AtomicArithExt for $t {
             fn fetch_add_polyfill(
                 &self,
@@ -262,7 +262,7 @@ impl_atomic_arith_polyfills!(core::sync::atomic::AtomicIsize);
 impl_atomic_arith_polyfills!(AtomicUsize);
 impl_atomic_arith_polyfills!(AtomicU32);
 
-#[cfg(not(feature = "has-native-rmw"))]
+#[cfg(not(lilos_has_native_rmw))]
 #[inline(always)]
 fn rmw_ordering(o: Ordering) -> (Ordering, Ordering) {
     match o {

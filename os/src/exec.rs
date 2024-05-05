@@ -309,7 +309,7 @@ pub enum Interrupts {
     /// adjust this priority in the NVIC.)
     ///
     /// This is not available on ARMv6-M, which lacks the `BASEPRI` feature.
-    #[cfg(feature = "has-basepri")]
+    #[cfg(lilos_has_basepri)]
     Filtered(u8),
 }
 
@@ -332,7 +332,7 @@ impl Interrupts {
 
                 r
             }
-            #[cfg(feature = "has-basepri")]
+            #[cfg(lilos_has_basepri)]
             Interrupts::Filtered(priority) => {
                 let prev = cortex_m::register::basepri::read();
                 cortex_m::register::basepri_max::write(priority);
