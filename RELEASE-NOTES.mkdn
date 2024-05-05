@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 1.2.0 (in progress)
+## Version 1.2.0
 
 Internal changes to data structures mean the OS minimum RAM requirement is down
 by 1/3 (from 60 bytes to 40), and programs I've tested are at least 100 bytes
@@ -15,7 +15,7 @@ smaller in flash.
   - Uses of the old `List` type should use the new one from `lilos-list`.
   - Instead of using macros to create a list, write: `pin!(List::new())`.
   - The `Node` type is now private. Instead, the "contents" field that used to
-    be passed to `create_node!` is now a parameter to the `List::wait` function.
+    be passed to `create_node!` is now a parameter to the `List::join` function.
 
 - Two-phase init of `Mutex` is now deprecated. You can now just write
   `pin!(Mutex::create(something))`. (It's `create` and not `new` because I'm
@@ -37,13 +37,13 @@ smaller in flash.
 
 ### Internal improvements
 
-- All internal use of lists has been rewritten to use `waitlist`.
+- All internal use of lists has been rewritten to use `lilos-list`.
 
 - All code using any kind of lists, particularly timer lists, should now be
   slightly smaller.
 
 - Removed an internal mostly-unused `Waker` implementation, reducing the base
-  flash requirement of the OS for applications that use the new `waitlist`
+  flash requirement of the OS for applications that use the new `lilos-list`
   module.
 
 - `spsc` now uses `get_unchecked` in a couple of places to avoid generating
