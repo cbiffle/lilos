@@ -1,11 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "list",
+    "extra/*",
     "os",
-    "handoff",
-    "semaphore",
-    "rwlock",
     "examples/*/*",
     "testsuite",
     "testsuite/stm32f3",
@@ -24,11 +21,11 @@ rust-version = "1.69"
 [workspace.dependencies]
 # Internal
 lilos = { path = "os", version = "1.1.0", default-features = false }
-lilos-list = { path = "list", version = "0.1.0" }
+lilos-list = { path = "extra/list", version = "0.1.0" }
 lilos-testsuite = { path = "testsuite" }
-lilos-handoff = { path = "handoff" }
-lilos-semaphore = { path = "semaphore" }
-lilos-rwlock = { path = "rwlock" }
+lilos-handoff = { path = "extra/handoff" }
+lilos-semaphore = { path = "extra/semaphore" }
+lilos-rwlock = { path = "extra/rwlock" }
 
 # External
 cfg-if = "1.0.0"

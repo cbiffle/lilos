@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-DIRS="os list handoff semaphore rwlock"
+DIRS="os extra/*"
 
 for d in $DIRS; do
     echo "---- testing doc generation in $d"
