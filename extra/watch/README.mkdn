@@ -1,0 +1,4 @@
+# Cheap value sharing and change notification for `lilos`
+
+This crate provides the `Watch<T>` data structure for sharing data with update
+notifications. See the crate docs for details.

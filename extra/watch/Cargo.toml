@@ -1,10 +1,19 @@
 [package]
 name = "lilos-watch"
 version = "0.1.0"
+authors = ["Cliff L. Biffle <code@cliffle.com>"]
+description = "Cheap sharing with change notification for lilos"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[package.metadata.docs.rs]
+default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
 lilos.workspace = true
