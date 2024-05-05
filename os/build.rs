@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 fn main() {
+    println!(r#"cargo:rustc-check-cfg=cfg(feature, values("has-basepri", "has-native-rmw"))"#);
     match std::env::var("TARGET").unwrap().as_str() {
         "thumbv7m-none-eabi" | "thumbv7em-none-eabi" | "thumbv7em-none-eabihf" => {
             // Turn on BASEPRI support for interrupt priority filtering.
