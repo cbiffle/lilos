@@ -143,6 +143,8 @@ fix.
 
     - This renaming breaks compatibility with older versions of the debugger,
       so, update.
+    - I removed some rarely-used and hard-to-make-correct corners of the API,
+      such as `every_until`. There is no direct replacement.
 
 - Renamed `spsc` and `handoff` split handle types: `Push` is now `Pusher`, `Pop`
   is now `Popper`. (Because their old names sounded like what you'd name the
