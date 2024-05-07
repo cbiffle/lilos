@@ -19,6 +19,7 @@ default-target = "thumbv7em-none-eabihf"
 lilos-list.workspace = true
 lilos.workspace = true
 pin-project.workspace = true
+portable-atomic = { version = "1.6.0", default-features = false }
 
 [lib]
 test = false

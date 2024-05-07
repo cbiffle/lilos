@@ -84,15 +84,13 @@
 use core::future::Future;
 use core::ops::{Add, AddAssign};
 use core::pin::Pin;
-use core::sync::atomic::{AtomicU32, Ordering};
+use portable_atomic::{AtomicU32, Ordering};
 use core::task::{Context, Poll};
 use core::time::Duration;
 
 use cortex_m::peripheral::{syst::SystClkSource, SYST};
 use cortex_m_rt::exception;
 use pin_project::pin_project;
-
-use crate::atomic::AtomicArithExt;
 
 /// Bottom 32 bits of the tick counter. Updated by ISR.
 static TICK: AtomicU32 = AtomicU32::new(0);
@@ -480,7 +478,7 @@ impl PeriodicGate {
 #[doc(hidden)]
 #[exception]
 fn SysTick() {
-    if TICK.fetch_add_polyfill(1, Ordering::Release) == u32::MAX {
-        EPOCH.fetch_add_polyfill(1, Ordering::Release);
+    if TICK.fetch_add(1, Ordering::Release) == u32::MAX {
+        EPOCH.fetch_add(1, Ordering::Release);
     }
 }

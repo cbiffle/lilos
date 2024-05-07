@@ -5,9 +5,8 @@
 use core::cell::Cell;
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
-use core::sync::atomic::{AtomicBool, Ordering};
+use portable_atomic::{AtomicBool, Ordering};
 
-use lilos::atomic::AtomicExt;
 use lilos::spsc::{Popper, Pusher, Queue};
 
 /// The easy case: a queue and its storage on the stack.
@@ -25,7 +24,7 @@ pub async fn test_stack() {
 /// buffer below.
 pub async fn test_static_storage() {
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
+    assert!(!ONCE.swap(true, Ordering::SeqCst));
 
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
     let mut q = Queue::new(unsafe { &mut *addr_of_mut!(STORAGE) });
@@ -40,7 +39,7 @@ pub async fn test_static_storage() {
 /// buffer below.
 pub async fn test_static_everything() {
     static ONCE: AtomicBool = AtomicBool::new(false);
-    assert!(!ONCE.swap_polyfill(true, Ordering::SeqCst));
+    assert!(!ONCE.swap(true, Ordering::SeqCst));
 
     static mut STORAGE: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
     static mut Q: MaybeUninit<Queue<u8>> = MaybeUninit::uninit();

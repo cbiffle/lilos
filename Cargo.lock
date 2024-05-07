@@ -31,6 +31,7 @@ checksum = "8ec610d8f49840a5b376c69663b6369e71f4b34484b9b2eb29fb918d92516cb9"
 dependencies = [
  "bare-metal",
  "bitfield",
+ "critical-section",
  "embedded-hal",
  "volatile-register",
 ]
@@ -72,6 +73,12 @@ checksum = "c01a5e1f881f6fb6099a7bdf949e946719fd4f1fefa56264890574febf0eb6d0"
 dependencies = [
  "debug-helper",
 ]
+
+[[package]]
+name = "critical-section"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7059fff8937831a9ae6f0fe4d658ffabf58f2ca96aa9dec1c889f936f705f216"
 
 [[package]]
 name = "debug-helper"
@@ -171,6 +178,7 @@ dependencies = [
  "cortex-m-rt",
  "lilos-list",
  "pin-project",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -286,6 +294,7 @@ dependencies = [
  "lilos",
  "lilos-list",
  "pin-project",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -303,6 +312,7 @@ dependencies = [
  "lilos-semaphore",
  "lilos-watch",
  "panic-semihosting",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -414,6 +424,15 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "portable-atomic"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7170ef9988bc169ba16dd36a7fa041e5c4cbeb6a35b76d4c03daded371eae7c0"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "proc-macro2"

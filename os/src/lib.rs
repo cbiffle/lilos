@@ -160,6 +160,7 @@ macro_rules! cheap_assert {
 }
 
 pub mod exec;
+#[deprecated(since = "1.3.0", note = "please use the portable-atomic crate")]
 pub mod atomic;
 pub mod util;
 
@@ -173,3 +174,6 @@ pub mod time;
 pub mod mutex;
 #[cfg(feature = "spsc")]
 pub mod spsc;
+
+#[doc(hidden)]
+pub use portable_atomic;

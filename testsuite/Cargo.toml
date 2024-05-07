@@ -32,6 +32,7 @@ lilos-rwlock = { workspace = true, optional = true }
 panic-semihosting.workspace = true
 lilos-list.workspace = true
 lilos-watch = { workspace = true, optional = true }
+portable-atomic = { version = "1.6.0", default-features = false }
 
 [lib]
 test = false

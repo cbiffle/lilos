@@ -25,9 +25,8 @@
 )]
 
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use portable_atomic::{AtomicUsize, Ordering};
 use lilos_list::List;
-use lilos::atomic::AtomicExt;
 use pin_project::pin_project;
 
 /// A [counting semaphore].
@@ -146,7 +145,7 @@ impl Semaphore {
     /// one is available immediately, or `Err` if they are all taken.
     pub fn try_acquire(&self) -> Result<(), NoPermits> {
         self.available
-            .fetch_update_polyfill(Ordering::Relaxed, Ordering::Relaxed, |a| {
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |a| {
                 a.checked_sub(1)
             })
             .map_err(|_| NoPermits)?;
@@ -199,7 +198,7 @@ impl Semaphore {
             // So the fact that the waiters list was found empty cannot change
             // during this loop.
             self.available
-                .fetch_update_polyfill(
+                .fetch_update(
                     Ordering::Relaxed,
                     Ordering::Relaxed,
                     // Note that this has a potential overflow on addition. This is
