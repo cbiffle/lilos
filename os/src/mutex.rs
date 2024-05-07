@@ -429,17 +429,17 @@ macro_rules! create_mutex {
 
 /// Convenience macro for creating a pinned mutex in static memory.
 ///
-/// This declares a local variable `ident` of type `Pin<&mut Mutex<T>>`, but
-/// which _points to_ a `Mutex<T>` in static memory. This helps to keep your
+/// This declares a local variable `ident` of type `Pin<&Mutex<T>>`, but which
+/// _points to_ a `Mutex<T>` in static memory. This helps to keep your
 /// application's memory usage transparent at build time, but it's slightly
 /// trickier to use than `create_mutex`, because it will only succeed _once_ in
 /// the life of your program: you cannot use a function containing
 /// `create_static_mutex` from several tasks to create several mutexes, because
 /// they would alias. If you need that, use `create_mutex`.
 ///
-/// Unlike `create_mutex`, `create_static_mutex` returns its `Pin<&mut
-/// Mutex<T>>` and can just be assigned to a variable. However, it does require
-/// that you tell it the type explicitly:
+/// Unlike `create_mutex`, `create_static_mutex` returns its `Pin<&Mutex<T>>`
+/// and can just be assigned to a variable. However, it does require that you
+/// tell it the type explicitly:
 ///
 /// ```ignore
 /// let my_mutex = create_static_mutex!(usize, 42);
