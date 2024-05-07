@@ -399,7 +399,7 @@ impl<A, B> Future for TimeLimited<A, B>
 /// milliseconds, you would write:
 ///
 /// ```ignore
-/// let gate = PeriodicGate::from(Millis(30));
+/// let mut gate = PeriodicGate::from(Millis(30));
 /// loop {
 ///     f();
 ///     gate.next_time().await;
