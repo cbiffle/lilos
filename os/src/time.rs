@@ -417,7 +417,8 @@ impl<A, B> Future for TimeLimited<A, B>
 ///   one execution takes (say) 5 times longer than the chosen period, it will
 ///   frantically run 4 more just after it to "catch up." This attempts to
 ///   maintain a constant number of executions per unit time, but that might not
-///   be what you want.
+///   be what you want. (Note that you can _detect_ the "catch-up" behavior by
+///   calling [`PeriodicGate::is_lagging`].)
 ///
 /// - [`sleep_for`] can ensure a minimum delay _between_ operations, which is
 ///   different from `PeriodicGate`'s behavior.
@@ -458,6 +459,12 @@ impl PeriodicGate {
             interval,
             next: TickTime::now() + delay,
         }
+    }
+
+    /// Checks if this gate is lagging behind because it isn't being called
+    /// often enough.
+    pub fn is_lagging(&self) -> bool {
+        self.next <= TickTime::now()
     }
 
     /// Returns a future that will resolve when it's time to execute again.
