@@ -7,17 +7,18 @@
 //! There's a small family of related types in this here crate:
 //!
 //! - [`RwLock<T>`] contains some data of type `T` and allows either multiple
-//! shared references, or one exclusive reference, but not both simultaneously.
+//!   shared references, or one exclusive reference, but not both
+//!   simultaneously.
 //! - [`SharedGuard<T>`] represents a shared reference to the data guarded by a
-//! `RwLock` and allows access to it (via `Deref`).
+//!   `RwLock` and allows access to it (via `Deref`).
 //! - [`ActionPermit<T>`] represents an _exclusive_ reference to the data
-//! guarded by a `RwLock`, but once you start doing something that can modify
-//! the data, you can't `await`, to ensure that cancellation won't corrupt the
-//! guarded data.
+//!   guarded by a `RwLock`, but once you start doing something that can modify
+//!   the data, you can't `await`, to ensure that cancellation won't corrupt the
+//!   guarded data.
 //! - [`ExclusiveGuard<T>`] allows arbitrary exclusive access, even across
-//! `await` points, but you have to promise the library that the data is
-//! inherently cancel-safe (by using the [`lilos::util::CancelSafe`] marker
-//! type).
+//!   `await` points, but you have to promise the library that the data is
+//!   inherently cancel-safe (by using the [`lilos::util::CancelSafe`] marker
+//!   type).
 //!
 //! See the docs on [`RwLock`] for more details.
 //!

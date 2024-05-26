@@ -66,14 +66,14 @@ use pin_project::{pin_project, pinned_drop};
 /// The list only supports the following operations:
 ///
 /// - [`join`][List::join], which produces a `Future` that will register a new
-/// node on the list and resolve when it has been triggered by `wake_*`.
+///   node on the list and resolve when it has been triggered by `wake_*`.
 ///
 /// - [`wake_head_if`][List::wake_head_if], which looks at the head node of the
-/// list and triggers its owning `Future` if it passes a predicate,
+///   list and triggers its owning `Future` if it passes a predicate,
 ///
 /// - And a handful of other wake-related operations that can be expressed in
-/// terms of `wake_head_if`: [`wake_while`][List::wake_while],
-/// [`wake_all`][List::wake_all], [`wake_one`][List::wake_one].
+///   terms of `wake_head_if`: [`wake_while`][List::wake_while],
+///   [`wake_all`][List::wake_all], [`wake_one`][List::wake_one].
 ///
 /// In particular, there is no way for the owner of the list to get direct
 /// access to any of the nodes in the list -- only act upon them by waking them.
@@ -112,17 +112,17 @@ use pin_project::{pin_project, pinned_drop};
 /// that data structure:
 ///
 /// - Inserting in a sorted list takes time linear in the size of the list
-/// (`O(n)`).
+///   (`O(n)`).
 ///
 /// - Inserting in an unsorted list takes constant time (`O(1)`).
 ///
 /// - Waking the head node takes constant time (`O(1)`).
 ///
 /// - Waking a series of nodes takes time linear in the length of that sequence
-/// (`O(m)`).
+///   (`O(m)`).
 ///
 /// - Detaching an arbitrary node (by dropping its owning `Future`) takes
-/// constant time (`O(1)`).
+///   constant time (`O(1)`).
 #[derive(Default)]
 pub struct List<T> {
     /// Links to the head and tail of the list, if the list is non-empty, or

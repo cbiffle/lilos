@@ -52,18 +52,18 @@
 //! enabling/disabling portions of the system:
 //!
 //! - `systick` (on by default). Enables reliance on the ARM M-profile SysTick
-//! timer for portable timekeeping. Disabling makes the executor smaller at the
-//! cost of losing all `time` API. On platforms where the SysTick timer stops
-//! during sleep, such as Nordic nRF52, you may want to disable this feature and
-//! use a different timekeeping mechanism.
+//!   timer for portable timekeeping. Disabling makes the executor smaller at
+//!   the cost of losing all `time` API. On platforms where the SysTick timer
+//!   stops during sleep, such as Nordic nRF52, you may want to disable this
+//!   feature and use a different timekeeping mechanism.
 //!
 //! - `mutex` (on by default). Enables access to the [`mutex`] module for
-//! blocking access to shared data. Leaving this feature enabled has no cost if
-//! you're not actually using `mutex`.
+//!   blocking access to shared data. Leaving this feature enabled has no cost
+//!   if you're not actually using `mutex`.
 //!
 //! - `spsc` (on by default). Enables access to the [`spsc`] module for
-//! single-producer single-consumer inter-task queues. Leaving this feature
-//! enabled has no cost if you're not actually using `spsc`.
+//!   single-producer single-consumer inter-task queues. Leaving this feature
+//!   enabled has no cost if you're not actually using `spsc`.
 //!
 //!
 //! # Composition and dynamic behavior

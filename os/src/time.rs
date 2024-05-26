@@ -345,7 +345,7 @@ pub fn with_deadline<F>(deadline: TickTime, code: F) -> impl Future<Output = Opt
 /// Alters a future to impose a timeout on its completion.
 ///
 /// This is equivalent to [`with_deadline`] using a deadline of `TickTime::now()
-/// + timeout`. That is, the current time is captured when `with_timeout` is
+/// \+ timeout`. That is, the current time is captured when `with_timeout` is
 /// called (_not_ at first poll), the provided timeout is added, and that's used
 /// as the deadline for the returned future.
 ///

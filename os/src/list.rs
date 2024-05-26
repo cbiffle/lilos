@@ -30,14 +30,14 @@
 //! - Create a `List<YourTimestamp>`.
 //! 
 //! - To track a waiter in the list, create a `Node<YourTimestamp>` and pass it
-//! to [`List::insert_and_wait`]. The node will be inserted in timestamp order,
-//! after any existing nodes with the same timestamp. Note that you must `await`
-//! (or poll) the future produced by `insert_and_wait` for the node to actually
-//! join the list in its proper place.
+//!   to [`List::insert_and_wait`]. The node will be inserted in timestamp
+//!   order, after any existing nodes with the same timestamp. Note that you
+//!   must `await` (or poll) the future produced by `insert_and_wait` for the
+//!   node to actually join the list in its proper place.
 //!
 //! - At some future point, wake all nodes in a timestamp range by using either
-//! [`List::wake_while`] or, as a convenience for writing timers,
-//! [`List::wake_thru`].
+//!   [`List::wake_while`] or, as a convenience for writing timers,
+//!   [`List::wake_thru`].
 //!
 //!
 //! # Using as a wait queue
@@ -45,10 +45,10 @@
 //! - Create a `List<()>`.
 //!
 //! - To track a waiter in the list, create a `Node<()>` and pass it to
-//! [`List::insert_and_wait`]. The node will be inserted at the tail of the
-//! list. Note that you must `await` (or poll) the future produced by
-//! `insert_and_wait` for the node to actually join the list in its proper
-//! place.
+//!   [`List::insert_and_wait`]. The node will be inserted at the tail of the
+//!   list. Note that you must `await` (or poll) the future produced by
+//!   `insert_and_wait` for the node to actually join the list in its proper
+//!   place.
 //!
 //! - To wake one waiter, use [`List::wake_one`].
 //!
@@ -192,12 +192,12 @@ use crate::util::{NotSendMarker, Captures};
 /// We satisfy a narrow form of `UnsafeCell`'s safety contract:
 ///
 /// - This type is not `Sync` and can't be accessed from multiple threads. This
-/// means at most once of its operations (below) is executing at a time.
+///   means at most once of its operations (below) is executing at a time.
 ///
 /// - The operations will produce temporary references (both `&` and `&mut`)
-/// into the `UnsafeCell`, but will only produce one such reference at a time,
-/// and won't let it escape the function. This prevents aliasing in both
-/// directions, and deallocation of data while a reference exists.
+///   into the `UnsafeCell`, but will only produce one such reference at a time,
+///   and won't let it escape the function. This prevents aliasing in both
+///   directions, and deallocation of data while a reference exists.
 ///
 /// This puts us into the corner of `UnsafeCell`'s contract that, at the time of
 /// this writing, reads "explicitly declared legal for single-threaded code."

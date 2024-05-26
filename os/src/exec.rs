@@ -22,12 +22,12 @@
 //! special circumstances:
 //!
 //! - If you need faster interrupt response, consider allowing some interrupts
-//! to preempt task code using [`run_tasks_with_preemption`].
+//!   to preempt task code using [`run_tasks_with_preemption`].
 //! - If you need code to run when no other tasks are ready -- which can be
-//! useful for putting the CPU into a low power state, or toggling a pin to
-//! signal CPU load on a logic analyzer -- see [`run_tasks_with_idle`]
+//!   useful for putting the CPU into a low power state, or toggling a pin to
+//!   signal CPU load on a logic analyzer -- see [`run_tasks_with_idle`]
 //! - Finally, if you want to turn on all the bells and whistles, you can use
-//! [`run_tasks_with_preemption_and_idle`] which combines the previous two.
+//!   [`run_tasks_with_preemption_and_idle`] which combines the previous two.
 //!
 //!
 //! # Interrupts, wait, and notify
@@ -718,11 +718,11 @@ impl Notify {
     /// The meaning of `cond` "passing" is defined by the [`TestResult`] trait.
     /// 
     /// - In the easiest case, `cond` should return a `bool`. `until` will
-    /// resolve when `cond` returns `true`.
+    ///   resolve when `cond` returns `true`.
     ///
     /// - For more interesting use cases, `cond` can also return an `Option<T>`.
-    /// In this case, `until` will resolve when `cond` returns `Some(value)`,
-    /// producing `value`.
+    ///   In this case, `until` will resolve when `cond` returns `Some(value)`,
+    ///   producing `value`.
     ///
     /// # Cancellation
     ///
