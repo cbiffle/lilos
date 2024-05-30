@@ -145,6 +145,12 @@ use pin_project::pin_project;
 
 use crate::util::Captures;
 
+#[cfg(target_arch = "arm")]
+use cortex_m as hal;
+
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+use riscv as hal;
+
 // Despite the untangling of exec and time that happened in the 1.0 release, we
 // still have some intimate dependencies between the modules. You'll see a few
 // other cfg(feature = "systick") lines below.
@@ -316,16 +322,22 @@ impl Interrupts {
     fn scope<R>(self, body: impl FnOnce() -> R) -> R {
         let r = match self {
             Interrupts::Masked => {
-                let prev = cortex_m::register::primask::read();
-                cortex_m::interrupt::disable();
+                #[cfg(target_arch = "arm")]
+                let re_enable = hal::register::primask::read() == hal::register::primask::Primask::Active;
+
+                #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+                let re_enable = true;
+
+                hal::interrupt::disable();
 
                 let r = body();
 
-                if prev == cortex_m::register::primask::Primask::Active {
+                if re_enable 
+                {
                     // Safety: interrupts were just on, so this won't compromise
                     // memory safety.
                     unsafe {
-                        cortex_m::interrupt::enable();
+                        hal::interrupt::enable();
                     }
                 }
 
@@ -334,7 +346,7 @@ impl Interrupts {
             #[cfg(lilos_has_basepri)]
             Interrupts::Filtered(priority) => {
                 let prev = cortex_m::register::basepri::read();
-                cortex_m::register::basepri_max::write(priority);
+                hal::register::basepri_max::write(priority);
 
                 let r = body();
 
@@ -348,7 +360,8 @@ impl Interrupts {
         };
 
         // Make sure newly-enabled interrupt handlers fire.
-        cortex_m::asm::isb();
+        #[cfg(target_arch = "arm")]
+        hal::asm::isb();
 
         r
     }
@@ -384,7 +397,7 @@ pub fn run_tasks(
             initial_mask,
             Interrupts::Masked,
             || {
-                cortex_m::asm::wfi();
+                hal::asm::wfi();
                 // This works around an undocumented erratum on STM32 processors
                 // when WFI is set to go to "Sleep" level, and a debug agent has
                 // set the DBGMCU bits to cause clocks to continue to run during
@@ -397,7 +410,8 @@ pub fn run_tasks(
                 // Hard to tell, though, since this isn't in the errata sheet.
                 //
                 // On non-STM32 Cortex processors this will cost a few cycles.
-                cortex_m::asm::isb();
+                #[cfg(target_arch = "arm")]
+                hal::asm::isb();
             },
         )
     }
@@ -457,7 +471,7 @@ pub unsafe fn run_tasks_with_preemption(
             futures,
             initial_mask,
             interrupts,
-            cortex_m::asm::wfi,
+            hal::asm::wfi,
         )
     }
 }
@@ -935,10 +949,12 @@ static mut TIMER_LIST: MaybeUninit<List<TickTime>> = MaybeUninit::uninit();
 /// prevent OS features that are unavailable to ISRs from being used in ISRs.
 #[cfg(feature = "systick")]
 fn assert_not_in_isr() {
-    let psr_value = cortex_m::register::apsr::read().bits();
+    #[cfg(target_arch = "arm")] {
+    let psr_value = hal::register::apsr::read().bits();
     // Bottom 9 bits are the exception number, which are 0 in Thread mode.
     if psr_value & 0x1FF != 0 {
         panic!();
+    }
     }
 }
 
