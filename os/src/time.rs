@@ -12,8 +12,8 @@
 //! provides ways to read that timer, and also to arrange for tasks to be woken
 //! at specific times (such as [`sleep_until`] and [`sleep_for`]).
 //!
-//! To use this facility in an application, you need to call
-//! [`initialize_sys_tick`] to inform the OS of the system clock speed.
+//! To use this facility in an application, you need to call the target-specific
+//! initialize_sys_tick function to inform the OS of the system clock speed.
 //! Otherwise, no operations in this module will work properly.
 //!
 //! You can get the value of tick counter using [`TickTime::now`].
@@ -88,29 +88,12 @@ use portable_atomic::{AtomicU32, Ordering};
 use core::task::{Context, Poll};
 use core::time::Duration;
 
-use cortex_m::peripheral::{syst::SystClkSource, SYST};
-use cortex_m_rt::exception;
 use pin_project::pin_project;
 
 /// Bottom 32 bits of the tick counter. Updated by ISR.
 static TICK: AtomicU32 = AtomicU32::new(0);
 /// Top 32 bits of the tick counter. Updated by ISR.
 static EPOCH: AtomicU32 = AtomicU32::new(0);
-
-/// Sets up the tick counter for 1kHz operation, assuming a CPU core clock of
-/// `clock_hz`.
-///
-/// If you use this module in your application, call this before
-/// [`run_tasks`][crate::exec::run_tasks] (or a fancier version of `run_tasks`)
-/// to set up the timer for monotonic operation.
-pub fn initialize_sys_tick(syst: &mut SYST, clock_hz: u32) {
-    let cycles_per_millisecond = clock_hz / 1000;
-    syst.set_reload(cycles_per_millisecond - 1);
-    syst.clear_current();
-    syst.set_clock_source(SystClkSource::Core);
-    syst.enable_interrupt();
-    syst.enable_counter();
-}
 
 /// Represents a moment in time by the value of the system tick counter.
 /// System-specific analog of `std::time::Instant`.
@@ -130,6 +113,14 @@ impl TickTime {
             if e == e2 {
                 break TickTime(((e as u64) << 32) | (t as u64));
             }
+        }
+    }
+
+    /// Target-specific clock ISR must call this iperiodicall to increment the
+    /// timer.
+    pub(crate) fn increment() {
+        if TICK.fetch_add(1, Ordering::Release) == u32::MAX {
+            EPOCH.fetch_add(1, Ordering::Release);
         }
     }
 
@@ -477,15 +468,5 @@ impl PeriodicGate {
     pub async fn next_time(&mut self) {
         sleep_until(self.next).await;
         self.next += self.interval;
-    }
-}
-
-/// System tick ISR. Advances the tick counter. This doesn't wake any tasks; see
-/// code in `exec` for that.
-#[doc(hidden)]
-#[exception]
-fn SysTick() {
-    if TICK.fetch_add(1, Ordering::Release) == u32::MAX {
-        EPOCH.fetch_add(1, Ordering::Release);
     }
 }

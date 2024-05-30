@@ -46,7 +46,9 @@ pub fn run_test_suite(hz: u32) -> ! {
 
     let start_mask = 0b011;
 
-    time::initialize_sys_tick(&mut cp.SYST, hz);
+    #[cfg(target_arch = "arm")]
+    lilos::cortex_m_timer::initialize_sys_tick(&mut cp.SYST, hz);
+
     exec::run_tasks(
         &mut [
             coordinator,

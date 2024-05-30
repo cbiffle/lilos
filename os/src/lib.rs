@@ -170,6 +170,9 @@ pub mod list;
 
 #[cfg(feature = "systick")]
 pub mod time;
+#[cfg(all(feature = "systick", target_arch = "arm"))]
+pub mod cortex_m_timer;
+
 #[cfg(feature = "mutex")]
 pub mod mutex;
 #[cfg(feature = "spsc")]
