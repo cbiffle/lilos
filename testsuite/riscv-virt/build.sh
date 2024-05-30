@@ -4,6 +4,6 @@ set -euo pipefail
 
 pushd "$(dirname "$0")"
 
-./cargo.sh build
+./cargo.sh build --target $1
 
 popd
