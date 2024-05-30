@@ -22,10 +22,18 @@ mutex = []
 spsc = []
 systick = []
 
-[dependencies]
-cfg-if.workspace = true
+[target.'cfg(target_arch = "arm")'.dependencies]
 cortex-m = {workspace = true, features = ["critical-section-single-core"]}
 cortex-m-rt.workspace = true
+
+[target.'cfg(any(target_arch = "riscv64", target_arch="riscv32"))'.dependencies]
+riscv.workspace = true
+riscv-rt.workspace = true
+riscv-semihosting.workspace = true
+riscv-peripheral.workspace = true
+
+[dependencies]
+cfg-if.workspace = true
 lilos-list.workspace = true
 pin-project.workspace = true
 

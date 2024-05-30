@@ -161,6 +161,7 @@ macro_rules! cheap_assert {
 
 pub mod exec;
 #[deprecated(since = "1.3.0", note = "please use the portable-atomic crate")]
+#[cfg(target_arch = "arm")]
 pub mod atomic;
 pub mod util;
 
@@ -170,6 +171,12 @@ pub mod list;
 
 #[cfg(feature = "systick")]
 pub mod time;
+#[cfg(all(feature = "systick", any(target_arch = "riscv64", target_arch = "riscv32")))]
+pub mod clint;
+#[cfg(all(feature = "systick", target_arch = "arm"))]
+pub mod cortex_m_timer;
+
+
 #[cfg(feature = "mutex")]
 pub mod mutex;
 #[cfg(feature = "spsc")]

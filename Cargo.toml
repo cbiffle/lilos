@@ -9,6 +9,7 @@ members = [
     "testsuite/stm32f4",
     "testsuite/stm32g0",
     "testsuite/lm3s6965",
+    "testsuite/riscv-virt",
 ]
 
 [workspace.package]
@@ -41,6 +42,14 @@ stm32-metapac = {version = "15.0", features = ["rt", "pac"]}
 rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"
 scopeguard = { version = "1.2.0", default-features = false }
+# Note: we use github versions of riscv crates to get this changeset:
+# https://github.com/rust-embedded/riscv/commit/ff4dc30bf74a4ec16370f12be9c6e45306efd5d0
+#
+# Should switch to stable versions when a new release is available.
+riscv = { git = "https://github.com/rust-embedded/riscv.git", features = ["critical-section-single-hart"]  }
+riscv-rt = { git = "https://github.com/rust-embedded/riscv.git" }
+riscv-semihosting = { git = "https://github.com/rust-embedded/riscv.git" }
+riscv-peripheral = { git = "https://github.com/rust-embedded/riscv.git" }
 
 #
 # Before you get excited about turning on the workspace.lints table here, note
