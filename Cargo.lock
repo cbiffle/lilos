@@ -323,6 +323,7 @@ dependencies = [
  "lilos-watch",
  "panic-semihosting",
  "portable-atomic",
+ "riscv-semihosting",
 ]
 
 [[package]]
@@ -333,6 +334,17 @@ dependencies = [
  "cortex-m-rt",
  "lilos-testsuite",
  "panic-semihosting",
+]
+
+[[package]]
+name = "lilos-testsuite-riscv-virt"
+version = "0.1.0"
+dependencies = [
+ "lilos-testsuite",
+ "riscv",
+ "riscv-peripheral",
+ "riscv-rt",
+ "riscv-semihosting",
 ]
 
 [[package]]

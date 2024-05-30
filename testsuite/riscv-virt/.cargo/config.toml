@@ -1,0 +1,6 @@
+[target.'cfg(all(target_arch = "riscv64", target_os = "none"))']
+runner = "qemu-system-riscv64 -machine virt -nographic -semihosting-config enable=on,target=native -monitor stdio -serial none -s -bios"
+
+[target.'cfg(all(target_arch = "riscv32", target_os = "none"))']
+runner = "qemu-system-riscv32 -machine virt -nographic -semihosting-config enable=on,target=native -monitor stdio -serial none -s -bios"
+

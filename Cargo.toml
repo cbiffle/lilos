@@ -9,6 +9,7 @@ members = [
     "testsuite/stm32f4",
     "testsuite/stm32g0",
     "testsuite/lm3s6965",
+    "testsuite/riscv-virt",
 ]
 
 [workspace.package]
