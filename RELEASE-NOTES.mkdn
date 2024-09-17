@@ -29,6 +29,11 @@ Other than that, changes from the application's perspective are:
 
 - Generated code tends to be a bit smaller.
 
+### Core API changes
+
+- `PeriodicGate::is_lagging` lets code detect if its timing loop is falling
+  behind. I've used this to skip display updates in a GUI when I/O operations
+  interfere with rendering.
 
 ### Docs fixes
 
