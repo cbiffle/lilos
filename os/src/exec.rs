@@ -254,6 +254,7 @@ static NOOP_VTABLE: RawWakerVTable = RawWakerVTable::new(
 );
 
 /// Returns a [`Waker`] that doesn't do anything and costs nothing to `clone`.
+///
 /// This is useful as a placeholder before a *real* `Waker` becomes available.
 /// You probably don't need this unless you're building your own wake lists.
 #[deprecated(

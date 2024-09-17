@@ -615,9 +615,10 @@ impl Drop for ExclusiveInternal<'_> {
 }
 
 /// Permit returned by [`RwLock::lock_exclusive`] or
-/// [`RwLock::try_lock_exclusive`] that indicates that the holder has exclusive
-/// access to the lock, and that permits non-`async` alterations to the guarded
-/// data.
+/// [`RwLock::try_lock_exclusive`].
+///
+/// This permit indicates that the holder has exclusive access to the lock, and
+/// enables non-`async` alterations to the guarded data.
 ///
 /// See [`ActionPermit::perform`].
 #[derive(Debug)]
