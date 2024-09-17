@@ -58,7 +58,8 @@ jobs:
         toolchain:
           - stable
           - nightly
-          - beta
+          #- beta  TODO: re-enable once beta stops being broken, first release
+          #after 11 September should do it
     steps:
       - uses: actions/checkout@v4
       - run: rm rust-toolchain.toml
@@ -77,7 +78,7 @@ jobs:
         toolchain:
           - stable
           - nightly
-          - beta
+          # - beta TODO: re-enable, see above
     needs: build_future
     runs-on: ubuntu-latest
     steps:
@@ -101,7 +102,7 @@ jobs:
         toolchain:
           - stable
           - nightly
-          - beta
+          # - beta TODO: re-enable, see above
     steps:
       - uses: actions/checkout@v4
       - run: rm rust-toolchain.toml
