@@ -35,6 +35,21 @@ use lilos::time::sleep_for;
 // Shorthand for which SoC we're targeting:
 use stm32_metapac::{self as device, gpio::vals::Moder};
 
+// Abstract the pin details into an enum
+#[repr(u32)]
+enum Leds {
+    GREEN = (1 << 12),
+    ORANGE = (1 << 13),
+    RED = (1 << 14),
+    BLUE = (1 << 15),
+}
+
+impl Leds {
+    fn to_u32_mask(self) -> u32 {
+        self as u32
+    }
+}
+
 #[cortex_m_rt::entry]
 fn main() -> ! {
     // Check out peripherals from the runtime.
@@ -50,10 +65,11 @@ fn main() -> ! {
     });
 
     // Allocate some tasks, each with different LED mask and period.
-    let fut1 = pin!(blinky(1 << 12, Duration::from_millis(800), device::GPIOD));
-    let fut2 = pin!(blinky(1 << 13, Duration::from_millis(400), device::GPIOD));
-    let fut3 = pin!(blinky(1 << 14, Duration::from_millis(200), device::GPIOD));
-    let fut4 = pin!(blinky(1 << 15, Duration::from_millis(100), device::GPIOD));
+    use Leds::*;
+    let fut1 = pin!(blinky(GREEN, Duration::from_millis(800), device::GPIOD));
+    let fut2 = pin!(blinky(ORANGE, Duration::from_millis(400), device::GPIOD));
+    let fut3 = pin!(blinky(RED, Duration::from_millis(200), device::GPIOD));
+    let fut4 = pin!(blinky(BLUE, Duration::from_millis(100), device::GPIOD));
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.
@@ -76,11 +92,13 @@ fn main() -> ! {
 /// Each call to `blinky` produces a `Future` that captures its parameters. The
 /// `Future` loops forever, as indicated by its "never resolves" return type,
 /// `!`.
-async fn blinky(pin_mask: u16, interval: Duration, gpiod: device::gpio::Gpio)
-    -> Infallible
-{
-    // Zero-extend the mask to fit the BSRR register.
-    let pin_mask = u32::from(pin_mask);
+async fn blinky(
+    pin_mask: Leds,
+    interval: Duration,
+    gpiod: device::gpio::Gpio,
+) -> Infallible {
+    // Zero-extend the mask to u32 so it fits the BSRR register.
+    let pin_mask: u32 = pin_mask.to_u32_mask();
 
     loop {
         // on
