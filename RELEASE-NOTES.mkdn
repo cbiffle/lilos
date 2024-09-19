@@ -43,6 +43,15 @@ Other than that, changes from the application's perspective are:
 
 - Fixed the example code for `PeriodicGate`, which was missing a `mut`.
 
+### Internals
+
+- Make `rustc` aware of the custom `cfg` values that we use under the hood, so
+  that it can detect typos in them. (I love this `rustc` feature.)
+
+- Several changes to eliminate new warnings in recent Clippy versions (should
+  not affect programs _using_ `lilos`). All these changes are to the text of
+  comments; Clippy having opinions about my comment wording is not my favorite.
+
 
 ## Version 1.2.0
 
