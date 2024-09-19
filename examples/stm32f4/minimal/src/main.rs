@@ -56,7 +56,7 @@ fn main() -> ! {
     });
 
     // Configure the systick timer for 1kHz ticks at 16MHz.
-    lilos::time::initialize_sys_tick(&mut cp.SYST, 16_000_000);
+    lilos::cortex_m_timer::initialize_sys_tick(&mut cp.SYST, 16_000_000);
     // Set up and run the scheduler with a single task.
     lilos::exec::run_tasks(
         &mut [blink],  // <-- array of tasks
