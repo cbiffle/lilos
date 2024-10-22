@@ -33,7 +33,7 @@ cfg-if = "1.0.0"
 cortex-m = {version = "0.7.4", features = ["inline-asm"]}
 cortex-m-rt = {version = "0.7.1"}
 cortex-m-semihosting = "0.5.0"
-pin-project = "1.1.5"
+pin-project = "1.1.6"
 panic-halt = "0.2.0"
 panic-semihosting = "0.6.0"
 futures = { version = "0.3.21", default-features = false, features = ["async-await"] }
