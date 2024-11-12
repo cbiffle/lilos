@@ -235,7 +235,7 @@ impl<'q, T> Pusher<'q, T> {
     ///
     /// This does basically nothing if cancelled (it is intrinsically
     /// cancel-safe).
-    pub async fn reserve<'s>(&'s mut self) -> Entry<'s, T> {
+    pub async fn reserve(&mut self) -> Entry<'_, T> {
         self.q.popped.until(|| self.try_reserve()).await
     }
 
