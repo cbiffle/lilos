@@ -221,7 +221,7 @@ fn main() {
         p.LASER_SHARK,
     ));
 
-    lilos::time::initialize_sys_tick(
+    lilos::cortex_m_timer::initialize_sys_tick(
         &mut cp.SYST,
         16_000_000, <7>
     );
@@ -1057,7 +1057,7 @@ which uses the SysTick timer common to all ARM Cortex-M CPUs.
 TIP: `lilos::time` is available if {os} was built with the `systick` feature,
 which is on by default.
 
-To use this module, make sure you're calling `lilos::time::initialize_sys_tick`
+To use this module, make sure you're calling `lilos::cortex_m_timer::initialize_sys_tick`
 in your `main` function!
 
 For precisely timing a periodic task in a loop, use `lilos::time::PeriodicGate`.
