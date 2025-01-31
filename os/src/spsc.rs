@@ -101,26 +101,33 @@ impl<'s, T> Queue<'s, T> {
         }
     }
 
+    fn next_index(&self, i: usize) -> usize {
+        // This produced better code than using remainder on ARMv7-M last
+        // I checked.
+        let ni = i.wrapping_add(1);
+        if ni == self.storage.len() {
+            0
+        } else {
+            ni
+        }
+    }
+}
+
+impl<'split, 'storage, T> Queue<'storage, T> {
     /// Creates a push and pop endpoint for this queue. Note that an exclusive
     /// borrow of the queue exists as long as either endpoint exists, ensuring
     /// that at most one of each endpoint exists at any point in the program.
     ///
     /// You can, however, drop the first pair of endpoints and make a new pair
     /// later -- that's fine.
-    pub fn split(&mut self) -> (Pusher<'_, T>, Popper<'_, T>) {
+    pub fn split(
+        &'split mut self,
+    ) -> (Pusher<'split, 'storage, T>, Popper<'split, 'storage, T>) {
         (
             Pusher { q: self, _marker: NotSyncMarker::default() },
             Popper { q: self, _marker: NotSyncMarker::default() },
         )
     }
-
-    fn next_index(&self, i: usize) -> usize {
-        // This produced better code than using remainder on ARMv7-M last
-        // I checked.
-        let ni = i.wrapping_add(1);
-        if ni == self.storage.len() { 0 } else { ni }
-    }
-
 }
 
 /// It's entirely possible to drop a non-empty Queue in correct code, unlike
@@ -153,12 +160,12 @@ impl<T> Drop for Queue<'_, T> {
 ///
 /// See the module docs for more details.
 #[derive(Debug)]
-pub struct Pusher<'a, T> {
-    q: &'a Queue<'a, T>,
+pub struct Pusher<'split, 'storage, T> {
+    q: &'split Queue<'storage, T>,
     _marker: NotSyncMarker,
 }
 
-impl<'q, T> Pusher<'q, T> {
+impl<'split, T> Pusher<'split, '_, T> {
     // Implementation note: Pusher "owns" the head and does not need to be
     // careful with its memory ordering, while the tail is "foreign" and must be
     // synchronized.
@@ -181,7 +188,7 @@ impl<'q, T> Pusher<'q, T> {
     /// `Entry` that entitles its holder to that queue slot.
     ///
     /// If the queue is full, returns `None`.
-    pub fn try_reserve(&mut self) -> Option<Entry<'q, T>> {
+    pub fn try_reserve(&mut self) -> Option<Entry<'split, T>> {
         let h = self.q.head.load(Ordering::Relaxed);
         let t = self.q.tail.load(Ordering::Acquire);
         let h_next = self.q.next_index(h);
@@ -261,12 +268,12 @@ impl<'q, T> Pusher<'q, T> {
 ///
 /// See the module docs for more details.
 #[derive(Debug)]
-pub struct Popper<'a, T> {
-    q: &'a Queue<'a, T>,
+pub struct Popper<'split, 'storage, T> {
+    q: &'split Queue<'storage, T>,
     _marker: NotSyncMarker,
 }
 
-impl<T> Popper<'_, T> {
+impl<T> Popper<'_, '_, T> {
     // Implementation note: Popper "owns" the tail and does not need to be
     // careful with its memory ordering, while the head is "foreign" and must be
     // synchronized.
