@@ -96,7 +96,7 @@ fn main() -> ! {
     lilos::exec::run_tasks_with_idle(
         &mut [heartbeat, echo],
         lilos::exec::ALL_TASKS,
-        || {
+        |idle| if idle {
             device::GPIOD.bsrr().write(|w| w.set_br(15, true));
             cortex_m::asm::wfi();
             device::GPIOD.bsrr().write(|w| w.set_bs(15, true));

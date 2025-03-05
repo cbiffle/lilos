@@ -384,7 +384,7 @@ pub fn run_tasks(
             futures,
             initial_mask,
             Interrupts::Masked,
-            || {
+            |idle| if idle {
                 cortex_m::asm::wfi();
                 // This works around an undocumented erratum on STM32 processors
                 // when WFI is set to go to "Sleep" level, and a debug agent has
@@ -414,7 +414,7 @@ pub fn run_tasks(
 pub fn run_tasks_with_idle(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
-    idle_hook: impl FnMut(),
+    idle_hook: impl FnMut(bool),
 ) -> ! {
     // Safety: we're passing Interrupts::Masked, the always-safe option
     unsafe {
@@ -458,7 +458,7 @@ pub unsafe fn run_tasks_with_preemption(
             futures,
             initial_mask,
             interrupts,
-            cortex_m::asm::wfi,
+            |idle| if idle { cortex_m::asm::wfi() },
         )
     }
 }
@@ -490,7 +490,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
     futures: &mut [Pin<&mut dyn Future<Output = Infallible>>],
     initial_mask: usize,
     interrupts: Interrupts,
-    mut idle_hook: impl FnMut(),
+    mut idle_hook: impl FnMut(bool),
 ) -> ! {
     // Record the task futures for debugger access.
     {
@@ -564,9 +564,7 @@ pub unsafe fn run_tasks_with_preemption_and_idle(
 
             // If none of the futures woke each other, we're relying on an
             // interrupt to set bits -- so we can sleep waiting for it.
-            if WAKE_BITS.load(Ordering::SeqCst) == 0 {
-                idle_hook();
-            }
+            idle_hook(WAKE_BITS.load(Ordering::SeqCst) == 0);
 
         });
 
