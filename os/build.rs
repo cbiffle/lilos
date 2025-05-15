@@ -17,7 +17,7 @@ fn main() {
             // Don't turn anything on.
         }
         t => {
-            panic!("unknown target {}, update build.rs", t);
+            panic!("unknown target {t}, update build.rs");
         }
     }
 }
