@@ -125,3 +125,48 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - run: ./msrv-all.sh
+
+  build_riscv:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - nightly
+        target:
+          - riscv32imac-unknown-none-elf
+          - riscv64gc-unknown-none-elf
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm rust-toolchain.toml
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup target add ${{ matrix.target }} && rustup component add rust-src --toolchain ${{ matrix.toolchain }}-x86_64-unknown-linux-gnu
+      - run: ./testsuite/riscv-virt/build.sh ${{ matrix.target }}
+      - name: Archive riscv-virt-${{ matrix.target}}  image
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-image-${{ matrix.toolchain }}-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/debug/lilos-testsuite-riscv-virt
+
+
+  test_qemu_riscv:
+    needs: build_riscv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Install qemu riscv simulators
+        run: |
+          sudo apt-get update
+          sudo apt-get install qemu-system-misc
+      - run: >
+          qemu-system-riscv32
+          -machine virt
+          -nographic
+          -semihosting-config enable=on,target=native
+          -bios riscv-image-nightly-riscv32imac-unknown-none-elf/lilos-testsuite-riscv-virt
+      - run: >
+          qemu-system-riscv64
+          -machine virt
+          -nographic
+          -semihosting-config enable=on,target=native
+          -bios riscv-image-nightly-riscv64gc-unknown-none-elf/lilos-testsuite-riscv-virt
+
