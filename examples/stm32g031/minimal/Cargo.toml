@@ -2,15 +2,16 @@
 name = "lilos-example-stm32g031-minimal"
 authors = ["Cliff L. Biffle <code@cliffle.com>"]
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
 description = "Minimal example for lilos on NUCLEO-G031."
-repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
 publish = false
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [package.metadata.docs.rs]
 default-target = "thumbv6m-none-eabi"

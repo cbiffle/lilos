@@ -26,7 +26,7 @@ extern crate panic_halt;
 
 // For RP2040, we need to include a bootloader. The general Cargo build process
 // doesn't have great support for this, so we included it as a binary constant.
-#[link_section = ".boot_loader"]
+#[unsafe(link_section = ".boot_loader")]
 #[used]
 static BOOT: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
