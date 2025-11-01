@@ -1,0 +1,6 @@
+# Minimal LED blinky demo for the Raspberry Pi Pico 2
+
+Minimal example of using `lilos` to blink an `external LED` at 1Hz on the Raspberry Pi Pico 2 board.
+
+This starts a single task, which uses the scheduler and timer to periodically
+toggle a GPIO pin 22.

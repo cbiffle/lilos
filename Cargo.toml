@@ -40,6 +40,7 @@ futures = { version = "0.3.21", default-features = false, features = ["async-awa
 stm32-metapac = {version = "15.0", features = ["rt", "pac"]}
 rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"
+rp235x-pac = {version = "0.1.0", features = ["rt"]}
 scopeguard = { version = "1.2.0", default-features = false }
 
 # TODO: workspace lints!

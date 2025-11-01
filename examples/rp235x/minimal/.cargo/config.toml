@@ -1,0 +1,10 @@
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+runner = "probe-rs run --chip RP235x"
+
+rustflags = [
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Lexamples/rp235x",
+]
+
+[build]
+target = "thumbv8m.main-none-eabihf"

@@ -194,6 +194,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lilos-example-rp235x-minimal"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "lilos",
+ "panic-halt",
+ "rp235x-pac",
+]
+
+[[package]]
 name = "lilos-example-stm32f4-blinky"
 version = "0.1.0"
 dependencies = [
@@ -466,6 +477,17 @@ name = "rp2040-pac"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13a6106d5db01c7171a39c1f7696780912db9b42fe7ac722db60069c8904ea7c"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "vcell",
+]
+
+[[package]]
+name = "rp235x-pac"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ffcb6931deee4242886b5a1df62db5e2555b0eb6ae1e8be101f3ea3e58e65c6"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
