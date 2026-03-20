@@ -1,6 +1,6 @@
 [package]
 name = "lilos-example-rp235x-minimal"
-authors = ["Cliff L. Biffle <code@cliffle.com>"]
+authors = ["0x646b <https://karthik-d-k.github.io/>"]
 version = "0.1.0"
 description = "Minimal example for lilos on rp235x."
 publish = false
