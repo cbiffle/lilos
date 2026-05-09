@@ -111,23 +111,23 @@ pub async fn test_nonempty_drop() {
 /// This "test" just needs to compile, to verify that Push and Pop are indeed
 /// Send as promised.
 #[allow(dead_code)]
-fn compile_test_send(push: Pusher<'_, u8>, pop: Popper<'_, u8>) {
+fn compile_test_send(push: Pusher<'_, '_, u8>, pop: Popper<'_, '_, u8>) {
     fn is_send<T: Send>(_: &T) {}
     is_send(&push);
     is_send(&pop);
 }
 
-// This "test" makes sure that lifetimes for the split methods are correct, allowing to split
-// outside of defining scope.
+// This "test" makes sure that lifetimes for the split methods are correct,
+// allowing to split outside of defining scope.
 #[allow(dead_code)]
 fn compile_test_split_lifetime() {
     fn split<'split, 'storage>(
-        queue: &mut Queue<'storage, ()>,
-    ) -> (Pusher<'storage, ()>, Popper<'storage, ()>) {
+        queue: &'split mut Queue<'storage, ()>,
+    ) -> (Pusher<'split, 'storage, ()>, Popper<'split, 'storage, ()>) {
         queue.split()
     }
 
-    let mut storage: [MaybeUninit<u8>; 5] = [MaybeUninit::uninit(); 5];
+    let mut storage: [MaybeUninit<()>; 5] = [MaybeUninit::uninit(); 5];
     let mut q = Queue::new(&mut storage);
 
     let (_pusher, _popper) = split(&mut q);
