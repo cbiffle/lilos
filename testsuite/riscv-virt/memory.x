@@ -1,0 +1,16 @@
+MEMORY
+{
+  /* FLASH : ORIGIN = 0x20000000, LENGTH = 512M */
+  RAM : ORIGIN = 0x80000000, LENGTH = 1M
+}
+
+PROVIDE(_max_hart_id = 0);
+PROVIDE(_hart_stack_size = 2K);
+PROVIDE(_heap_size = 0);
+
+REGION_ALIAS("REGION_TEXT", RAM); /* The QEMU bootstap always jumps to RAM, so don't use flash */
+REGION_ALIAS("REGION_RODATA", RAM);
+REGION_ALIAS("REGION_DATA", RAM);
+REGION_ALIAS("REGION_BSS", RAM);
+REGION_ALIAS("REGION_STACK", RAM);
+REGION_ALIAS("REGION_HEAP", RAM);

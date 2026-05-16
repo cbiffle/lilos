@@ -1,0 +1,32 @@
+[package]
+name = "lilos-testsuite-riscv-virt"
+authors = ["Kevin Vigor <kvigor@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "Operating system tests for RISCV64 (can be run with QEMU)."
+repository = "https://github.com/cbiffle/lilos/"
+keywords = ["async", "embedded", "realtime", "os"]
+categories = ["embedded"]
+readme = "README.mkdn"
+publish = false
+rust-version = "1.69"
+
+[package.metadata.docs.rs]
+default-target = "riscv64gc-unknown-none-elf"
+
+[dependencies]
+riscv.workspace = true
+riscv-rt.workspace = true
+riscv-semihosting.workspace = true
+riscv-peripheral.workspace = true
+lilos-testsuite = { path = ".." }
+
+[features]
+#default = ["exit"]
+#exit = ["panic-semihosting/exit"]
+
+[[bin]]
+name = "lilos-testsuite-riscv-virt"
+test = false
+bench = false

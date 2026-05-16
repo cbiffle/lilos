@@ -89,7 +89,7 @@ fn main() -> ! {
     ));
 
     // Set up and run the scheduler.
-    lilos::time::initialize_sys_tick(&mut cp.SYST, CLOCK_HZ);
+    lilos::cortex_m_timer::initialize_sys_tick(&mut cp.SYST, CLOCK_HZ);
     lilos::exec::run_tasks_with_idle(
         &mut [heartbeat, echo],
         lilos::exec::ALL_TASKS,

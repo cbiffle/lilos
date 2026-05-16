@@ -1,0 +1,32 @@
+# `lilos` test suite for QEMU riscv virt targets 
+
+This crate customizes the test suite for riscv targets. To use:
+
+Install the prerequisites described in the root of this repo, plus `qemu`
+riscv{32,64} simulators.
+
+Run `run.sh` from this directory. It should call out to `qemu`, verify, run the
+tests, and print the results before exiting.  If the tests passed it will exit
+with status 0.
+
+Note: the QEMU riscv virt targets have address maps that require use of
+the "medium" or "large" memory models. This is specified by passing a
+"C code-model" option to rustc. Unfortunately this cannot be properly
+done via Cargo.toml but requires setting RUSTFLAGS environment variable
+before calling cargo. The cargo.sh in this directory sets RUSTFLAGS
+properly. Calling "cargo build" directly without setting RUSTFLAGS will fail
+with either "undefined symbol" or "relocation R_RISCV_32_PCREL out of range".
+
+Note: run.sh will test both riscv32imac and riscv64gc targets. To run a single
+target, use cargo.sh with the --target option, e.g. `./cargo.sh run --target riscv64gc-unknown-none-elf`
+
+
+If you would like to run the tests in GDB (i.e. they are not passing), run the
+following command:
+`rust-gdb target/riscv64gc-unknown-none-elf/debug/lilos-testsuite-riscv-virt -ex 'tar ext :1234'`.
+
+Note: `tar ext :1234` is short for `target extended-remote localhost:1234`.
+
+Note: If you want to halt the CPU at startup (e.g. to set breakpoints), pass
+the `-S` argument to QEMU, e.g. ``./cargo.sh run --target riscv32imac-unknown-none-elf -- -S`.
+Then you can set a breakpoint in GDB and use `continue/fg/c` to start the tests.

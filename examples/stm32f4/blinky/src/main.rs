@@ -57,7 +57,7 @@ fn main() -> ! {
 
     // Set up the OS timer. This can be done before or after starting the
     // scheduler, but must be done before using any timer features.
-    lilos::time::initialize_sys_tick(&mut cp.SYST, 16_000_000);
+    lilos::cortex_m_timer::initialize_sys_tick(&mut cp.SYST, 16_000_000);
 
     // Run our four tasks in parallel. The final parameter specifies which tasks
     // to poll on the first iteration.

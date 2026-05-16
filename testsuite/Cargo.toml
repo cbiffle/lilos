@@ -21,18 +21,23 @@ watch = ["dep:lilos-watch"]
 default-target = "thumbv7em-none-eabihf"
 
 [dependencies]
-cortex-m.workspace = true
-cortex-m-rt.workspace = true
-cortex-m-semihosting.workspace = true
 futures.workspace = true
 lilos = {workspace = true, features = ["spsc", "systick", "mutex"]}
 lilos-handoff = { workspace = true, optional = true }
 lilos-semaphore = { workspace = true, optional = true }
 lilos-rwlock = { workspace = true, optional = true }
-panic-semihosting.workspace = true
 lilos-list.workspace = true
 lilos-watch = { workspace = true, optional = true }
 portable-atomic = { version = "1.6.0", default-features = false }
+
+[target.'cfg(target_arch = "arm")'.dependencies]
+cortex-m = {workspace = true, features = ["critical-section-single-core"]}
+cortex-m-rt.workspace = true
+cortex-m-semihosting.workspace = true
+panic-semihosting.workspace = true
+
+[target.'cfg(any(target_arch = "riscv64", target_arch="riscv32"))'.dependencies]
+riscv-semihosting.workspace = true
 
 [lib]
 test = false
