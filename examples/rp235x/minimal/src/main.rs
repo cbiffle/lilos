@@ -45,7 +45,7 @@ pub struct ImageDefBlock {
 /// Tell the Boot ROM about our application
 /// Refer RP2350 Datasheet, 5.9.5.1. Minimum Arm IMAGE_DEF
 /// TODO: Assuming CRIT1.SECURE_BOOT_ENABLE is clear
-#[link_section = ".image_def"]
+#[unsafe(link_section = ".image_def")]
 #[used]
 pub static MINIMUM_ARM_IMAGE_DEF: ImageDefBlock = ImageDefBlock {
     marker_start: 0xffffded3,
