@@ -1,9 +1,11 @@
-# Minimal LED blinky demo for the Raspberry Pi Pico 2W
+# Minimal LED blinky demo for the Raspberry Pi Pico 2
 
-Minimal example of using `lilos` to blink an `external LED` at 1Hz on the Raspberry Pi Pico 2W board.
+This is set up to use `probe-rs` for flashing and debugging. You can run this
+by installing `probe-rs`:
 
-This starts a single task, which uses the scheduler and timer to periodically toggle a GPIO pin 22.
+`cargo install probe-rs-tools --locked`
 
-**Note:** For the standard Raspberry Pi Pico 2, you can instead use GPIO25 to toggle the onboard LED. 
-However, on the Pico 2W, the onboard LED is connected to WL_GPIO0, which is controlled by the Infineon CYW43439 wireless chip. 
-Therefore, this example uses GPIO22 to drive an external LED that works on both variants.
+Once that's installed,
+
+1. Connect the Pi Pico 2 via a RP debug probe.
+2. `cargo run --release`

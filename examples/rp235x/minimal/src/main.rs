@@ -6,8 +6,8 @@
 //! Raspberry Pi Pico 2 board.
 //!
 //! This starts a single task, which uses the scheduler and timer to
-//! periodically toggle a GPIO pin (pin 22, which is an LED on the Pi Pico 2
-//! board).
+//! periodically toggle a GPIO pin (pin 25, which is the onboard LED on the
+//! Pi Pico 2 board).
 //!
 //! This demonstrates
 //!
@@ -63,35 +63,35 @@ fn main() -> ! {
     let mut cp = cortex_m::Peripherals::take().unwrap();
     let p = unsafe { rp235x_pac::Peripherals::steal() };
 
-    // Configure our output pin, GPIO 22. Begin by bringing IO BANK0 out of
+    // Configure our output pin, GPIO 25. Begin by bringing IO BANK0 out of
     // reset.
     p.RESETS.reset().modify(|_, w| w.io_bank0().clear_bit());
     while !p.RESETS.reset_done().read().io_bank0().bit() {}
 
     // Configure pad: input enable on, output disable off.
     // RP2350: input enable defaults to off, so this is important!
-    p.PADS_BANK0.gpio(22).modify(|_, w| {
+    p.PADS_BANK0.gpio(25).modify(|_, w| {
         w.ie().set_bit();
         w.od().clear_bit();
         w
     });
 
-    // Set GPIO22 to be controlled by SIO.
+    // Set GPIO25 to be controlled by SIO.
     unsafe {
         p.IO_BANK0
-            .gpio(22)
+            .gpio(25)
             .gpio_ctrl()
             .write_with_zero(|w| w.funcsel().variant(FUNCSEL_A::SIO));
     };
 
     // RP2350: remove pad isolation now a function is wired up.
-    p.PADS_BANK0.gpio(22).modify(|_, w| {
+    p.PADS_BANK0.gpio(25).modify(|_, w| {
         w.iso().clear_bit();
         w
     });
 
-    // Now have SIO configure GPIO22 as an output.
-    p.SIO.gpio_oe_set().write(|w| unsafe { w.bits(1 << 22) });
+    // Now have SIO configure GPIO25 as an output.
+    p.SIO.gpio_oe_set().write(|w| unsafe { w.bits(1 << 25) });
 
     // Create a task to blink the LED. You could also write this as an `async
     // fn` but we've inlined it as an `async` block for simplicity.
@@ -103,7 +103,7 @@ fn main() -> ! {
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.
         loop {
-            p.SIO.gpio_out_xor().write(|w| unsafe { w.bits(1 << 22) });
+            p.SIO.gpio_out_xor().write(|w| unsafe { w.bits(1 << 25) });
             gate.next_time().await;
         }
     });
