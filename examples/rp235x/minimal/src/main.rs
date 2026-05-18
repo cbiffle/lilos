@@ -3,10 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Minimal example of using `lilos` to blink an LED at 1Hz on the
-//! Raspberry Pi Pico board.
+//! Raspberry Pi Pico 2 board.
 //!
 //! This starts a single task, which uses the scheduler and timer to
-//! periodically toggle a GPIO pin (pin 22, which is an LED on the Pi Pico
+//! periodically toggle a GPIO pin (pin 22, which is an LED on the Pi Pico 2
 //! board).
 //!
 //! This demonstrates
@@ -20,12 +20,11 @@
 // We don't have a conventional `main` (`cortex_m_rt::entry` is different).
 #![no_main]
 
-// GPIO module
-pub mod gpio;
-
 // Pull in a panic handling crate. We have to `extern crate` this explicitly
 // because it isn't otherwise referenced in code!
 extern crate panic_halt;
+
+use rp235x_pac::io_bank0::gpio::gpio_ctrl::FUNCSEL_A;
 
 /// A Block as understood by the Boot ROM.
 ///
@@ -69,10 +68,30 @@ fn main() -> ! {
     p.RESETS.reset().modify(|_, w| w.io_bank0().clear_bit());
     while !p.RESETS.reset_done().read().io_bank0().bit() {}
 
-    // Set GPIO22 to be controlled by SIO
-    gpio::led_config_io(&p.IO_BANK0, &p.PADS_BANK0, 22);
-    // Set GPIO22 to output
-    gpio::led_config_output(&p.SIO, 22);
+    // Configure pad: input enable on, output disable off.
+    // RP2350: input enable defaults to off, so this is important!
+    p.PADS_BANK0.gpio(22).modify(|_, w| {
+        w.ie().set_bit();
+        w.od().clear_bit();
+        w
+    });
+
+    // Set GPIO22 to be controlled by SIO.
+    unsafe {
+        p.IO_BANK0
+            .gpio(22)
+            .gpio_ctrl()
+            .write_with_zero(|w| w.funcsel().variant(FUNCSEL_A::SIO));
+    };
+
+    // RP2350: remove pad isolation now a function is wired up.
+    p.PADS_BANK0.gpio(22).modify(|_, w| {
+        w.iso().clear_bit();
+        w
+    });
+
+    // Now have SIO configure GPIO22 as an output.
+    p.SIO.gpio_oe_set().write(|w| unsafe { w.bits(1 << 22) });
 
     // Create a task to blink the LED. You could also write this as an `async
     // fn` but we've inlined it as an `async` block for simplicity.
@@ -84,7 +103,7 @@ fn main() -> ! {
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.
         loop {
-            gpio::led_toggle(&p.SIO, 22);
+            p.SIO.gpio_out_xor().write(|w| unsafe { w.bits(1 << 22) });
             gate.next_time().await;
         }
     });
