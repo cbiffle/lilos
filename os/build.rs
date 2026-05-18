@@ -7,7 +7,11 @@ fn main() {
     println!(r#"cargo:rustc-check-cfg=cfg(lilos_has_native_rmw)"#);
 
     match std::env::var("TARGET").unwrap().as_str() {
-        "thumbv7m-none-eabi" | "thumbv7em-none-eabi" | "thumbv7em-none-eabihf" => {
+        "thumbv7m-none-eabi"
+        | "thumbv7em-none-eabi"
+        | "thumbv7em-none-eabihf"
+        | "thumbv8m.main-none-eabi"
+        | "thumbv8m.main-none-eabihf" => {
             // Turn on BASEPRI support for interrupt priority filtering.
             println!("cargo:rustc-cfg=lilos_has_basepri");
             // Use native atomic RMW operations

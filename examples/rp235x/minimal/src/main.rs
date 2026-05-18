@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Minimal example of using `lilos` to blink an LED at 1Hz on the
-//! Raspberry Pi Pico board.
+//! Raspberry Pi Pico 2 board.
 //!
 //! This starts a single task, which uses the scheduler and timer to
-//! periodically toggle a GPIO pin (pin 25, which is an LED on the Pi Pico
-//! board).
+//! periodically toggle a GPIO pin (pin 25, which is the onboard LED on the
+//! Pi Pico 2 board).
 //!
 //! This demonstrates
 //!
@@ -24,11 +24,35 @@
 // because it isn't otherwise referenced in code!
 extern crate panic_halt;
 
-// For RP2040, we need to include a bootloader. The general Cargo build process
-// doesn't have great support for this, so we included it as a binary constant.
-#[unsafe(link_section = ".boot_loader")]
+use rp235x_pac::io_bank0::gpio::gpio_ctrl::FUNCSEL_A;
+
+/// A Block as understood by the Boot ROM.
+///
+/// This is an Image Definition Block
+///
+/// It contains within the special start and end markers the Boot ROM is looking for.
+#[derive(Debug)]
+#[repr(C)]
+pub struct ImageDefBlock {
+    marker_start: u32,
+    item: u32,
+    length: u32,
+    offset: u32,
+    marker_end: u32,
+}
+
+/// Tell the Boot ROM about our application
+/// Refer RP2350 Datasheet, 5.9.5.1. Minimum Arm IMAGE_DEF
+/// TODO: Assuming CRIT1.SECURE_BOOT_ENABLE is clear
+#[unsafe(link_section = ".image_def")]
 #[used]
-static BOOT: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+pub static MINIMUM_ARM_IMAGE_DEF: ImageDefBlock = ImageDefBlock {
+    marker_start: 0xffffded3,
+    item: 0x10210142,
+    length: 0x000001ff,
+    offset: 0x00000000,
+    marker_end: 0xab123579,
+};
 
 // How often our blinky task wakes up (1/2 our blink frequency).
 const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
@@ -37,17 +61,37 @@ const PERIOD: lilos::time::Millis = lilos::time::Millis(500);
 fn main() -> ! {
     // Check out peripherals from the runtime.
     let mut cp = cortex_m::Peripherals::take().unwrap();
-    let p = rp2040_pac::Peripherals::take().unwrap();
+    let p = unsafe { rp235x_pac::Peripherals::steal() };
 
     // Configure our output pin, GPIO 25. Begin by bringing IO BANK0 out of
     // reset.
-    p.RESETS.reset.modify(|_, w| w.io_bank0().clear_bit());
-    while !p.RESETS.reset_done.read().io_bank0().bit() {}
+    p.RESETS.reset().modify(|_, w| w.io_bank0().clear_bit());
+    while !p.RESETS.reset_done().read().io_bank0().bit() {}
+
+    // Configure pad: input enable on, output disable off.
+    // RP2350: input enable defaults to off, so this is important!
+    p.PADS_BANK0.gpio(25).modify(|_, w| {
+        w.ie().set_bit();
+        w.od().clear_bit();
+        w
+    });
 
     // Set GPIO25 to be controlled by SIO.
-    p.IO_BANK0.gpio[25].gpio_ctrl.write(|w| w.funcsel().sio());
+    unsafe {
+        p.IO_BANK0
+            .gpio(25)
+            .gpio_ctrl()
+            .write_with_zero(|w| w.funcsel().variant(FUNCSEL_A::SIO));
+    };
+
+    // RP2350: remove pad isolation now a function is wired up.
+    p.PADS_BANK0.gpio(25).modify(|_, w| {
+        w.iso().clear_bit();
+        w
+    });
+
     // Now have SIO configure GPIO25 as an output.
-    p.SIO.gpio_oe_set.write(|w| unsafe { w.bits(1 << 25) });
+    p.SIO.gpio_oe_set().write(|w| unsafe { w.bits(1 << 25) });
 
     // Create a task to blink the LED. You could also write this as an `async
     // fn` but we've inlined it as an `async` block for simplicity.
@@ -59,7 +103,7 @@ fn main() -> ! {
         // Loop forever, blinking things. Note that this borrows the device
         // peripherals `p` from the enclosing stack frame.
         loop {
-            p.SIO.gpio_out_xor.write(|w| unsafe { w.bits(1 << 25) });
+            p.SIO.gpio_out_xor().write(|w| unsafe { w.bits(1 << 25) });
             gate.next_time().await;
         }
     });
@@ -69,7 +113,7 @@ fn main() -> ! {
     lilos::time::initialize_sys_tick(&mut cp.SYST, 6_000_000);
     // Set up and run the scheduler with a single task.
     lilos::exec::run_tasks(
-        &mut [blink],  // <-- array of tasks
-        lilos::exec::ALL_TASKS,  // <-- which to start initially
+        &mut [blink],           // <-- array of tasks
+        lilos::exec::ALL_TASKS, // <-- which to start initially
     )
 }

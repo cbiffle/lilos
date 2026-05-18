@@ -1,0 +1,11 @@
+# Minimal LED blinky demo for the Raspberry Pi Pico 2
+
+This is set up to use `probe-rs` for flashing and debugging. You can run this
+by installing `probe-rs`:
+
+`cargo install probe-rs-tools --locked`
+
+Once that's installed,
+
+1. Connect the Pi Pico 2 via a RP debug probe.
+2. `cargo run --release`

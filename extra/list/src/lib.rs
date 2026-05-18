@@ -265,7 +265,7 @@ impl<T> List<T> {
     pub fn join(
         self: Pin<&Self>,
         contents: T,
-    ) -> impl Future<Output = ()> + Captures<&'_ Self>
+    ) -> impl Future<Output = ()>
     where
         T: PartialOrd,
     {
@@ -308,7 +308,7 @@ impl<T> List<T> {
         self: Pin<&Self>,
         contents: T,
         cleanup: impl FnOnce(),
-    ) -> impl Future<Output = ()> + Captures<Pin<&'_ Self>>
+    ) -> impl Future<Output = ()>
     where
         T: PartialOrd,
     {
@@ -652,15 +652,6 @@ impl<M> PartialOrd for Meta<M> {
         Some(core::cmp::Ordering::Equal)
     }
 }
-
-/// Marker trait implementing the "Captures Trick" from Rust RFC 3498, ensuring
-/// that we do lifetime capturing right in the 2021 edition.
-///
-/// TODO: revisit this when we can switch to the 2024 edition, where the default
-/// behavior makes this less necessary.
-pub trait Captures<T> {}
-
-impl<U: ?Sized, T> Captures<T> for U {}
 
 #[cfg(test)]
 mod tests {

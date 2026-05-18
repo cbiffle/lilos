@@ -181,7 +181,7 @@ use core::ptr::NonNull;
 use core::task::{Poll, Waker};
 use pin_project::{pin_project, pinned_drop};
 
-use crate::util::{NotSendMarker, Captures};
+use crate::util::NotSendMarker;
 
 /// A cell specialized for holding `Waker`s. This is functionally equivalent to
 /// `Cell` except that it will allow one operation to be performed on its
@@ -564,10 +564,10 @@ impl<T: PartialOrd, M> List<T, M> {
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
     /// This should be pretty difficult to achieve in practice.
-    pub fn insert_and_wait<'list, 'node>(
-        self: Pin<&'list Self>,
-        node: Pin<&'node mut Node<T, M>>,
-    ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
+    pub fn insert_and_wait(
+        self: Pin<&Self>,
+        node: Pin<&mut Node<T, M>>,
+    ) -> impl Future<Output = ()> {
         // We required `node` to be `mut` to prove exclusive ownership, but we
         // don't actually need to mutate it -- and we're going to alias it. So,
         // downgrade.
@@ -620,11 +620,11 @@ impl<T: PartialOrd, M> List<T, M> {
     ///
     /// If `node` is not detached (if it's in another list) when this is called.
     /// This should be pretty difficult to achieve in practice.
-    pub fn insert_and_wait_with_cleanup<'list, 'node, F: 'node + FnOnce()>(
-        self: Pin<&'list Self>,
+    pub fn insert_and_wait_with_cleanup<'node, F: 'node + FnOnce()>(
+        self: Pin<&Self>,
         node: Pin<&'node mut Node<T, M>>,
         cleanup: F,
-    ) -> impl Future<Output = ()> + Captures<(&'list Self, &'node mut Node<T>)> {
+    ) -> impl Future<Output = ()> {
         // We required `node` to be `mut` to prove exclusive ownership, but we
         // don't actually need to mutate it -- and we're going to alias it. So,
         // downgrade.

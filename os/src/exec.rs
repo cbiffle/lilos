@@ -143,8 +143,6 @@ use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use pin_project::pin_project;
 
-use crate::util::Captures;
-
 // Despite the untangling of exec and time that happened in the 1.0 release, we
 // still have some intimate dependencies between the modules. You'll see a few
 // other cfg(feature = "systick") lines below.
@@ -811,7 +809,7 @@ impl Notify {
     /// (meaning one potential spurious wakeup in the future is possible).
     pub fn until_next(
         &self,
-    ) -> impl Future<Output = ()> + Captures<&'_ Self> {
+    ) -> impl Future<Output = ()> {
         let mut setup = false;
         self.until(move || mem::replace(&mut setup, true))
     }

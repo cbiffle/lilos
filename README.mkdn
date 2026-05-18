@@ -62,9 +62,10 @@ for the right target architecture for whatever program you're building.
 
 To build everything in the repo, run `./build-all.sh`.
 
-## Contact and License
+## Contact, License, Authorship
 
 If you have questions, or you use it for something, I'd love to find out! Send
 me an email.
 
-All the code in this repo is MPL-2 licensed.
+All the code in this repo is MPL-2 licensed. I can say this because all of the
+code in this repo is proudly written by humans.

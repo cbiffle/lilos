@@ -2,15 +2,17 @@
 name = "lilos-testsuite-lm3s6965"
 authors = ["Kovacsics Robert <kovirobi@gmail.com>"]
 version = "0.1.0"
-edition = "2021"
-license = "MPL-2.0"
 description = "Operating system tests for LM3S6965 (can be run with QEMU)."
-repository = "https://github.com/cbiffle/lilos/"
 keywords = ["async", "embedded", "realtime", "os"]
 categories = ["embedded"]
 readme = "README.mkdn"
 publish = false
-rust-version = "1.69"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
 
 [package.metadata.docs.rs]
 default-target = "thumbv7m-none-eabi"

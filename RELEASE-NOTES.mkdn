@@ -1,5 +1,13 @@
 # Release Notes
 
+## Not Yet Released
+
+I've moved `lilos` to Rust 2024 Edition, which requires bumping the MSRV to
+1.85. That version has been out for a bit over a year as of this writing, so
+that seems relatively safe.
+
+ARMv8-M targets are now explicitly supported (thanks, @mcbridejc!).
+
 ## Version 1.3.0
 
 This release is mostly internal cleanups, plus support for `portable-atomic` and

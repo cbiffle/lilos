@@ -435,32 +435,32 @@ impl LockImpl {
         );
         self.readers.set(prev - 1);
         match prev {
-            1 => {
-                // It's our job to try and wake a writer, if one exists. (The list
-                // should, at this point, either be empty or contain a single
-                // exclusive access plus an arbitrary list.)
-                if self
+            // If the previous count was 1, it's our job to try and wake a
+            // writer, if one exists. (The list should, at this point, either
+            // be empty or contain a single exclusive access plus an arbitrary
+            // list.)
+            1 if self
                     .project_ref()
                     .waiters
                     .wake_head_if(|Meta(access)| access == &Access::Exclusive)
-                {
-                    // Found one. Record its count to ensure that nobody scoops it
-                    // before it gets polled.
-                    self.readers.set(-1);
-                }
+            => {
+                // Found one. Record its count to ensure that nobody scoops it
+                // before it gets polled.
+                self.readers.set(-1);
             }
-            isize::MAX => {
-                // We somehow filled up the reader count, so it's our job to
-                // attempt to wake a _reader,_ weirdly.
-                if self
+            // If the count had saturated at isize::MAX, it means we somehow
+            // filled up the reader count. This means readers may be pending,
+            // so it's now our job to wake a _reader._
+            isize::MAX if self
                     .project_ref()
                     .waiters
                     .wake_head_if(|Meta(access)| access == &Access::Shared)
-                {
-                    // Set the count back to saturated.
-                    self.readers.set(isize::MAX);
-                }
+            => {
+                // Set the count back to saturated if the list was found to not
+                // be empty.
+                self.readers.set(isize::MAX);
             }
+            // All other cases are no-ops.
             _ => (),
         }
     }
