@@ -13,14 +13,14 @@ members = [
 
 [workspace.package]
 # common defaults
-edition = "2021"
+edition = "2024"
 license = "MPL-2.0"
 repository = "https://github.com/cbiffle/lilos"
-rust-version = "1.69"
+rust-version = "1.85"
 
 [workspace.dependencies]
 # Internal
-lilos = { path = "os", version = "1.1.0", default-features = false }
+lilos = { path = "os", version = "1.4.0", default-features = false }
 lilos-list = { path = "extra/list", version = "0.1.0" }
 lilos-testsuite = { path = "testsuite" }
 lilos-handoff = { path = "extra/handoff" }
@@ -42,10 +42,7 @@ rp2040-pac = {version = "0.3", features = ["rt"]}
 rp2040-boot2 = "0.2"
 scopeguard = { version = "1.2.0", default-features = false }
 
-#
-# Before you get excited about turning on the workspace.lints table here, note
-# that it is silently ignored by our MSRV of 1.69.
-#
+# TODO: workspace lints!
 
 # Turn on some basic optimizations even in dev for space reasons.
 [profile.dev]
